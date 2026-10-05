@@ -4,7 +4,7 @@ import {FactoryRules} from './map-rules.js';
 export const PHYSICS_STEP=1/120;
 // round_spawning() waits while get_enemy_count() > 31.
 const MAX_ALIVE=32;
-export const NAVIGATION_VERSION='native-triangles-physics-v1';
+export const NAVIGATION_VERSION='native-triangles-physics-v2';
 // Grenades hit physical surfaces, not the invisible player movement clips
 // that close window openings and simplify traversal around rubble.
 export const GRENADE_CONTENTS=1;

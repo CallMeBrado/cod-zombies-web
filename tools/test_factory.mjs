@@ -41,9 +41,17 @@ for(const [perk,health,sting]of [['specialty_armorvest',250,'mx_jugger_sting'],[
 }
 game.weapon.clip=0;const reloadTime=game.weapon.definition.reloadEmptyTime;game.reload();assert(Math.abs(game.reloadEnd-game.time-reloadTime*.5)<1e-9);game.reloadEnd=0;
 const core=game.interactions.find(e=>e.targetname==='trigger_teleport_core');
-for(let id=0;id<3;id++){purchase(game.interactions.find(e=>e.targetname==='trigger_teleport_pad_'+id));game.time+=2;purchase(core);assert(game.mapRules.links.has(id));}
+const loops=[];game.events.loop=l=>loops.push(l.id);game.events.stopLoop=l=>loops.splice(loops.indexOf(l.id),1);
+for(let id=0;id<3;id++){
+  sounds.length=0;purchase(game.interactions.find(e=>e.targetname==='trigger_teleport_pad_'+id));assert(sounds.some(s=>s.alias==='pa_audio_link_start'&&s.position));
+  wait(2.05);assert.equal(sounds.filter(s=>s.alias==='clock_tick_1sec').length,3,'The link countdown ticks each second');
+  sounds.length=0;purchase(core);assert(game.mapRules.links.has(id));
+  // Linking plays the PA buzz and announcement from the speakers, never the purchase sound.
+  assert(!sounds.some(s=>/cha_ching/.test(s.alias)),'Linking a teleporter is not a purchase');assert(sounds.some(s=>s.alias==='pa_buzz'&&s.position));
+  wait(1.3);assert(sounds.some(s=>s.alias==='pa_audio_act_pad_'+id&&s.position));
+}
 assert(game.collision.disabled.has('pack_door_clip'));
-const pap=game.interactions.find(e=>e.targetname==='zombie_vending_upgrade'),loops=[];game.events.loop=l=>loops.push(l.id);game.events.stopLoop=l=>loops.splice(loops.indexOf(l.id),1);wait(.1);
+const pap=game.interactions.find(e=>e.targetname==='zombie_vending_upgrade');wait(.1);
 assert(loops.includes('packa_rollers'),'Pack-a-Punch rollers hum starts once all teleporters are linked');
 // vending_upgrade: the gun goes into the machine; take it before the timeout.
 const original=game.weapon.name,upgraded=game.weapon.definition.upgrade;purchase(pap);

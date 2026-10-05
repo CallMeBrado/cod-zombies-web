@@ -4,7 +4,7 @@ const PERKS={specialty_armorvest:{name:'Jugger-Nog',cost:2500,sting:'mx_jugger_s
 const JINGLES={mx_jugger_jingle:'jugger',mx_speed_jingle:'speed',mx_doubletap_jingle:'doubletap',mx_revive_jingle:'revive',mx_packa_jingle:'packa'};
 // The exported aliases carry no min/max distance, so these ranges are chosen
 // per kind of sound: music carries across nearby rooms, machinery is local.
-const RANGE={music:{near:150,far:1400},machine:{near:80,far:900},hum:{near:40,far:420},tick:{near:60,far:700}};
+const RANGE={music:{near:150,far:1400},machine:{near:80,far:900},hum:{near:40,far:420},tick:{near:60,far:700},pa:{near:250,far:1800}};
 const PAP_TIMEOUT=15;
 const between=(a,b)=>a+Math.random()*(b-a);
 
@@ -12,7 +12,7 @@ const between=(a,b)=>a+Math.random()*(b-a);
 // entities/GSC. The shared combat/physics loop remains the same on both maps.
 export class FactoryRules {
   constructor(game){this.game=game;this.data=game.data.map;}
-  reset(){this.flags=new Set();this.perks=new Set();this.power=false;this.links=new Set();this.linkPending=null;this.teleportDue=0;this.teleportCooldown=0;this.pap=null;this.machines=null;this.papOn=false;}
+  reset(){this.flags=new Set();this.perks=new Set();this.power=false;this.links=new Set();this.linkPending=null;this.teleportDue=0;this.teleportCooldown=0;this.pap=null;this.machines=null;this.papOn=false;this.pending=[];}
   activeZones(){
     const active=new Set([this.data.initialZone]);let changed=true;
     while(changed){changed=false;for(const [a,b,flag]of this.data.connections)if(this.flags.has(flag)){
@@ -82,11 +82,12 @@ export class FactoryRules {
     if(key.startsWith('trigger_teleport_pad_')){
       if(!this.power||this.teleportDue||g.time<this.teleportCooldown)return true;
       const id=Number(key.at(-1));
-      if(!this.links.has(id)){this.linkPending={id,due:g.time+30};g.message('Return to the mainframe within 30 seconds to complete the link.');}
+      if(!this.links.has(id)){this.linkPending={id,due:g.time+30,started:g.time,ticks:0};this.pa('pa_buzz');this.pa('pa_audio_link_start',true);g.message('Return to the mainframe within 30 seconds to complete the link.');}
       else if(g.spendPoints(1500)){this.teleportDue=g.time+2;g.emit('sound',{alias:'teleport_out'});g.message('Teleporting…');}return true;
     }
     if(key==='trigger_teleport_core'){
-      if(this.linkPending&&g.time<this.linkPending.due){this.links.add(this.linkPending.id);this.linkPending=null;g.emit('sound',{alias:'cha_ching'});g.message('Teleporter linked · '+this.links.size+' / 3');if(this.links.size===3){this.openTarget('pack_door');this.openTarget('pack_door_clip');}}return true;
+      // pa_countdown_success: a PA buzz, then the pad's activation announcement.
+      if(this.linkPending&&g.time<this.linkPending.due){const id=this.linkPending.id;this.links.add(id);this.linkPending=null;this.pa('pa_buzz');this.later(1.2,()=>this.pa('pa_audio_act_pad_'+id,true));g.message('Teleporter linked · '+this.links.size+' / 3');if(this.links.size===3){this.openTarget('pack_door');this.openTarget('pack_door_clip');}}return true;
     }
     if(key==='zombie_vending_upgrade'){
       if(this.pap){if(this.pap.phase==='ready')this.takeUpgrade();return true;}
@@ -108,6 +109,9 @@ export class FactoryRules {
   }
   saveState(){return {power:this.power,flags:[...this.flags],perks:[...this.perks],links:[...this.links]};}
   loadState(s){if(!s)return;this.power=s.power;this.flags=new Set(s.flags);this.perks=new Set(s.perks);this.links=new Set(s.links);}
+  // PA system speakers (pa_system structs); a speaker says one dialog line at a time.
+  pa(alias,dialog=false){(this.speakers??=this.game.entities.filter(e=>e.targetname==='pa_system').map(position)).forEach((at,i)=>this.sound(alias,at,RANGE.pa,dialog?'pa'+i:undefined));}
+  later(delay,run){this.pending.push({at:this.game.time+delay,run});}
   sound(alias,position,range,exclusive){this.game.emit('sound',{alias,position,...range,exclusive});}
   takeUpgrade(){
     const g=this.game,pap=this.pap;if(g.gesture)return;
@@ -146,7 +150,14 @@ export class FactoryRules {
   openTarget(target){const g=this.game;g.opened.add(target);g.collision.disabled.add(target);g.invalidateNavigation([target]);g.emit('open',{target});}
   tick(){
     const g=this.game;
-    if(this.linkPending&&g.time>=this.linkPending.due){this.linkPending=null;g.message('Teleporter link timed out');}
+    for(const job of this.pending.filter(job=>g.time>=job.at)){this.pending.splice(this.pending.indexOf(job),1);job.run();}
+    // pa_countdown: a clock tick each second, with the PA counting at 20, 15
+    // and 10..1; on timeout a buzz and the link-failed announcement.
+    while(this.linkPending&&this.linkPending.ticks<30&&g.time>=this.linkPending.started+this.linkPending.ticks){
+      const count=30-this.linkPending.ticks++;g.emit('sound',{alias:'clock_tick_1sec'});
+      if(count===20||count===15||count<=10)this.pa('pa_audio_link_'+count);
+    }
+    if(this.linkPending&&g.time>=this.linkPending.due){this.linkPending=null;g.message('Teleporter link timed out');this.pa('pa_buzz');this.later(1.2,()=>this.pa('pa_audio_link_fail',true));}
     if(this.teleportDue&&g.time>=this.teleportDue){
       this.teleportDue=0;this.teleportCooldown=g.time+5;
       const destination=position(g.entities.find(e=>e.targetname==='origin_teleport_player_0'));

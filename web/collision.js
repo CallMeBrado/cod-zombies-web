@@ -22,7 +22,11 @@ export class CollisionWorld {
     this.staticModelCount=0;this.staticSurfaces=[];this.triangles=[];this.triangleCells=new Map();
     const meshes=new Map();
     for(const model of data.staticModels||[]){
-      const a=model.inverseAxis,det=a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])-a[0][1]*(a[1][0]*a[2][2]-a[1][2]*a[2][0])+a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]);
+      // The exported inverseAxis is axis^T/scale, where the renderer's axis rows
+      // are the model's local axes in world space. World->local is therefore its
+      // transpose; using it directly mirrored every non-0/180 degree rotation
+      // (e.g. the upstairs Der Riese teleporter's wall sat across its entrance).
+      const m=model.inverseAxis,a=[0,1,2].map(i=>[0,1,2].map(j=>m[j][i])),det=a[0][0]*(a[1][1]*a[2][2]-a[1][2]*a[2][1])-a[0][1]*(a[1][0]*a[2][2]-a[1][2]*a[2][0])+a[0][2]*(a[1][0]*a[2][1]-a[1][1]*a[2][0]);
       if(Math.abs(det)<1e-8)continue;
       const cross=(u,v)=>[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]],columns=[cross(a[1],a[2]),cross(a[2],a[0]),cross(a[0],a[1])].map(v=>v.map(x=>x/det));
       const mesh=data.collisionMeshes?.[model.model];
@@ -153,6 +157,12 @@ export class CollisionWorld {
     }
     return {position:[pos[0],pos[1],pos[2]-half[2]],grounded};
   }
+  walkableBeyond(top,delta,half){
+    const length=Math.hypot(delta[0],delta[1]),reach=24,ahead=[top[0]+delta[0]/length*reach,top[1]+delta[1]/length*reach,top[2]];
+    const forward=this.trace(top,ahead,half);if(forward.allSolid||forward.fraction<1)return false;
+    const floor=this.trace(ahead,[ahead[0],ahead[1],ahead[2]-18],half);
+    return !floor.allSolid&&floor.fraction<1&&floor.normal[2]>=.65;
+  }
   step(feet,delta,half=[14,14,35]) {
     const direct=this.move(feet,delta,half);
     if(Math.hypot(delta[0],delta[1])<.001)return direct;
@@ -161,7 +171,11 @@ export class CollisionWorld {
     if(up.allSolid)return direct;
     const over=this.move([up.end[0],up.end[1],up.end[2]-half[2]],[delta[0],delta[1],Math.max(0,delta[2])],half);
     const top=[over.position[0],over.position[1],over.position[2]+half[2]],landing=this.trace(top,[top[0],top[1],top[2]-18+Math.min(0,delta[2])],half);
-    if(landing.allSolid||landing.fraction<1&&landing.normal[2]<.65)return direct;
+    if(landing.allSolid)return direct;
+    // A steep landing is normally a wall or rubble face. A short bevelled lip
+    // (e.g. the Der Riese mainframe threshold, 56 degrees, 8 units) is crossed
+    // when walkable floor lies just beyond it within step height.
+    if(landing.fraction<1&&landing.normal[2]<.65&&!(landing.normal[2]>=.5&&this.walkableBeyond(top,delta,half)))return direct;
     // Step probes remain vertical; sliding an 18-unit downward probe along a
     // tilted prop face used to kick the player sideways into nearby barriers.
     const down={position:[landing.end[0],landing.end[1],landing.end[2]-half[2]],grounded:landing.fraction<1&&landing.normal[2]>.65};

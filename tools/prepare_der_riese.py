@@ -34,6 +34,9 @@ GESTURE_FIELDS = ['gunModel', 'idleAnim', 'emptyIdleAnim', 'firstRaiseAnim', 'dr
 PERK_SOUNDS = ['mx_jugger_sting', 'mx_speed_sting', 'mx_doubletap_sting', 'mx_revive_sting', 'mx_packa_sting',
                'bottle_dispense3d', 'perks_power_on', 'electrical_surge', 'broken_random_jingle',
                'packa_rollers_loop', 'packa_weap_upgrade', 'packa_weap_ready', 'ticktock_loop', 'packa_deny']
+# nazi_zombie_factory_amb.csc PA system: teleporter link countdown, success and failure.
+TELEPORTER_SOUNDS = ['pa_buzz', 'pa_audio_link_start', 'pa_audio_link_fail', 'clock_tick_1sec',
+                     *[f'pa_audio_link_{n}' for n in (20, 15, *range(10, 0, -1))], *[f'pa_audio_act_pad_{i}' for i in range(3)]]
 
 
 def convert_sounds(aliases, sounds):
@@ -67,7 +70,7 @@ def convert_sounds(aliases, sounds):
 
 def add_perk_assets(manifest):
     gestures = {key: {**weapon(name, GESTURE_FIELDS), 'name': name} for key, name in GESTURES.items()}
-    aliases = set(PERK_SOUNDS)
+    aliases = set(PERK_SOUNDS) | set(TELEPORTER_SOUNDS)
     aliases.update(line.split()[-1] for g in gestures.values() for line in g['notetrackSoundMap'].splitlines() if line.split())
     convert_sounds(aliases - set(manifest['sounds']), manifest['sounds'])
     manifest['gestures'] = gestures
