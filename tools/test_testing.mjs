@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {TestingGame} from '../web/testing.js';
+import {CollisionWorld} from '../web/collision.js';
+import {nextHealth,roundCount} from '../web/rules.js';
+const read=p=>JSON.parse(fs.readFileSync(new URL('../local-data/'+p,import.meta.url)));
+const report={};
+for(const [id,zone,folder]of [['nacht','nazi_zombie_prototype','gameplay'],['der-riese','nazi_zombie_factory','gameplay/der-riese']]){
+  const manifest=read(folder+'/manifest.json'),removed=[];
+  const g=new TestingGame(manifest,new CollisionWorld(read(id+'/web-world/'+zone+'.collision.json'),manifest.entities),read(id+'/web-world/'+zone+'.paths.json'),{removeEnemy:e=>removed.push(e.id)});
+  assert.deepEqual(g.mods,{god:false,points:false,ammo:false,grenades:false});
+  assert(!g.setRound(20),'Round changes need an active session');
+  g.start();g.damagePlayer(50);assert.equal(g.player.health,50);
+  g.setMod('god',true);g.damagePlayer(1000);assert.equal(g.player.health,100);assert.notEqual(g.phase,'dead');
+  g.setMod('god',false);g.damagePlayer(25);assert.equal(g.player.health,75);
+  g.player.points=0;assert(!g.spendPoints(1000));
+  g.setMod('points',true);assert(g.spendPoints(5000));assert.equal(g.player.points,999999);
+  const weapon=Object.keys(manifest.weapons).find(n=>n.includes('mp40'));
+  assert(weapon);assert(g.equipTestWeapon(weapon));assert.equal(g.weapon.name,weapon);assert(!g.equipTestWeapon('missing'));
+  g.pendingGrenade={};assert(!g.equipTestWeapon('zombie_colt'));g.pendingGrenade=null;
+  g.weapon.clip=0;g.weapon.reserve=0;g.refillAmmo();assert.equal(g.weapon.clip,g.weapon.definition.clipSize);
+  g.setMod('ammo',true);g.weapon.clip=0;g.weapon.reserve=0;g.update(1/120,{});assert.equal(g.weapon.clip,g.weapon.definition.clipSize);assert.equal(g.weapon.reserve,g.weapon.definition.maxAmmo);
+  g.setMod('grenades',true);g.player.grenades=0;g.update(1/120,{});assert.equal(g.player.grenades,4);
+  g.enemies=[{id:432,dead:false},{id:433,dead:true}];g.windows[0].traverser=g.enemies[0];
+  assert(g.setRound(20));assert.deepEqual(removed,[432,433]);assert.equal(g.enemies.length,0);assert.equal(g.windows[0].traverser,null);assert.equal(g.round,20);assert.equal(g.phase,'round');assert.equal(g.remaining,roundCount(20));
+  let health=g.vars.zombie_health_start;for(let r=1;r<=20;r++)health=nextHealth(health,r,g.vars);assert.equal(g.zombieHealth,health);
+  for(const r of [0,101,1.5,NaN,Infinity])assert(!g.setRound(r));assert.equal(g.round,20);
+  assert(g.setRound(1));assert.equal(g.zombieHealth,g.vars.zombie_health_start);assert.equal(g.remaining,4);
+  g.newGame();assert(g.mods.god===false&&g.mods.points);assert.equal(g.player.points,999999);
+  for(const name of Object.keys(g.mods))g.setMod(name,false);g.newGame();assert.equal(g.player.points,500);assert.equal(g.weapon.name,'zombie_colt');assert.equal(g.weapon.clip,8);assert.equal(g.player.health,100);
+  g.start();g.damagePlayer(100);assert.equal(g.phase,'dead');assert(!g.setRound(10));
+  report[id]={round20Health:health,weapon,normalAfterModsOffAndRestart:true};
+}
+fs.writeFileSync(new URL('../local-data/mod-menu-verification.json',import.meta.url),JSON.stringify(report,null,2));
+console.log('Testing menu checks passed on both maps:',JSON.stringify(report));

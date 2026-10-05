@@ -1,0 +1,423 @@
+diff --git a/src/ObjWriting/Game/T4/ObjWriterT4.cpp b/src/ObjWriting/Game/T4/ObjWriterT4.cpp
+index fe9eb4c..8860077 100644
+--- a/src/ObjWriting/Game/T4/ObjWriterT4.cpp
++++ b/src/ObjWriting/Game/T4/ObjWriterT4.cpp
+@@ -15,11 +15,18 @@
+ #include "Sound/LoadedSoundDumperT4.h"
+ #include "StringTable/StringTableDumperT4.h"
+ #include "Weapon/WeaponDumperT4.h"
++#include "WebWorld/WebWorldDumperT4.h"
+ 
+ using namespace T4;
+ 
+ void ObjWriter::RegisterAssetDumpers(AssetDumpingContext& context)
+ {
++    RegisterAssetDumper(std::make_unique<web_world::DumperT4>());
++    RegisterAssetDumper(std::make_unique<web_world::LightDumperT4>());
++    RegisterAssetDumper(std::make_unique<web_world::PathDumperT4>());
++    RegisterAssetDumper(std::make_unique<web_world::CollisionDumperT4>());
++    RegisterAssetDumper(std::make_unique<web_world::SoundDumperT4>());
++    RegisterAssetDumper(std::make_unique<web_world::EffectDumperT4>());
+     RegisterAssetDumper(std::make_unique<phys_constraints::InfoStringDumperT4>());
+     RegisterAssetDumper(std::make_unique<phys_preset::InfoStringDumperT4>());
+     RegisterAssetDumper(std::make_unique<xanim::DumperT4>());
+diff --git a/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.cpp b/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.cpp
+new file mode 100644
+--- /dev/null
++++ b/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.cpp
+@@ -0,0 +1,294 @@
++// Local browser export extension for OpenAssetTools. GPL-3.0, like OAT.
++#include "WebWorldDumperT4.h"
++#include <filesystem>
++#include <nlohmann/json.hpp>
++#include <stdexcept>
++#include <functional>
++#include <set>
++#include "Zone/Zone.h"
++
++using namespace T4;
++using nlohmann::json;
++
++namespace web_world
++{
++    void LightDumperT4::DumpAsset(AssetDumpingContext& context, const XAssetInfo<ComWorld>& asset)
++    {
++        const auto* world = asset.Asset(); json lights = json::array();
++        for (unsigned int i = 0; i < world->primaryLightCount; ++i) {
++            const auto& l = world->primaryLights[i];
++            lights.push_back({{"type", l.type}, {"color", l.color}, {"direction", l.dir}, {"origin", l.origin},
++                              {"radius", l.radius}, {"outer", l.cosHalfFovOuter}, {"inner", l.cosHalfFovInner}});
++        }
++        auto file = context.OpenAssetFile("web-world/" + std::filesystem::path(asset.m_name).stem().string() + ".lights.json");
++        if (file) *file << lights.dump();
++    }
++    void PathDumperT4::DumpAsset(AssetDumpingContext& context, const XAssetInfo<GameWorldSp>& asset)
++    {
++        const auto* world = asset.Asset();
++        json nodes = json::array();
++        const auto str = [&](uint16_t id) -> std::string {
++            return id < asset.m_zone->m_script_strings.Count() ? asset.m_zone->m_script_strings[id] : "";
++        };
++
++        for (unsigned int i = 0; i < world->path.nodeCount; ++i)
++        {
++            const auto& n = world->path.nodes[i].constant;
++            json links = json::array();
++            for (unsigned int j = 0; j < n.totalLinkCount; ++j)
++                links.push_back({{"node", n.Links[j].nodeNum}, {"distance", n.Links[j].fDist}, {"negotiation", n.Links[j].negotiationLink != 0}});
++            nodes.push_back({{"origin", n.vOrigin}, {"type", static_cast<int>(n.type)}, {"targetname", str(n.targetname)},
++                            {"target", str(n.target)}, {"angle", n.fAngle}, {"links", links}});
++        }
++        auto file = context.OpenAssetFile("web-world/" + std::filesystem::path(asset.m_name).stem().string() + ".paths.json");
++        if (file) *file << json({{"format", "waw-paths-v1"}, {"nodes", nodes}}).dump();
++    }
++
++    void CollisionDumperT4::DumpAsset(AssetDumpingContext& context, const XAssetInfo<clipMap_t>& asset)
++    {
++        const auto* map = asset.Asset();
++        json brushes = json::array(), models = json::array(), staticModels = json::array(), collisionMeshes=json::object();
++        for (unsigned int i = 0; i < map->numBrushes; ++i)
++        {
++            const auto& b = map->brushes[i];
++            json planes = json::array();
++            for (unsigned int j = 0; j < b.numsides; ++j)
++            {
++                const auto* p = b.sides[j].plane;
++                planes.push_back({p->normal[0],p->normal[1],p->normal[2],p->dist});
++            }
++            brushes.push_back({{"mins", b.mins}, {"maxs", b.maxs}, {"contents", b.contents}, {"planes", planes}});
++        }
++        std::function<void(int,std::set<unsigned int>&)> visit = [&](int index, std::set<unsigned int>& ids) {
++            if (index <= 0 || static_cast<unsigned int>(index) >= map->leafbrushNodesCount) return;
++            const auto& node = map->leafbrushNodes[index];
++            if (node.leafBrushCount > 0)
++                for (int j = 0; j < node.leafBrushCount; ++j) ids.insert(node.data.leaf.brushes[j]);
++            else {
++                // A negative count has an inline leaf AND partition children.
++                if (node.leafBrushCount < 0) visit(index + 1, ids);
++                for (int j = 0; j < 2; ++j) if (node.data.children.childOffset[j]) visit(index + node.data.children.childOffset[j], ids);
++            }
++        };
++        // Only brushes referenced by the world BSP belong in world collision.
++        // Unreferenced compiled templates must not appear at the map origin.
++        std::set<unsigned int> worldBrushes;
++        for (unsigned int i = 0; i < map->numLeafs; ++i) visit(map->leafs[i].leafBrushNode, worldBrushes);
++        for (unsigned int i = 0; i < map->numSubModels; ++i)
++        {
++            const auto& m = map->cmodels[i]; std::set<unsigned int> ids;
++            visit(m.leaf.leafBrushNode, ids);
++            models.push_back({{"mins", m.mins}, {"maxs", m.maxs}, {"brushes", ids}});
++        }
++        for (unsigned int i=0;i<map->numStaticModels;++i) {
++            const auto& s=map->staticModelList[i]; if(!s.xmodel)continue;
++            if(!collisionMeshes.contains(s.xmodel->name)){
++                json mesh=json::array();
++                for(int j=0;j<s.xmodel->numCollSurfs;++j){
++                    const auto& c=s.xmodel->collSurfs[j];json tris=json::array();
++                    for(int k=0;k<c.numCollTris;++k){const auto& t=c.collTris[k];tris.push_back({t.plane,t.svec,t.tvec});}
++                    if(!tris.empty())mesh.push_back({{"mins",c.mins},{"maxs",c.maxs},{"contents",c.contents},{"triangles",tris}});
++                }
++                collisionMeshes[s.xmodel->name]=mesh;
++            }
++            json surfaces=json::array();
++            for(int j=0;j<s.xmodel->numCollSurfs;++j) {
++                const auto& c=s.xmodel->collSurfs[j];
++                if(c.numCollTris>0)surfaces.push_back({{"mins",c.mins},{"maxs",c.maxs},{"contents",c.contents},{"bone",c.boneIdx}});
++            }
++            if(!surfaces.empty())staticModels.push_back({{"model",s.xmodel->name},{"origin",s.origin},{"inverseAxis",s.invScaledAxis},
++                {"mins",s.absmin},{"maxs",s.absmax},{"surfaces",surfaces}});
++        }
++        auto file = context.OpenAssetFile("web-world/" + std::filesystem::path(asset.m_name).stem().string() + ".collision.json");
++        json vertices=json::array(),indices=json::array(),triangleContents=json::array();
++        for(unsigned int i=0;i<map->vertCount;++i)vertices.push_back({map->verts[i].x,map->verts[i].y,map->verts[i].z});
++        // The triangle pool also holds unplaced brush-model templates. Walk
++        // only the world leaves' collision partitions, just as for brushes.
++        std::map<int,int> worldTriangles;
++        std::set<int> visitedTrees;
++        std::function<void(int)> visitTree = [&](int index) {
++            if(index < 0 || index >= map->aabbTreeCount || !visitedTrees.insert(index).second) return;
++            const auto& tree=map->aabbTrees[index];
++            if(tree.childCount) {
++                for(int j=0;j<tree.childCount;++j) visitTree(tree.u.firstChildIndex+j);
++            } else if(tree.u.partitionIndex >= 0 && tree.u.partitionIndex < map->partitionCount) {
++                const auto& partition=map->partitions[tree.u.partitionIndex];
++                const int contents=tree.materialIndex < map->numMaterials ? map->materials[tree.materialIndex].contentFlags : 1;
++                for(int j=0;j<partition.triCount;++j) worldTriangles[partition.firstTri+j] |= contents;
++            }
++        };
++        for(unsigned int i=0;i<map->numLeafs;++i)
++            for(int j=0;j<map->leafs[i].collAabbCount;++j) visitTree(map->leafs[i].firstCollAabbIndex+j);
++        for(const auto& [triangle,contents]:worldTriangles)
++            if(triangle >= 0 && triangle < map->triCount && (contents & (1|0x10000))) {
++                triangleContents.push_back(contents);
++                for(int j=0;j<3;++j) indices.push_back(map->triIndices[triangle*3+j]);
++            }
++        if (file) *file << json({{"format", "waw-collision-v3"}, {"worldBrushes", worldBrushes}, {"brushes", brushes}, {"models", models},{"staticModels",staticModels},{"collisionMeshes",collisionMeshes},
++            {"terrain",{{"vertices",vertices},{"indices",indices},{"contents",triangleContents}}}}).dump();
++    }
++
++    void SoundDumperT4::DumpAsset(AssetDumpingContext& context, const XAssetInfo<snd_alias_list_t>& asset)
++    {
++        const std::string name = asset.m_name;
++        json entries = json::array();
++        const auto* list = asset.Asset();
++        for (int i = 0; i < list->count; ++i)
++        {
++            const auto& a = list->head[i]; const auto* sf = a.soundFile;
++            if (!sf) continue;
++            std::string filename;
++            if (sf->type == SAT_LOADED && sf->u.loadSnd && sf->u.loadSnd->name) filename = sf->u.loadSnd->name;
++            else if (sf->type == SAT_STREAMED) {
++                const auto& f = sf->u.streamSnd.filename;
++                if (f.name) filename = std::string(f.dir ? f.dir : "") + "/" + f.name;
++            }
++            if (!filename.empty()) entries.push_back({{"file", filename}, {"volume", a.volMax}, {"pitch", a.pitchMax}});
++        }
++        auto file = context.OpenAssetFile("web-sounds/" + name + ".json");
++        if (file) *file << entries.dump();
++    }
++
++    void EffectDumperT4::DumpAsset(AssetDumpingContext& context, const XAssetInfo<FxEffectDef>& asset)
++    {
++        const std::string name = asset.m_name;
++        if (name.find("fx_zombie_powerup") == std::string::npos && name.find("fx_ray_sun_sm_short") == std::string::npos
++            && name.find("grenadeexp") == std::string::npos && name.find("fx_grenade_flash") == std::string::npos
++            && name.find("fx_grenade_smoke_w") == std::string::npos && name.find("fx_grenade_smk_ling_w") == std::string::npos) return;
++        const auto* fx = asset.Asset(); json elements = json::array();
++        const auto range = [](const auto& r) { return json::array({r.base,r.amplitude}); };
++        const int count=fx->elemDefCountLooping+fx->elemDefCountOneShot+fx->elemDefCountEmission;
++        for (int i=0;i<count;++i) {
++            const auto& e=fx->elemDefs[i]; json visuals=json::array(),samples=json::array(),velocity=json::array(),origin=json::array();
++            for(int j=0;j<3;++j) origin.push_back(range(e.spawnOrigin[j]));
++            for(int j=0;j<static_cast<unsigned char>(e.visualCount);++j) {
++                const auto& v=e.visualCount==1?e.visuals.instance:e.visuals.array[j];
++                if(e.elemType<=FX_ELEM_TYPE_CLOUD && v.material) visuals.push_back(v.material->info.name);
++            }
++            for(int j=0;e.visSamples&&j<=static_cast<unsigned char>(e.visStateIntervalCount);++j) {
++                const auto& v=e.visSamples[j];
++                json color=json::array(),amplitude=json::array();
++                for(int k=0;k<4;++k){color.push_back(static_cast<unsigned char>(v.base.color[k]));amplitude.push_back(static_cast<unsigned char>(v.amplitude.color[k]));}
++                samples.push_back({{"color",color},{"colorAmplitude",amplitude},{"size",v.base.size},{"sizeAmplitude",v.amplitude.size},
++                    {"rotation",v.base.rotationTotal},{"rotationAmplitude",v.amplitude.rotationTotal}});
++            }
++            for(int j=0;e.velSamples&&j<=static_cast<unsigned char>(e.velIntervalCount);++j) {
++                const auto& v=e.velSamples[j];velocity.push_back({{"local",v.local.velocity.base},{"localAmplitude",v.local.velocity.amplitude},
++                    {"world",v.world.velocity.base},{"worldAmplitude",v.world.velocity.amplitude}});
++            }
++            elements.push_back({{"type",e.elemType},{"flags",e.flags},{"looping",i<fx->elemDefCountLooping},
++                {"interval",i<fx->elemDefCountLooping?e.spawn.looping.intervalMsec:0},
++                {"count",i<fx->elemDefCountLooping?e.spawn.looping.count:e.spawn.oneShot.count.base},
++                {"life",range(e.lifeSpanMsec)},{"delay",range(e.spawnDelayMsec)},{"origin",origin},
++                {"radius",range(e.spawnOffsetRadius)},{"height",range(e.spawnOffsetHeight)},{"gravity",range(e.gravity)},
++                {"visuals",visuals},{"samples",samples},{"velocity",velocity},
++                {"atlas",{{"cols",e.atlas.colIndexBits},{"rows",e.atlas.rowIndexBits},{"fps",e.atlas.fps},{"entries",e.atlas.entryCount}}}});
++        }
++        auto file=context.OpenAssetFile("web-fx/"+name+".json");
++        if(file)*file<<json({{"name",name},{"loopingLife",fx->msecLoopingLife},{"elements",elements}}).dump();
++    }
++
++    void DumperT4::DumpAsset(AssetDumpingContext& context, const XAssetInfo<GfxWorld>& asset)
++    {
++        const auto* world = asset.Asset();
++        const auto stem = std::filesystem::path(asset.m_name).stem().string();
++        const std::string prefix = "web-world/" + stem;
++        auto vertexFile = context.OpenAssetFile(prefix + ".vertices.bin");
++        auto indexFile = context.OpenAssetFile(prefix + ".indices.bin");
++        auto manifestFile = context.OpenAssetFile(prefix + ".json");
++        if (!vertexFile || !indexFile || !manifestFile)
++            throw std::runtime_error("Cannot open browser world output files");
++
++        // Explicit 32-byte records: XYZ, UV, lightmap UV, RGBA. No host pointers.
++        for (unsigned int i = 0; i < world->vertexCount; ++i)
++        {
++            const auto& vertex = world->vd.vertices[i];
++            vertexFile->write(reinterpret_cast<const char*>(vertex.xyz), 12);
++            vertexFile->write(reinterpret_cast<const char*>(vertex.texCoord), 8);
++            vertexFile->write(reinterpret_cast<const char*>(vertex.lmapCoord), 8);
++            vertexFile->write(reinterpret_cast<const char*>(vertex.color.array), 4);
++        }
++        indexFile->write(reinterpret_cast<const char*>(world->indices), static_cast<std::streamsize>(world->indexCount) * 2);
++
++        json manifest{
++            {"format", "waw-web-world-v1"},
++            {"asset", asset.m_name},
++            {"coordinateSystem", "original CoD coordinates, Z up"},
++            {"vertexStride", 32},
++            {"vertexCount", world->vertexCount},
++            {"indexCount", world->indexCount},
++            {"vertices", stem + ".vertices.bin"},
++            {"indices", stem + ".indices.bin"},
++            {"bounds", {world->mins, world->maxs}},
++            {"surfaces", json::array()},
++            {"staticModels", json::array()},
++            {"materials", json::object()}
++        };
++
++        manifest["lightmaps"] = json::array();
++        if (world->sunLight) manifest["sunLight"] = {{"color", world->sunLight->color}, {"direction", world->sunLight->dir}};
++        for (int i = 0; i < world->lightmapCount; ++i) {
++            const auto& lm = world->lightmaps[i];
++            manifest["lightmaps"].push_back({{"primary", lm.primary ? lm.primary->name : ""},
++                                            {"secondary", lm.secondary ? lm.secondary->name : ""}});
++        }
++        for (int i = 0; i < world->surfaceCount; ++i)
++        {
++            const auto& surface = world->dpvs.surfaces[i];
++            const auto* material = surface.material;
++            const std::string materialName = material && material->info.name ? material->info.name : "unknown";
++            const auto indexEnd = surface.tris.baseIndex + static_cast<int>(surface.tris.triCount) * 3;
++            if (surface.tris.firstVertex < 0 || surface.tris.baseIndex < 0 || indexEnd > world->indexCount
++                || static_cast<unsigned int>(surface.tris.firstVertex + surface.tris.vertexCount) > world->vertexCount)
++                throw std::runtime_error("Invalid GfxWorld surface range");
++            manifest["surfaces"].push_back({
++                {"firstVertex", surface.tris.firstVertex}, {"vertexCount", surface.tris.vertexCount},
++                {"baseIndex", surface.tris.baseIndex}, {"triangleCount", surface.tris.triCount},
++                {"material", materialName}, {"lightmap", static_cast<unsigned char>(surface.lightmapIndex)},
++                {"primaryLight", static_cast<unsigned char>(surface.primaryLightIndex)}
++            });
++            if (!manifest["materials"].contains(materialName))
++            {
++                json details{{"diffuse", nullptr}, {"normal", nullptr}, {"emissive", material && material->cameraRegion == CAMERA_REGION_EMISSIVE}};
++                if (material && material->textureTable)
++                {
++                    for (unsigned int t = 0; t < material->textureCount; ++t)
++                    {
++                        const auto& texture = material->textureTable[t];
++                        if (texture.u.image && texture.u.image->name && texture.semantic == TS_COLOR_MAP && details["diffuse"].is_null()) details["diffuse"] = texture.u.image->name;
++                        if (texture.u.image && texture.u.image->name && texture.semantic == TS_NORMAL_MAP && details["normal"].is_null()) details["normal"] = texture.u.image->name;
++                    }
++                }
++                manifest["materials"][materialName] = details;
++                if (materialName == "wc/peleliu_wall_concrete_bunker_chipped" && material->techniqueSet) {
++                    for (const auto* technique : material->techniqueSet->techniques) {
++                        if (!technique) continue;
++                        for (int p = 0; p < technique->passCount; ++p) {
++                            const auto* ps = technique->passArray[p].pixelShader;
++                            if (!ps || !ps->prog.loadDef.program) continue;
++                            auto file = context.OpenAssetFile("web-shaders/" + std::string(ps->name) + ".cso");
++                            if (file) file->write(reinterpret_cast<const char*>(ps->prog.loadDef.program), ps->prog.loadDef.programSize * 4);
++                        }
++                    }
++                }
++            }
++        }
++        for (unsigned int i = 0; i < world->dpvs.smodelCount; ++i)
++        {
++            const auto& instance = world->dpvs.smodelDrawInsts[i];
++            if (!instance.model || !instance.model->name)
++                continue;
++            manifest["staticModels"].push_back({
++                {"model", instance.model->name}, {"origin", instance.placement.origin},
++                {"axis", instance.placement.axis}, {"scale", instance.placement.scale},
++                {"groundLighting", world->dpvs.smodelInsts[i].groundLighting.array}
++            });
++        }
++        manifest["brushModels"] = json::array();
++        for (int i = 0; i < world->modelCount; ++i) {
++            const auto& m = world->models[i];
++            manifest["brushModels"].push_back({{"firstSurface", m.startSurfIndex}, {"surfaceCount", m.surfaceCount}, {"bounds", m.bounds}});
++        }
++        *manifestFile << manifest.dump();
++    }
++}
+diff --git a/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.h b/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.h
+new file mode 100644
+index 0000000..12519f1
+--- /dev/null
++++ b/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.h
+@@ -0,0 +1,33 @@
++// Local browser export extension for OpenAssetTools. GPL-3.0, like OAT.
++#pragma once
++#include "Dumping/AbstractAssetDumper.h"
++#include "Game/T4/T4.h"
++
++namespace web_world
++{
++    class EffectDumperT4 final : public AbstractAssetDumper<T4::AssetFx>
++    {
++        void DumpAsset(AssetDumpingContext& context, const XAssetInfo<T4::FxEffectDef>& asset) override;
++    };
++    class LightDumperT4 final : public AbstractAssetDumper<T4::AssetComWorld>
++    {
++        void DumpAsset(AssetDumpingContext& context, const XAssetInfo<T4::ComWorld>& asset) override;
++    };
++    class DumperT4 final : public AbstractAssetDumper<T4::AssetGfxWorld>
++    {
++    protected:
++        void DumpAsset(AssetDumpingContext& context, const XAssetInfo<T4::GfxWorld>& asset) override;
++    };
++    class PathDumperT4 final : public AbstractAssetDumper<T4::AssetGameWorldSp>
++    {
++        void DumpAsset(AssetDumpingContext& context, const XAssetInfo<T4::GameWorldSp>& asset) override;
++    };
++    class CollisionDumperT4 final : public AbstractAssetDumper<T4::AssetClipMapPvs>
++    {
++        void DumpAsset(AssetDumpingContext& context, const XAssetInfo<T4::clipMap_t>& asset) override;
++    };
++    class SoundDumperT4 final : public AbstractAssetDumper<T4::AssetSound>
++    {
++        void DumpAsset(AssetDumpingContext& context, const XAssetInfo<T4::snd_alias_list_t>& asset) override;
++    };
++}
+diff --git a/src/ObjWriting/XAnim/XAnimDumper.cpp.template b/src/ObjWriting/XAnim/XAnimDumper.cpp.template
+index b9aaf92..6422a47 100644
+--- a/src/ObjWriting/XAnim/XAnimDumper.cpp.template
++++ b/src/ObjWriting/XAnim/XAnimDumper.cpp.template
+@@ -50,6 +50,9 @@
+ #include <optional>
+ #include <string>
+ #include <vector>
++#if defined(FEATURE_T4)
++#include <nlohmann/json.hpp>
++#endif
+ 
+ using namespace xanim;
+ using namespace GAME;
+@@ -279,6 +282,12 @@ namespace xanim
+     void CLASS_NAME::DumpAsset(AssetDumpingContext& context, const XAssetInfo<AssetXAnim::Type>& asset)
+     {
+         const auto& parts = *asset.Asset();
++#if defined(FEATURE_T4)
++        // Browser project: export only the original clips used by the solo runtime.
++        const std::string webName = asset.m_name;
++        const bool webClip = webName.find("ai_zombie_") == 0 || webName.find("viewmodel_") == 0;
++        if (!webClip) return;
++#endif
+ 
+         const auto useByteIndices = UseByteIndices(parts);
+         const auto numLoopFrames = GetNumLoopFrames(parts);
+@@ -344,6 +353,34 @@ namespace xanim
+         commonParts.m_bone_tracks = std::move(maybeBoneTracks).value();
+         commonParts.m_notifies = ConvertNotifies(parts, asset);
+         commonParts.m_delta_track = ConvertDeltaTrack(parts, useByteIndices, numLoopFrames);
++#if defined(FEATURE_T4)
++        using nlohmann::json;
++        json tracks = json::array();
++        for (const auto& t : commonParts.m_bone_tracks) {
++            json q = json::array(), tr = json::array();
++            for (const auto& f : t.m_quat.m_frames) q.push_back(f.value);
++            for (const auto& f : t.m_quat.m_frames2) q.push_back({0,0,f.value[0],f.value[1]});
++            for (const auto& f : t.m_trans.m_frames_u8) tr.push_back(f.value);
++            for (const auto& f : t.m_trans.m_frames_u16) tr.push_back(f.value);
++            tracks.push_back({{"bone", t.m_name}, {"quaternions", q}, {"rotationIndices", t.m_quat.m_indices},
++                {"translationType", static_cast<int>(t.m_trans.m_type)}, {"translations", tr},
++                {"translationIndices", t.m_trans.m_indices}, {"mins", t.m_trans.m_mins},
++                {"size", t.m_trans.m_size}, {"constant", t.m_trans.m_constant}});
++        }
++        auto webFile = context.OpenAssetFile("web-anims/" + webName + ".json");
++        json notifies = json::array();
++        for (const auto& n : commonParts.m_notifies) notifies.push_back({{"name", n.m_name}, {"time", n.m_time}});
++        json delta = nullptr;
++        if(commonParts.m_delta_track && commonParts.m_delta_track->m_trans) {
++            const auto& t=*commonParts.m_delta_track->m_trans; json values=json::array();
++            for(const auto& f:t.m_frames_u8)values.push_back(f.value);
++            for(const auto& f:t.m_frames_u16)values.push_back(f.value);
++            delta={{"indices",t.m_indices},{"values",values},{"mins",t.m_mins},{"size",t.m_size}};
++            if(t.m_constant)delta["constant"]=*t.m_constant;
++        }
++        if (webFile) *webFile << json({{"frames", commonParts.m_num_frames}, {"fps", commonParts.m_frame_rate},
++            {"loop", commonParts.m_looped}, {"tracks", tracks}, {"notifies", notifies},{"delta",delta}}).dump();
++#endif
+ 
+         WriteCompiledXAnim(
+             *assetFile,

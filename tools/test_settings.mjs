@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {GameSettings,GameInput,SETTINGS_KEY,DEFAULT_SETTINGS,bindingName,normalizeSettings} from '../web/settings.js';
+import {MouseControls} from '../web/mouse-controls.js';
+import fs from 'node:fs';
+import {SoloGame} from '../web/game.js';
+import {CollisionWorld} from '../web/collision.js';
+const values=new Map(),storage={getItem:k=>values.get(k),setItem:(k,v)=>values.set(k,v)},settings=new GameSettings(storage),actions=[],input=new GameInput(settings,a=>actions.push(a));
+assert.deepEqual(settings.value,DEFAULT_SETTINGS);input.press('KeyW');assert.equal(input.input().forward,1);input.press('KeyS');assert.equal(input.input().forward,0);input.release('KeyS');input.release('KeyW');
+settings.bind('forward',0,'KeyI');input.press('KeyW');assert.equal(input.input().forward,0);input.press('KeyI');assert.equal(input.input().forward,1);input.reset();assert.deepEqual(input.input(),{forward:0,side:0,sprint:false,jump:false,use:false,fire:false});
+settings.bind('reload',0,'KeyI');assert.equal(settings.value.bindings.forward[0],null);input.press('KeyI');input.press('KeyI',true);assert.deepEqual(actions,['reload']);input.release('KeyI');input.press('KeyI');assert.equal(actions.length,2);
+settings.update('aimMode','toggle');input.press('Mouse2');input.release('Mouse2');assert(input.aiming);input.press('Mouse2');assert(!input.aiming);input.reset();settings.update('aimMode','hold');input.press('Mouse2');assert(input.aiming);input.release('Mouse2');assert(!input.aiming);input.press('KeyX');input.release('KeyX');assert(input.aiming);input.reset();assert(!input.aiming);
+settings.bind('nextWeapon',1,'WheelUp');input.press('WheelUp');input.release('WheelUp');assert.equal(actions.at(-1),'nextWeapon');
+settings.update('sensitivity',12.5);settings.update('adsSensitivity',.25);settings.update('invertY',true);settings.update('fov',90);settings.update('renderScale',70);settings.update('volume',.2);
+const restored=new GameSettings(storage);assert.deepEqual(restored.value,settings.value);assert.equal(JSON.parse(values.get(SETTINGS_KEY)).sensitivity,12.5);
+assert.equal(bindingName('Mouse2'),'MOUSE 2');assert.equal(bindingName('KeyI'),'I');const invalid=normalizeSettings({version:1,sensitivity:100,fov:-50,volume:2,renderScale:NaN,bindings:{fire:['Escape','<script>'],reload:['KeyR','KeyR']}});assert.equal(invalid.sensitivity,30);assert.equal(invalid.fov,60);assert.equal(invalid.volume,1);assert.equal(invalid.renderScale,100);assert.deepEqual(invalid.bindings.fire,[null,null]);assert.deepEqual(invalid.bindings.reload,['KeyR',null]);
+const blocked=new GameSettings({getItem(){throw new Error('blocked');},setItem(){throw new Error('blocked');}});blocked.update('volume',.1);assert.equal(blocked.value.volume,.1);assert.equal(blocked.saved,false);
+settings.resetControls();assert.equal(settings.value.volume,.2);assert.equal(settings.value.fov,90);assert.deepEqual(settings.value.bindings,DEFAULT_SETTINGS.bindings);
+// Mouse rebinding must preserve independent aim/fire release and drag behavior.
+settings.bind('fire',0,'Mouse2');settings.bind('aim',0,'Mouse0');let shots=0;const canvas=new EventTarget(),doc=new EventTarget(),mouse=new MouseControls(canvas,doc,{mode:()=>({playing:true,inputMode:'locked'}),buttons:b=>settings.mouseActions(b),fire:()=>shots++});
+const send=(target,type,button)=>{const e=new Event(type,{cancelable:true});Object.defineProperty(e,'button',{value:button});target.dispatchEvent(e);};send(canvas,'mousedown',0);send(canvas,'mousedown',2);assert(mouse.right&&mouse.firing);assert.equal(shots,1);send(doc,'mouseup',2);assert(mouse.right&&!mouse.firing);send(doc,'mouseup',0);assert(!mouse.right);mouse.reset();
+const read=p=>JSON.parse(fs.readFileSync(new URL('../local-data/'+p,import.meta.url))),manifest=read('gameplay/manifest.json');
+settings.bind('use',0,'KeyK');const game=new SoloGame(manifest,new CollisionWorld(read('nacht/web-world/nazi_zombie_prototype.collision.json'),manifest.entities),read('nacht/web-world/nazi_zombie_prototype.paths.json'),{bindingName:a=>bindingName(settings.value.bindings[a].find(Boolean))});
+game.player.position=[-155,242,2];assert(game.prompt().startsWith('K · Buy Kar98k'),'Wall purchase uses the rebound interaction key');game.nearInteraction=()=>null;game.windows[0].boards=5;game.player.position=game.windows[0].entry.slice();assert.equal(game.prompt(),'Hold K · Rebuild barrier');
+console.log('Settings passed: persisted/validated options, conflict removal, remapped actions and prompts, hold/toggle aim, wheel binding, blocked storage, pause reset and swapped mouse buttons.');
