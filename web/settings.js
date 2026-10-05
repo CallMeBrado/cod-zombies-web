@@ -4,7 +4,7 @@ export const ACTIONS=[
  ['fire','Attack','Combat'],['aim','Aim down sight','Combat'],['aimToggle','Toggle aim','Combat'],['reload','Reload','Combat'],['melee','Melee attack','Combat'],['grenade','Throw / cook grenade','Combat'],['nextWeapon','Switch weapon','Combat'],
  ['use','Use / rebuild / throw back','Other'],['pause','Pause game','Other'],['lookLeft','Look left','Other'],['lookRight','Look right','Other'],['lookUp','Look up','Other'],['lookDown','Look down','Other']
 ];
-export const DEFAULT_SETTINGS={version:1,sensitivity:5,adsSensitivity:.5,invertY:false,aimMode:'hold',volume:.5,fov:65,renderScale:100,bindings:{
+export const DEFAULT_SETTINGS={version:1,sensitivity:5,adsSensitivity:.5,invertY:false,aimMode:'hold',volume:.5,fov:65,renderScale:100,showFps:true,bindings:{
  forward:['KeyW',null],backward:['KeyS',null],left:['KeyA',null],right:['KeyD',null],sprint:['ShiftLeft','ShiftRight'],jump:['Space',null],fire:['Mouse0','KeyF'],aim:['Mouse2',null],aimToggle:['KeyX',null],reload:['KeyR',null],melee:['KeyV',null],grenade:['KeyG',null],nextWeapon:['KeyQ','WheelDown'],use:['KeyE',null],pause:['Escape',null],lookLeft:['ArrowLeft',null],lookRight:['ArrowRight',null],lookUp:['ArrowUp',null],lookDown:['ArrowDown',null]
 }};
 const defaults=()=>structuredClone(DEFAULT_SETTINGS);
@@ -13,7 +13,7 @@ export function bindingName(token){if(!token)return 'UNBOUND';if(token.startsWit
 export function normalizeSettings(saved){
  const out=defaults();if(!saved||saved.version!==1)return out;
  for(const [key,min,max]of [['sensitivity',1,30],['adsSensitivity',.1,1.5],['volume',0,1],['fov',60,100],['renderScale',50,150]])if(Number.isFinite(saved[key]))out[key]=Math.max(min,Math.min(max,saved[key]));
- out.invertY=saved.invertY===true;out.aimMode=saved.aimMode==='toggle'?'toggle':'hold';
+ out.invertY=saved.invertY===true;out.showFps=saved.showFps!==false;out.aimMode=saved.aimMode==='toggle'?'toggle':'hold';
  const used=new Set();for(const [action]of ACTIONS){const keys=Array.isArray(saved.bindings?.[action])?saved.bindings[action]:out.bindings[action];out.bindings[action]=[0,1].map(i=>{const token=keys[i];if(!validBinding(token)||used.has(token)||token==='Escape'&&action!=='pause')return null;used.add(token);return token;});}
  return out;
 }

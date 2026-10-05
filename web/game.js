@@ -2,6 +2,8 @@ import { roundCount, nextHealth, spawnDelay } from './rules.js';
 import { SCORE_POPUP_SECONDS } from './score-hud.js';
 import {FactoryRules} from './map-rules.js';
 export const PHYSICS_STEP=1/120;
+// round_spawning() waits while get_enemy_count() > 31.
+const MAX_ALIVE=32;
 export const NAVIGATION_VERSION='native-triangles-physics-v1';
 // Grenades hit physical surfaces, not the invisible player movement clips
 // that close window openings and simplify traversal around rubble.
@@ -115,7 +117,7 @@ export class SoloGame {
     this.changePoints(-cost);this.emit('sound',{alias:'cha_ching'});return true;
   }
   startRound() {
-    this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai);
+    this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai,this.vars.zombie_ai_per_player,this.mapRules?.soloAiFactor??0);
     this.spawnDue=this.time;this.phase='round';this.barrierReward=0;this.player.grenades=Math.min(4,this.player.grenades+2);
     this.emit('round',this.round);this.emit('sound',{alias:'chalk'});
   }
@@ -455,7 +457,7 @@ export class SoloGame {
     if(this.pendingMelee&&this.time>=this.pendingMelee.due){this.resolveMelee();this.pendingMelee=null;}
     this.updateGesture();
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
-    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<24){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay);}
+    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<MAX_ALIVE){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay);}
     if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead)) {
       this.phase='between';this.roundEndedAt=this.time;this.roundDue=this.time+this.vars.zombie_between_round_time;
       this.emit('sound',{alias:'round_over'});

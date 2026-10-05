@@ -5,6 +5,10 @@ import {CollisionWorld} from '../web/collision.js';
 import {nextHealth,roundCount} from '../web/rules.js';
 const read=p=>JSON.parse(fs.readFileSync(new URL('../local-data/'+p,import.meta.url)));
 const report={};
+// Exact totals from each map's round_spawning() for one player.
+const factory=r=>roundCount(r,24,6,.5);
+assert.deepEqual([1,2,3,4,5,9,10,15,20,30].map(r=>roundCount(r,24,6,0)),[4,9,14,19,24,24,24,24,24,24]);
+assert.deepEqual([1,2,3,4,5,9,10,15,20,30].map(factory),[5,10,16,21,27,29,33,44,60,105]);
 for(const [id,zone,folder]of [['nacht','nazi_zombie_prototype','gameplay'],['der-riese','nazi_zombie_factory','gameplay/der-riese']]){
   const manifest=read(folder+'/manifest.json'),removed=[];
   const g=new TestingGame(manifest,new CollisionWorld(read(id+'/web-world/'+zone+'.collision.json'),manifest.entities),read(id+'/web-world/'+zone+'.paths.json'),{removeEnemy:e=>removed.push(e.id)});
@@ -22,10 +26,10 @@ for(const [id,zone,folder]of [['nacht','nazi_zombie_prototype','gameplay'],['der
   g.setMod('ammo',true);g.weapon.clip=0;g.weapon.reserve=0;g.update(1/120,{});assert.equal(g.weapon.clip,g.weapon.definition.clipSize);assert.equal(g.weapon.reserve,g.weapon.definition.maxAmmo);
   g.setMod('grenades',true);g.player.grenades=0;g.update(1/120,{});assert.equal(g.player.grenades,4);
   g.enemies=[{id:432,dead:false},{id:433,dead:true}];g.windows[0].traverser=g.enemies[0];
-  assert(g.setRound(20));assert.deepEqual(removed,[432,433]);assert.equal(g.enemies.length,0);assert.equal(g.windows[0].traverser,null);assert.equal(g.round,20);assert.equal(g.phase,'round');assert.equal(g.remaining,roundCount(20));
+  assert(g.setRound(20));assert.deepEqual(removed,[432,433]);assert.equal(g.enemies.length,0);assert.equal(g.windows[0].traverser,null);assert.equal(g.round,20);assert.equal(g.phase,'round');assert.equal(g.remaining,roundCount(20,g.vars.zombie_max_ai,g.vars.zombie_ai_per_player,g.mapRules?.soloAiFactor??0));assert.equal(g.remaining,id==='der-riese'?60:24);
   let health=g.vars.zombie_health_start;for(let r=1;r<=20;r++)health=nextHealth(health,r,g.vars);assert.equal(g.zombieHealth,health);
   for(const r of [0,101,1.5,NaN,Infinity])assert(!g.setRound(r));assert.equal(g.round,20);
-  assert(g.setRound(1));assert.equal(g.zombieHealth,g.vars.zombie_health_start);assert.equal(g.remaining,4);
+  assert(g.setRound(1));assert.equal(g.zombieHealth,g.vars.zombie_health_start);assert.equal(g.remaining,id==='der-riese'?5:4);
   g.newGame();assert(g.mods.god===false&&g.mods.points);assert.equal(g.player.points,999999);
   for(const name of Object.keys(g.mods))g.setMod(name,false);g.newGame();assert.equal(g.player.points,500);assert.equal(g.weapon.name,'zombie_colt');assert.equal(g.weapon.clip,8);assert.equal(g.player.health,100);
   g.start();g.damagePlayer(100);assert.equal(g.phase,'dead');assert(!g.setRound(10));

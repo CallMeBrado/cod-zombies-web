@@ -156,6 +156,8 @@ export class FactoryRules {
     }
     this.machineSounds();this.updateUpgrade();
   }
+  // Der Riese's round_spawning adds 0.5*zombie_ai_per_player*multiplier solo.
+  get soloAiFactor(){return .5;}
   get maxHealth(){return this.perks.has('specialty_armorvest')?250:100;}
   get reloadScale(){return this.perks.has('specialty_fastreload')?.5:1;}
   get fireScale(){return this.perks.has('specialty_rof')?.75:1;}

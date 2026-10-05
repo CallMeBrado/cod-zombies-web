@@ -36,7 +36,7 @@ let game,audio,map,weaponView,grenadeView,actors,effects,presentation;
 const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts=[];
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
-let deathFxTime=0;
+let deathFxTime=0,frameMsTotal=0;
 const loops=new Map();let papView=null;
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
@@ -353,7 +353,11 @@ function frame(time) {
   map?.updateVisibility(camera);renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
   if(game&&state.mode==='playing'&&time>=hudDue){hud.draw(game,aimBlend,time<hitTime,camera.fov);hudDue=time+1000/60;}
   if(state.ready&&state.mode==='playing'){frameSamples.push({dt:dt*1000,cpu:performance.now()-began});if(frameSamples.length>600)frameSamples.shift();}
-  frames++;if(time-fpsTime>1000){state.fps=Math.round(frames*1000/(time-fpsTime));$('position').textContent=state.fps+' FPS';frames=0;fpsTime=time;}
+  // Frame counter: FPS and mean CPU frame time, refreshed twice a second.
+  frames++;frameMsTotal+=performance.now()-began;
+  if(time-fpsTime>500){state.fps=Math.round(frames*1000/(time-fpsTime));$('position').textContent=state.fps+' FPS';
+    const counter=$('fps-counter');counter.classList.toggle('on',settings.value.showFps);if(settings.value.showFps)counter.textContent=state.fps+' FPS\n'+(frameMsTotal/frames).toFixed(1)+' ms CPU';
+    frames=0;frameMsTotal=0;fpsTime=time;}
   if(time>=domDue){updateHud();domDue=time+100;}
   requestAnimationFrame(frame);
 }

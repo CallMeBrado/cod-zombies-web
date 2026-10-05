@@ -10,7 +10,7 @@ export class PauseMenu {
   $('reset-controls').onclick=()=>{settings.resetControls();this.setStatus('Controls restored to defaults.');};
   for(const tab of this.tabs){$('tab-'+tab).onclick=()=>this.selectTab(tab);$('tab-'+tab).onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const i=this.tabs.indexOf(tab),next=this.tabs[(i+(e.key==='ArrowRight'?1:3))%4];this.selectTab(next);$('tab-'+next).focus();}};}
   for(const key of ['sensitivity','adsSensitivity','volume','fov','renderScale'])$(key).oninput=()=>settings.update(key,Number($(key).value));
-  $('invertY').onchange=()=>settings.update('invertY',$('invertY').checked);$('aimMode').onchange=()=>settings.update('aimMode',$('aimMode').value);
+  $('invertY').onchange=()=>settings.update('invertY',$('invertY').checked);$('showFps').onchange=()=>settings.update('showFps',$('showFps').checked);$('aimMode').onchange=()=>settings.update('aimMode',$('aimMode').value);
   $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{this.setStatus('Fullscreen is unavailable in this browser.');}};
   this.rows=new Map();let group='';for(const [action,label,category]of ACTIONS){
    if(category!==group){const heading=document.createElement('h3');heading.dataset.menuText='';heading.textContent=category.toUpperCase();$('binding-list').append(heading);group=category;}
@@ -32,7 +32,7 @@ export class PauseMenu {
  setText(id,value){if(this.text)this.text.set($(id),value);else $(id).textContent=value;}
  sync(){const v=this.settings.value;
   for(const key of ['sensitivity','adsSensitivity','volume','fov','renderScale']){$(key).value=v[key];$(key+'-value').textContent=key==='adsSensitivity'?v[key].toFixed(2)+'×':key==='volume'?Math.round(v[key]*100)+'%':key==='renderScale'?v[key]+'%':v[key];}
-  $('invertY').checked=v.invertY;$('aimMode').value=v.aimMode;
+  $('invertY').checked=v.invertY;$('showFps').checked=v.showFps;$('aimMode').value=v.aimMode;
   for(const [action,buttons]of this.rows)buttons.forEach((button,slot)=>{const active=this.capture?.action===action&&this.capture.slot===slot,value=active?'PRESS A KEY':bindingName(v.bindings[action][slot]);if(this.text)this.text.set(button,value);else button.textContent=value;button.setAttribute('aria-label',ACTIONS.find(a=>a[0]===action)[1]+', '+(slot?'secondary':'primary')+', '+value);button.classList.toggle('capturing',active);});
   this.setText('fullscreen',document.fullscreenElement?'EXIT FULLSCREEN':'FULLSCREEN');this.text?.paint();
  }

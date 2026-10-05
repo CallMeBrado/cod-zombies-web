@@ -55,6 +55,7 @@
           <h2 data-menu-text>GRAPHICS SETTINGS</h2>
           <label class="setting-row"><span data-menu-text>Field of view</span><input id="fov" type="range" min="60" max="100" step="1"><output id="fov-value" for="fov"></output></label>
           <label class="setting-row"><span data-menu-text>Render resolution</span><input id="renderScale" type="range" min="50" max="150" step="10"><output id="renderScale-value" for="renderScale"></output></label>
+          <label class="setting-row"><span data-menu-text>Frame counter</span><input id="showFps" type="checkbox"></label>
           <button id="fullscreen" class="small-action" data-menu-text>FULLSCREEN</button>
           <p class="settings-help">Lower render resolution improves performance. Higher values make the image sharper.</p>
         </section>
@@ -85,6 +86,7 @@
     <div class="player-panel"><span class="eyebrow">POINTS</span><strong id="points">500</strong><div class="health"><span id="health-bar"></span></div><small>Health <span id="health">100</span> · Kills <span id="kills">0</span></small></div>
     <div class="weapon-panel"><div id="weapon">Colt M1911</div><strong id="ammo">8</strong><span class="slash"> / </span><span id="reserve">32</span><small>Grenades <span id="grenades">4</span></small></div>
   </div>
+  <div id="fps-counter" aria-hidden="true"></div>
   <footer><span id="stats">Original asset loading</span><span id="input-mode">Mouse capture where supported</span><span id="position"></span></footer>
   <script type="module" src="/runtime/__BUILD__/main.js"></script>
 </body>

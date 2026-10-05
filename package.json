@@ -10,7 +10,7 @@
     "inspect": "python -B tools/inspect_game.py",
     "extract": "python -B tools/extract_game.py",
     "verify": "python -B tools/verify_world.py",
-    "test": "node tools/test_startup.mjs && node tools/test_gameplay.mjs && node tools/test_fidelity.mjs && node tools/test_mouse_controls.mjs && node tools/test_settings.mjs && node tools/test_grenades.mjs && node tools/test_grenade_throwback.mjs && node tools/test_weapon_parts.mjs && node tools/test_runtime_regressions.mjs && node tools/test_score_feedback.mjs && node tools/test_baked_light.mjs && node tools/test_movement_spawn.mjs && node tools/test_spawn_speeds.mjs && node tools/test_save.mjs",
+    "test": "node tools/test_startup.mjs && node tools/test_gameplay.mjs && node tools/test_fidelity.mjs && node tools/test_mouse_controls.mjs && node tools/test_settings.mjs && node tools/test_grenades.mjs && node tools/test_grenade_throwback.mjs && node tools/test_weapon_parts.mjs && node tools/test_runtime_regressions.mjs && node tools/test_score_feedback.mjs && node tools/test_baked_light.mjs && node tools/test_movement_spawn.mjs && node tools/test_spawn_speeds.mjs && node tools/test_save.mjs && node tools/test_testing.mjs",
     "test:startup": "node tools/test_startup.mjs",
     "test:mods": "node tools/test_testing.mjs",
     "test:der-riese": "node tools/test_factory.mjs && node tools/test_factory_paths.mjs"
