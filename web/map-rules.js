@@ -31,6 +31,19 @@ export class FactoryRules {
       (!this.game.spawnRoutes.has(w.target)||this.game.spawnRoutes.get(w.target).choices.length));
   }
   group(window){return this.data.goals[window.target]?.spawners;}
+  // _zombiemode_zone_manager: zones a player occupies, plus adjacent zones
+  // connected by an opened door, enable their spawners (receiver_zone when
+  // the player is in none).
+  enabledSpawners(){
+    const g=this.game,p=g.player.position,point=[p[0],p[1],p[2]+25],enabled=this.activeZones();
+    const inside=v=>v.hulls.some(h=>h.mins.every((m,k)=>point[k]>=m-2)&&h.maxs.every((m,k)=>point[k]<=m+2)&&h.planes.every(pl=>pl[0]*point[0]+pl[1]*point[1]+pl[2]*point[2]<=pl[3]+2));
+    const occupied=new Set(this.data.volumes.filter(v=>enabled.has(v.name)&&inside(v)).map(v=>v.name));
+    if(!occupied.size)occupied.add(this.data.initialZone);
+    const active=new Set(occupied);
+    for(const [a,b,flag]of this.data.connections)if(this.flags.has(flag)){if(occupied.has(a))active.add(b);if(occupied.has(b))active.add(a);}
+    const groups=new Set(this.data.volumes.filter(v=>active.has(v.name)&&enabled.has(v.name)).map(v=>v.spawners));
+    return g.spawnEntities.filter(e=>groups.has(e.targetname));
+  }
   visible(e){
     if(e.script_noteworthy==='electric_door')return false;
     if(e.targetname==='treasure_chest_use')return e.target===this.data.initialBox;

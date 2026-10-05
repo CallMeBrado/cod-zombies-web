@@ -24,7 +24,7 @@ export class TestingGame extends SoloGame {
   setRound(round){
     if(!Number.isInteger(round)||round<1||round>100||['ready','dead'].includes(this.phase))return false;
     for(const enemy of this.enemies)this.emit('removeEnemy',enemy);
-    this.enemies=[];this.windows.forEach(w=>w.traverser=null);
+    this.enemies=[];this.windows.forEach(w=>{w.traverser=null;w.attackers=[];});
     this.round=round-1;this.zombieHealth=this.vars.zombie_health_start;
     for(let r=1;r<round;r++)this.zombieHealth=nextHealth(this.zombieHealth,r,this.vars);
     this.startRound();return true;

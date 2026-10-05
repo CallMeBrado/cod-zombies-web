@@ -44,23 +44,24 @@ for(const window of game.availableWindows()){
  const seconds=walkTo(window.entry);walks.push({window:window.target,position:game.player.position.slice(),seconds});walkTo(start);
 }
 report.startingRoomWalks=walks;
-function distribution(label,position){
- game.player.position=position.slice();game.time+=1;game.targetNodeDue=0;
- const choices=game.spawnCandidates(),total=choices.reduce((n,c)=>n+c.weight,0);
- assert(choices.length,'Reachable spawn candidates in '+label);
- const sorted=choices.map(c=>({window:c.window.target,distance:c.distance,share:c.weight/total,upstairs:c.window.entry[2]>=100})).sort((a,b)=>b.share-a.share);
- assert(sorted[0].distance<=Math.min(...sorted.map(c=>c.distance))+.001,'Nearest reachable entry has the highest spawn weight');
- return {label,position,choices:sorted};
+// Original spawning (round_spawning + zombie_think): a random enabled spawner,
+// then one of the windows nearest that spawner. Nacht ignores player position.
+function spawned(label,position,samples=600){
+ game.player.position=position.slice();const used=new Map();
+ for(let i=0;i<samples;i++){game.remaining=1;game.spawnEnemy();const e=game.enemies.pop();used.set(e.window,(used.get(e.window)||0)+1);}
+ const windows=[...used].map(([w,n])=>({window:w.target,share:+(n/samples).toFixed(3),upstairs:w.entry[2]>=100,help:w.entry[2]<100&&w.entry[1]>700})).sort((a,b)=>b.share-a.share);
+ return {label,windows};
 }
 const first=game.windows.find(w=>w.target==='pf587_auto1'),far=game.windows.find(w=>w.entry[1]<-700&&w.entry[0]<0);
-const west=distribution('west starting window',first.entry),south=distribution('south starting window',far.entry);
-assert.equal(west.choices[0].window,first.target);assert.equal(south.choices[0].window,far.target);assert.notEqual(west.choices[0].window,south.choices[0].window);
-assert(west.choices.every(c=>!c.upstairs)&&west.choices.length<=5,'Locked rooms/floors do not spawn');
+const west=spawned('west starting window',first.entry),south=spawned('south starting window',far.entry);
+for(const d of [west,south]){
+ assert(d.windows.every(w=>!w.upstairs&&!w.help),'Locked rooms/floors do not spawn ('+d.label+')');
+ assert(d.windows.length>=3,'Zombies come from several starting-room windows, not just the nearest one ('+d.label+')');
+ assert(d.windows[0].share<.6,'No single window dominates ('+d.label+')');
+}
 game.player.points=10000;
 for(const e of game.interactions.filter(e=>['zombie_door','zombie_debris'].includes(e.targetname))){game.player.position=[e.position[0],e.position[1],e.position[2]-35];game.use();}
-const helpWindow=game.windows.find(w=>w.entry[2]<100&&w.entry[1]>700),upWindow=game.windows.find(w=>w.entry[2]>=100);
-const help=distribution('Help room',helpWindow.entry),up=distribution('upstairs',upWindow.entry);
-assert.equal(help.choices[0].window,helpWindow.target);assert(up.choices[0].upstairs,'An upstairs player favors an upstairs entry over windows through the ceiling');
-const back=distribution('return to starting room',first.entry);assert.equal(back.choices[0].window,first.target);
-report.spawnPreference=[west,south,help,up,back];
+const back=spawned('starting room with every door open',first.entry);
+assert(back.windows.some(w=>w.help)&&back.windows.some(w=>w.upstairs),'Opened areas add their spawners even while the player stays downstairs');
+report.spawnDistribution=[west,south,back];
 fs.writeFileSync(new URL('../local-data/movement-spawn-verification.json',import.meta.url),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));

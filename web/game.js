@@ -4,7 +4,7 @@ import {FactoryRules} from './map-rules.js';
 export const PHYSICS_STEP=1/120;
 // round_spawning() waits while get_enemy_count() > 31.
 const MAX_ALIVE=32;
-export const NAVIGATION_VERSION='native-triangles-physics-v2';
+export const NAVIGATION_VERSION='native-triangles-physics-v3';
 // Grenades hit physical surfaces, not the invisible player movement clips
 // that close window openings and simplify traversal around rubble.
 export const GRENADE_CONTENTS=1;
@@ -94,7 +94,7 @@ export class SoloGame {
     this.boxes=new Map(this.interactions.filter(e=>e.targetname==='treasure_chest_use').map(e=>[e.target,{entity:e,phase:'closed',weapon:null}]));
     this.mapRules?.reset();
     this.yaw=Math.PI;this.pitch=0;this.ads=0;this.spreadBloom=0;this.moving=false;this.shots=0;this.hits=0;this.nextId=1;this.elapsed=0;
-    this.windows.forEach(w=>{w.boards=6;w.traverser=null;this.emit('barrier',w);});
+    this.windows.forEach(w=>{w.boards=6;w.traverser=null;w.attackers=[];this.emit('barrier',w);});
     this.emit('reset');this.emit('weapon',this.weapon);
   }
   get weapon(){return this.inventory[this.slot];}
@@ -195,11 +195,14 @@ export class SoloGame {
       window.insideNode??=this.nearest(window.entry,true);const node=window.insideNode;
       if(node<0||this.targetNode<0||!Number.isFinite(costs[node]))continue;
       const length=costs[node]+distance(window.entry,this.nodes[node].origin)+distance(this.player.position,this.nodes[this.targetNode].origin);
-      candidates.push({window,distance:length,weight:1/(1+(length/400)**4)});
+      candidates.push({window,distance:length,weight:1/(1+(length/400)**4)/(1+this.queuedAt(window))});
     }
     if(!candidates.length)return this.availableWindows().map(window=>({window,distance:distance(window.entry,this.player.position),weight:1/(1+(distance(window.entry,this.player.position)/400)**4)}));
     return candidates;
   }
+  // Zombies still outside a window (walking up or tearing). Spawns favour
+  // nearby windows but spread out instead of all queueing at the closest one.
+  queuedAt(window){return this.enemies.filter(e=>!e.dead&&e.window===window&&(e.stage==='approach'||e.stage==='barrier')).length;}
   spawnDistances(target){
     const costs=new Float64Array(this.nodes.length).fill(Infinity);if(target<0)return costs;
     const heap=[[0,target]];costs[target]=0;
@@ -234,6 +237,15 @@ export class SoloGame {
       for(const origin of candidates){const route=this.path(origin,window.outside);if(!route.length)continue;choices.push(origin);routes.set(origin.join(','),route);if(choices.length===3)break;}
       this.spawnRoutes.set(window.target,{choices,routes});
     }
+    // zombie_think: a zombie heads for one of the exterior goals nearest its
+    // spawner, so prepare those spawner -> window routes as well.
+    for(const spawner of this.spawnEntities){
+      const origin=vec(spawner.origin),key=origin.join(',');
+      for(const window of this.spawnerWindows(origin)){
+        const prepared=this.spawnRoutes.get(window.target);if(!prepared||prepared.routes.has(key))continue;
+        const route=this.path(origin,window.outside);if(route.length){prepared.choices.push(origin);prepared.routes.set(key,route);}
+      }
+    }
   }
   preparedNavigation(){return {version:NAVIGATION_VERSION,links:[...this.preparedLinkCache],insideNodes:this.windows.map(w=>w.insideNode),routes:[...this.spawnRoutes].map(([target,value])=>[target,{choices:value.choices,routes:[...value.routes]}])};}
   invalidateNavigation(targets){
@@ -247,7 +259,38 @@ export class SoloGame {
       if(changed.some(brush=>brush.mins.every((v,k)=>v<=high[k])&&brush.maxs.every((v,k)=>v>=low[k])))this.linkCache.set(key,this.walkableLink(p,q,true));
     }
   }
+  // zombie_think: the three exterior goals nearest the spawner, stopping where
+  // the next one is more than 500 units farther than the previous.
+  spawnerWindows(origin){
+    const nodes=this.windows.slice().sort((a,b)=>distance(a.outside,origin)-distance(b.outside,origin)).slice(0,3),out=[nodes[0]];
+    for(let i=1;i<nodes.length;i++){if(distance(nodes[i].outside,origin)-distance(nodes[i-1].outside,origin)>500)break;out.push(nodes[i]);}
+    return out.filter(Boolean);
+  }
+  // level.enemy_spawns. Nacht: the initial spawners, plus the help room and
+  // upstairs sets once those open (add_new_zombie_spawners). Der Riese: the
+  // zone manager's occupied and adjacent zones.
+  enabledSpawners(){
+    if(this.mapRules)return this.mapRules.enabledSpawners();
+    const groups=new Set(['zombie_spawner_init']);
+    if(this.opened.has('auto34'))groups.add('zombie_spawner_door');
+    if(this.opened.has('upstairs_blocker'))groups.add('zombie_spawner_upstairs');
+    return this.spawnEntities.filter(e=>groups.has(e.targetname));
+  }
+  holdsSpot(enemy){return !!enemy&&!enemy.dead&&enemy.stage==='barrier'&&enemy.window?.attackers?.[enemy.spot]===enemy;}
   spawnEnemy() {
+    // round_spawning picks a random enabled spawner (not by player distance);
+    // the zombie then takes one of the windows nearest that spawner.
+    const available=new Set(this.availableWindows()),options=[];
+    for(const spawner of this.enabledSpawners()){
+      const origin=vec(spawner.origin),key=origin.join(','),windows=this.spawnerWindows(origin).filter(w=>available.has(w)&&this.spawnRoutes.get(w.target)?.routes.has(key));
+      if(windows.length)options.push({origin,key,windows});
+    }
+    if(options.length){
+      const pick=options[Math.floor(Math.random()*options.length)],window=pick.windows[Math.floor(Math.random()*pick.windows.length)],route=this.spawnRoutes.get(window.target).routes.get(pick.key),gait=this.zombieGait();
+      const enemy={id:this.nextId++,position:pick.origin.slice(),previousPosition:pick.origin.slice(),health:this.zombieHealth,window,stage:'approach',path:route.map(p=>p.slice()),entryDistance:distance(pick.origin,window.outside),attackDue:0,navDue:0,angle:0,dead:false,age:0,spawnTime:this.time,gait:gait.name,speed:gait.speed};
+      this.enemies.push(enemy);this.remaining--;this.emit('spawn',enemy);return;
+    }
+    // Fallback when no enabled spawner has a prepared route (should not happen).
     const candidates=this.spawnCandidates();if(!candidates.length)throw new Error('No accessible original window entry points');
     let pick=Math.random()*candidates.reduce((sum,c)=>sum+c.weight,0),selected=candidates.at(-1);
     for(const candidate of candidates){pick-=candidate.weight;if(pick<0){selected=candidate;break;}}
@@ -301,7 +344,23 @@ export class SoloGame {
     if(enemy.stage==='approach') {
       if(this.advancePath(enemy,dt,enemy.window.outside)){enemy.stage='barrier';enemy.angle=enemy.window.angle;enemy.tear=null;}
     } else if(enemy.stage==='barrier') {
-      enemy.angle=enemy.window.angle;
+      const w=enemy.window;enemy.angle=w.angle;
+      // tear_into_building: a window has three attack spots (in front of the
+      // boards and 28 units either side). Only a zombie holding a spot tears;
+      // the rest wait and retry every 0.5 s.
+      if(w.boards>0&&!this.holdsSpot(enemy)){
+        if(this.time>=(enemy.spotRetry||0)){
+          const free=[0,1,2].filter(i=>!this.holdsSpot(w.attackers?.[i]));
+          if(free.length){enemy.spot=free[Math.floor(Math.random()*free.length)];(w.attackers??=[])[enemy.spot]=enemy;enemy.spotDue=this.time+1.5;enemy.atSpot=false;}
+          else enemy.spotRetry=this.time+.5;
+        }
+        if(!this.holdsSpot(enemy))return;
+      }
+      if(w.boards>0&&!enemy.atSpot){
+        // Walk to the spot first (SetGoalPos + orientdone in the original).
+        const right=[Math.sin(w.angle),-Math.cos(w.angle)],offset=[0,28,-28][enemy.spot],target=[w.outside[0]+right[0]*offset,w.outside[1]+right[1]*offset,w.outside[2]];
+        enemy.path=[];enemy.atSpot=this.advancePath(enemy,dt,target)||this.time>=enemy.spotDue;enemy.angle=w.angle;if(!enemy.atSpot)return;
+      }
       if(enemy.tear){
         const elapsed=this.time-enemy.tear.started;
         if(!enemy.tear.removed&&elapsed>=enemy.tear.hit){enemy.tear.removed=true;if(enemy.window.boards>0){enemy.window.boards--;this.emit('barrier',enemy.window);this.emit('sound',{alias:'remove_boards',volume:.3});}}
@@ -484,6 +543,8 @@ export class SoloGame {
     this.updateGrenades(dt);
     if(this.pendingFire&&this.time+1e-9>=this.sprintExitUntil){this.pendingFire=false;this.fire();}
     if(input.fire&&this.weapon.definition.fireType==='Full Auto')this.fire();
+    // blocker_trigger_think: 0.4 s after use goes down, then one board per second while held.
+    if(input.use&&!this.useHeld)this.rebuildDue=Math.max(this.rebuildDue,this.time+.4);this.useHeld=!!input.use;
     if(input.use&&!this.pendingGrenade&&!this.gesture&&!this.nearGrenade()&&this.time>=this.rebuildDue){const w=this.nearWindow();if(w)this.rebuild(w);}
     for(const drop of this.drops)if(!drop.used&&distance([drop.position[0],drop.position[1],drop.position[2]+40],p.position)<64)this.pickup(drop);
     for(const d of this.drops)if(!d.used&&this.time>=d.expires)this.emit('stopLoop',{id:'drop'+d.id});
@@ -585,7 +646,7 @@ export class SoloGame {
   use() {
     if(this.pendingGrenade||this.gesture)return false;
     const grenade=this.nearGrenade();if(grenade)return this.rethrowGrenade(grenade);
-    const e=this.nearInteraction();if(!e){const w=this.nearWindow();if(w)this.rebuild(w);return;}
+    const e=this.nearInteraction();if(!e)return;
     if(this.mapRules?.use(e))return true;
     let cost=Number(e.zombie_cost);
     if(e.targetname.includes('weapon')) {
@@ -612,7 +673,7 @@ export class SoloGame {
   }
   rebuild(w) {
     if(w.boards>=6||this.time<this.rebuildDue||w.traverser&&!w.traverser.dead)return;
-    const wasOpen=w.boards===0;w.boards++;this.rebuildDue=this.time+.6;this.collision.disabled.delete(w.target);
+    const wasOpen=w.boards===0;w.boards++;this.rebuildDue=this.time+1;this.collision.disabled.delete(w.target);
     if(wasOpen)this.invalidateNavigation([w.target]);
     this.emit('sound',{alias:'repair_boards'});
     if(this.barrierReward<Math.min(500,50*this.round)){this.changePoints(10*(this.powerup.double_points?2:1));this.barrierReward+=10;}

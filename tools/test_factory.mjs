@@ -26,6 +26,14 @@ for(const e of game.interactions.filter(e=>e.script_flag))if(!game.opened.has(e.
 assert.equal(game.mapRules.activeZones().size,new Set(manifest.map.volumes.map(v=>v.name)).size);
 for(const w of game.availableWindows())assert(game.spawnRoutes.get(w.target).choices.length,'Unlocked areas must never select unreachable roof/drop spawns');
 report.spawns={totalBarriers:game.windows.length,preparedBarriers:game.availableWindows().length};
+// Zone manager: occupied zone + connected adjacent zones enable their spawners.
+const spawnPoint=manifest.entities.find(e=>e.targetname==='initial_spawn_points').origin.split(' ').map(Number);
+const groupsAt=position=>{const saved=game.player.position;game.player.position=position;const groups=new Set(game.enabledSpawners().map(e=>e.targetname));game.player.position=saved;return groups;};
+const atSpawn=groupsAt(spawnPoint);assert(atSpawn.has('receiver_zone_spawners')&&atSpawn.has('outside_east_spawners'),'The receiver zone and its connected neighbours spawn');
+assert(![...atSpawn].some(n=>n.startsWith('tp_')||n.startsWith('warehouse')),'Far zones do not spawn while the player is in the receiver');
+const wnuen=manifest.map.volumes.find(v=>v.name==='wnuen_zone').hulls[0],inWnuen=[0,1,2].map(k=>(wnuen.mins[k]+wnuen.maxs[k])/2-(k===2?25:0));
+const atWnuen=groupsAt(inWnuen);assert(atWnuen.has('wnuen_spawners')&&!atWnuen.has('receiver_zone_spawners'),'Moving zones changes which spawners are active');
+report.spawns.zones={receiver:[...atSpawn],wnuen:[...atWnuen]};
 // Advance the gesture and map timelines without running zombies.
 const wait=seconds=>{for(let t=0;t<seconds;t+=1/120){game.time+=1/120;game.updateGesture();game.mapRules.tick();}};
 const sounds=[];game.events.sound=s=>sounds.push(s);
