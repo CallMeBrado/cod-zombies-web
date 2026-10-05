@@ -9,6 +9,16 @@ export const GRENADE_CONTENTS=1;
 const vec=s=>s?.split(/\s+/).map(Number)||[0,0,0];
 const distance=(a,b)=>Math.hypot(...a.map((v,i)=>v-b[i]));
 const lerp=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+// _zombiemode.gsc run cycles; clips a map did not ship are skipped (Nacht has
+// four walks and walk_fast "runs"; Der Riese adds walk_v6-v8 and run_v2/v4).
+export const ZOMBIE_GAITS={
+  walk:['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zombie_walk_v4','ai_zombie_walk_v6','ai_zombie_walk_v7','ai_zombie_walk_v8'],
+  run:['ai_zombie_walk_fast_v1','ai_zombie_walk_fast_v2','ai_zombie_walk_fast_v3','ai_zombie_run_v2','ai_zombie_run_v4'],
+  sprint:['ai_zombie_sprint_v1','ai_zombie_sprint_v2']};
+// Zombies move by the clip's own root motion, so feet match the ground.
+export function gaitSpeed(clip){const motion=clip?.motion;return motion?.length>1&&clip.duration?Math.hypot(motion.at(-1)[1]-motion[0][1],motion.at(-1)[2]-motion[0][2])/clip.duration:37.64;}
+// Distinct movement speeds of the gait clips a map ships, for route checks.
+export function gaitSpeeds(animations){return [...new Set(Object.values(ZOMBIE_GAITS).flat().filter(name=>animations[name]).map(name=>gaitSpeed(animations[name])))].sort((a,b)=>a-b);}
 function rayBox(origin,dir,lo,hi,max) {
   let near=0,far=max;
   for(let i=0;i<3;i++) {
@@ -243,8 +253,17 @@ export class SoloGame {
     const prepared=this.spawnRoutes.get(window.target),spawns=prepared?.choices?.length?prepared.choices:this.spawnPoints.slice().sort((a,b)=>distance(a,window.outside)-distance(b,window.outside));
     const origin=spawns[Math.floor(Math.random()*Math.min(3,spawns.length))].slice();
     const route=prepared?.routes.get(origin.join(','));
-    const enemy={id:this.nextId++,position:origin,previousPosition:origin.slice(),health:this.zombieHealth,window,stage:'approach',path:route?route.map(p=>p.slice()):this.path(origin,window.outside),entryDistance:selected.distance,attackDue:0,navDue:0,angle:0,dead:false,age:0,spawnTime:this.time,speed:Math.min(145,42+this.round*5)};
+    const gait=this.zombieGait();
+    const enemy={id:this.nextId++,position:origin,previousPosition:origin.slice(),health:this.zombieHealth,window,stage:'approach',path:route?route.map(p=>p.slice()):this.path(origin,window.outside),entryDistance:selected.distance,attackDue:0,navDue:0,angle:0,dead:false,age:0,spawnTime:this.time,gait:gait.name,speed:gait.speed};
     this.enemies.push(enemy);this.remaining--;this.emit('spawn',enemy);
+  }
+  zombieGait(){
+    // set_run_speed(): level.zombie_move_speed is 1 in round 1, then the
+    // previous round number * 8; a roll of <=35 walks, <=70 runs, else sprints.
+    const base=this.round<=1?1:(this.round-1)*8,roll=base+Math.floor(Math.random()*35);
+    const kind=roll<=35?'walk':roll<=70?'run':'sprint',animations=this.presentation.animations||{};
+    const names=ZOMBIE_GAITS[kind].filter(name=>animations[name]),name=names[Math.floor(Math.random()*names.length)]||'ai_zombie_walk_v1';
+    return {name,speed:gaitSpeed(animations[name])};
   }
   advancePath(enemy,dt,target) {
     let destination=enemy.path[0]||target,dx=destination[0]-enemy.position[0],dy=destination[1]-enemy.position[1],length=Math.hypot(dx,dy);
@@ -252,7 +271,26 @@ export class SoloGame {
     if(length<1&&Math.abs(destination[2]-enemy.position[2])<18)return true;
     enemy.angle=Math.atan2(dy,dx);const step=Math.min(enemy.speed*dt,length);
     enemy.velocityZ=(enemy.velocityZ||0)-800*dt;
-    const previous=enemy.position,result=this.collision.step(previous,[length?dx/length*step:0,length?dy/length*step:0,enemy.velocityZ*dt],[14,14,35]);
+    // Some slope seams trap an actor in a tiny slide-and-drop loop at certain
+    // step lengths. With no progress toward the waypoint for half a second,
+    // angle 60 degrees off to one side briefly, alternating sides.
+    enemy.moveClock=(enemy.moveClock||0)+dt;
+    if(enemy.moveClock>=(enemy.progressDue||0)){
+      const same=enemy.progressPoint&&Math.hypot(enemy.progressPoint[0]-destination[0],enemy.progressPoint[1]-destination[1])<1;
+      if(same&&enemy.progressDistance-length<enemy.speed*.5*.25){enemy.detourUntil=enemy.moveClock+.35;enemy.detourSide=enemy.detourSide>0?-1:1;}
+      enemy.progressPoint=destination.slice(0,2);enemy.progressDistance=length;enemy.progressDue=enemy.moveClock+.5;
+    }
+    if(enemy.moveClock<(enemy.detourUntil||0)&&length>step){
+      const turn=enemy.detourSide*Math.PI/3,c=Math.cos(turn),s=Math.sin(turn);[dx,dy]=[dx*c-dy*s,dx*s+dy*c];
+    }
+    const previous=enemy.position;let result=this.collision.step(previous,[length?dx/length*step:0,length?dy/length*step:0,enemy.velocityZ*dt],[14,14,35]);
+    // Slow walk clips move ~0.2 units per tick, below the step-up tolerances;
+    // when that is blocked, retry with a run-sized step that clears the ledge.
+    const moved=r=>Math.hypot(r.position[0]-previous[0],r.position[1]-previous[1]);
+    if(step<.5&&length>step&&moved(result)<step*.5){
+      const amount=Math.min(1.2,length),attempt=this.collision.step(previous,[dx/length*amount,dy/length*amount,enemy.velocityZ*dt],[14,14,35]);
+      if(moved(attempt)>amount*.5)result=attempt;
+    }
     enemy.position=result.position;if(result.grounded)enemy.velocityZ=0;
     return Math.hypot(enemy.position[0]-target[0],enemy.position[1]-target[1])<1&&Math.abs(enemy.position[2]-target[2])<18;
   }
@@ -304,7 +342,12 @@ export class SoloGame {
     } else if(enemy.stage==='hunt') {
       const player=this.player.position;
       if(this.time>=(enemy.sightDue||0)){
-        enemy.clear=this.walkableLink(enemy.position,player);
+        // A single blocked check (a prop corner or step edge) must not flip a
+        // chasing zombie onto a graph route and back; require two in a row.
+        const sight=this.walkableLink(enemy.position,player);enemy.blocked=sight?0:(enemy.blocked||0)+1;
+        const clear=sight||!!enemy.clear&&enemy.blocked<2;
+        if(enemy.clear&&!clear)enemy.navDue=0;
+        enemy.clear=clear;
         // Keep ten checks per second per actor, distributed across physics
         // ticks instead of making a whole wave perform them in one frame.
         const phase=(enemy.id%12)*PHYSICS_STEP;enemy.sightDue=(Math.floor((this.time-phase)/.1)+1)*.1+phase;
@@ -316,9 +359,35 @@ export class SoloGame {
         if(this.time>=enemy.attackDue){this.damagePlayer(50);enemy.attackDue=this.time+1.1;}
       } else if(clear){enemy.path=[];this.advancePath(enemy,dt,player);}
       else {
-        if(this.time>=enemy.navDue){enemy.path=this.path(enemy.position,player,true);enemy.navDue=this.time+1.25+enemy.id%5*.03;}
+        // Route on losing sight, and again shortly after finishing a route,
+        // instead of standing until the next 1.25 s refresh.
+        if(this.time>=enemy.navDue||!enemy.path.length&&this.time>=(enemy.retryDue||0)){
+          enemy.path=this.path(enemy.position,player,true);enemy.navDue=this.time+1.25+enemy.id%5*.03;enemy.retryDue=this.time+.25;
+          // Routes begin at the nearest reachable node, often behind a zombie
+          // already moving toward the player; skip nodes it can walk past.
+          for(let i=0;i<3&&enemy.path.length>1&&this.walkableLink(enemy.position,enemy.path[1]);i++)enemy.path.shift();
+        }
         if(enemy.path.length)this.advancePath(enemy,dt,enemy.path[enemy.path.length-1]);
       }
+    }
+  }
+  separateZombies(dt){
+    // Hunting zombies keep body room (two 14-unit hull radii) instead of
+    // stacking into one model when trained. Window queues stay as they were:
+    // approach/barrier/traverse stages rely on reaching exact marks.
+    const hunters=this.enemies.filter(e=>!e.dead&&e.stage==='hunt');if(hunters.length<2)return;
+    const push=new Map(),radius=28,rate=Math.min(1,dt*12);
+    for(let i=0;i<hunters.length;i++)for(let j=i+1;j<hunters.length;j++){
+      const a=hunters[i],b=hunters[j];if(Math.abs(a.position[2]-b.position[2])>48)continue;
+      let dx=b.position[0]-a.position[0],dy=b.position[1]-a.position[1],d=Math.hypot(dx,dy);if(d>=radius)continue;
+      if(d<.01){const angle=(a.id*7+b.id*13)%360*Math.PI/180;dx=Math.cos(angle);dy=Math.sin(angle);d=1;}else{dx/=d;dy/=d;}
+      const amount=(radius-Math.max(d,.01))*.5*rate;
+      for(const [e,sign] of [[a,-1],[b,1]]){const p=push.get(e)||[0,0];p[0]+=dx*amount*sign;p[1]+=dy*amount*sign;push.set(e,p);}
+    }
+    for(const [e,p] of push){
+      const length=Math.hypot(p[0],p[1]);if(length<.02)continue;const scale=Math.min(1,2/length);
+      // Through the collision world, so a shove never puts a zombie in a wall.
+      e.position=this.collision.step(e.position,[p[0]*scale,p[1]*scale,0],[14,14,35]).position;
     }
   }
   damagePlayer(amount) {
@@ -369,6 +438,7 @@ export class SoloGame {
     if(p.position[2]<-600)this.damagePlayer(100);
     if(this.time-this.lastDamage>3)p.health=Math.min(this.mapRules?.maxHealth||100,p.health+30*dt);
     for(const enemy of this.enemies)this.tickEnemy(enemy,dt);
+    this.separateZombies(dt);
     this.updateGrenades(dt);
     if(this.pendingFire&&this.time+1e-9>=this.sprintExitUntil){this.pendingFire=false;this.fire();}
     if(input.fire&&this.weapon.definition.fireType==='Full Auto')this.fire();

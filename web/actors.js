@@ -35,7 +35,7 @@ export class ZombieActors {
   }
   updateOne(v,dt,position){
     const e=v.enemy;v.root.position.fromArray(position);v.root.rotation.z=e.angle;
-    let name='ai_zombie_walk_v1',started=null;
+    let name=v.actions.has(e.gait)?e.gait:'ai_zombie_walk_v1',started=null;
     if(e.dead)name='ai_zombie_death_v1';
     else if(e.stage==='traverse')name=e.traverseAnim;
     else if(e.stage==='barrier'){name=e.tear?.name||'ai_zombie_idle_v1';started=e.tear?.started??null;}
@@ -46,7 +46,9 @@ export class ZombieActors {
       action.paused=!!e.tear||e.stage==='traverse';
       if(e.tear)action.time=Math.min(action.getClip().duration,e.age-(e.tear.started-e.spawnTime));
       if(e.stage==='traverse')action.time=e.traverseTime;
-      if(name==='ai_zombie_walk_v1')action.setEffectiveTimeScale(e.speed/37.64);
+      // Movement speed comes from the gait clip's root motion; only an
+      // actor without a gait (old tests) still stretches the default walk.
+      if(name==='ai_zombie_walk_v1'&&!e.gait)action.setEffectiveTimeScale(e.speed/37.64);
     }
     v.mixer.update(dt);
   }

@@ -65,13 +65,18 @@ function menu(title,description,button='Resume game') {
 }
 function keyName(action){return bindingName(settings.value.bindings[action].find(Boolean));}
 function openMods(){if(state.mode!=='playing')return;menu('Paused',mapChoice.title);testingMenu.sync();pauseMenu.show('mods');}
-function inputHint(){const fire=settings.value.bindings.fire.filter(Boolean).map(bindingName).join(' / ')||'UNBOUND';$('input-mode').textContent=(state.inputMode==='locked'?'Mouse to look':state.inputMode==='drag'?'Drag to look':'Mouse capture where supported')+' · '+fire+' fire';}
+function inputHint(){const fire=settings.value.bindings.fire.filter(Boolean).map(bindingName).join(' / ')||'UNBOUND';$('input-mode').textContent=(state.inputMode==='locked'?'Mouse to look':state.inputMode==='drag'?(state.lockUnsupported?'Drag to look':'Click to capture mouse'):'Mouse capture where supported')+' · '+fire+' fire';}
 function enableDrag(){if(state.mode==='menu'||state.mode==='dead')return;state.inputMode='drag';canvas.focus();inputHint();}
+// Browsers refuse capture requested from Esc (closing the mods/pause menu) and
+// briefly after the cursor was released. Only a refused click well after that
+// means capture is unavailable (embedded previews); then drag-to-look stays.
+function requestMouse(source){state.lockSource=source;try{const result=canvas.requestPointerLock();if(result?.catch)result.catch(lockRefused);}catch{lockRefused();}}
+function lockRefused(){if(state.lockSource==='click'&&performance.now()-(state.lockLostAt||-Infinity)>1500)state.lockUnsupported=true;enableDrag();}
 async function enterPlay() {
   if(state.mode==='starting')return;
   paused=true;state.mode='starting';$('play').disabled=true;controls.reset();mouse.reset();canvas.focus();
   const soundReady=audio.start();
-  try{const result=canvas.requestPointerLock();if(result?.catch)result.catch(enableDrag);}catch{enableDrag();}
+  requestMouse('resume');
   try{
     await soundReady;paused=false;state.mode='playing';document.body.classList.add('playing');game.start();
     if(game.pendingGrenade?.cooking&&!settings.held('grenade',controls.tokens))game.releaseGrenade();
@@ -214,10 +219,16 @@ async function init() {
 }
 $('play').addEventListener('click',()=>{if(!state.ready)return;if(game.phase==='dead'){game.newGame();resetVisuals();}enterPlay();});
 document.addEventListener('pointerlockchange',()=>{
-  if(document.pointerLockElement===canvas){state.inputMode='locked';canvas.focus();inputHint();}
-  else if(state.inputMode==='locked'){state.inputMode='idle';if(state.mode==='playing')menu('Paused','Your session is paused. Resume when you’re ready.');}
+  if(document.pointerLockElement===canvas){state.inputMode='locked';state.lockUnsupported=false;canvas.focus();inputHint();}
+  else if(state.inputMode==='locked'){state.inputMode='idle';state.lockLostAt=performance.now();if(state.mode==='playing')menu('Paused','Your session is paused. Resume when you’re ready.');}
 });
-document.addEventListener('pointerlockerror',enableDrag);
+document.addEventListener('pointerlockerror',lockRefused);
+// Capture phase runs before the fire/aim handlers: an uncaptured click
+// recaptures the mouse instead of firing.
+canvas.addEventListener('mousedown',event=>{
+  if(state.mode!=='playing'||document.pointerLockElement===canvas||state.lockUnsupported)return;
+  event.preventDefault();event.stopImmediatePropagation();requestMouse('click');
+},{capture:true});
 document.addEventListener('mousemove',event=>{
   if(state.mode!=='playing'||(state.inputMode!=='locked'&&!(state.inputMode==='drag'&&mouse.dragging)))return;
   mouse.move(event.movementX,event.movementY);

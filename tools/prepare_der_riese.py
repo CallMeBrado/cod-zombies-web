@@ -176,6 +176,8 @@ def prepare():
                        'boxWeapons':names,'initialBox':'magic_box_lid_0'}}
     (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
     (OUTPUT/'presentation.json').write_bytes((DATA/'gameplay/presentation.json').read_bytes())
+    from prepare_fidelity import add_animations, DER_RIESE_GAITS
+    add_animations(OUTPUT/'presentation.json', 'der-riese', DER_RIESE_GAITS)
     print(json.dumps({'entities':len(entities),'barriers':len(goals),'weapons':len(weapons),'texturesRecovered':len(wanted),'sounds':sum(len(v) for v in sounds.values())}))
 
 

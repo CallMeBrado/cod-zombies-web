@@ -10,17 +10,28 @@ GAME = Path(r'E:\SteamLibrary\steamapps\common\Call of Duty World at War')
 ANIMS = ['ai_zombie_walk_v1', 'ai_zombie_attack_v1', 'ai_zombie_death_v1', 'ai_zombie_idle_v1',
          'ai_zombie_traverse_v1', 'ai_zombie_traverse_v2',
          'ai_zombie_door_tear_low', 'ai_zombie_door_tear_high', 'ai_zombie_door_tear_left', 'ai_zombie_door_tear_right']
+# _zombiemode.gsc walk/run/sprint cycles. Der Riese adds slower walks and real runs.
+GAITS = ['ai_zombie_walk_v2', 'ai_zombie_walk_v3', 'ai_zombie_walk_v4',
+         'ai_zombie_walk_fast_v1', 'ai_zombie_walk_fast_v2', 'ai_zombie_walk_fast_v3',
+         'ai_zombie_sprint_v1', 'ai_zombie_sprint_v2']
+DER_RIESE_GAITS = ['ai_zombie_walk_v6', 'ai_zombie_walk_v7', 'ai_zombie_walk_v8', 'ai_zombie_run_v2', 'ai_zombie_run_v4']
+
+def animation(zone, name):
+    d = json.loads((DATA / zone / 'web-anims' / (name+'.json')).read_text())
+    delta = d.get('delta')
+    motion = []
+    if delta and delta['values']:
+        motion = [[index/d['fps'], *[delta['mins'][k]+value[k]*delta['size'][k] for k in range(3)]]
+                  for index,value in zip(delta['indices'],delta['values'])]
+    return {'duration':d['frames']/d['fps'], 'notifies':d['notifies'], 'motion':motion}
+
+def add_animations(path, zone, names):
+    result = json.loads(path.read_text())
+    for name in names: result['animations'][name] = animation(zone, name)
+    path.write_text(json.dumps(result,separators=(',',':')))
 
 def prepare():
-    animations = {}
-    for name in ANIMS:
-        d = json.loads((DATA / 'nacht/web-anims' / (name+'.json')).read_text())
-        delta = d.get('delta')
-        motion = []
-        if delta and delta['values']:
-            motion = [[index/d['fps'], *[delta['mins'][k]+value[k]*delta['size'][k] for k in range(3)]]
-                      for index,value in zip(delta['indices'],delta['values'])]
-        animations[name] = {'duration':d['frames']/d['fps'], 'notifies':d['notifies'], 'motion':motion}
+    animations = {name:animation('nacht', name) for name in ANIMS+GAITS}
     effects = {}
     grenade_effects = ['explosions/grenadeexp_concrete','explosions/fx_grenade_flash']
     sources = list((DATA / 'nacht/web-fx').rglob('*.json')) + [DATA / 'common/web-fx' / (name+'.json') for name in grenade_effects]
