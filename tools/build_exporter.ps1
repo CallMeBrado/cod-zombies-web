@@ -14,7 +14,9 @@ Push-Location $taskSourceRoot
 try {
     & $taskPremake vs2026
     if ($LASTEXITCODE -ne 0) { throw 'Project generation failed.' }
-    $taskSolutionProperty = '/p:SolutionDir=' + (Join-Path $taskSourceRoot 'build') + '\'
+    # Forward slashes: Windows PowerShell lets a trailing backslash escape the
+    # quote it adds around this space-containing argument, corrupting SolutionDir.
+    $taskSolutionProperty = '/p:SolutionDir=' + ((Join-Path $taskSourceRoot 'build') -replace '\\','/') + '/'
     foreach ($taskName in @('RawTemplater','ZoneCodeGenerator','ZoneCode','UnlinkerCli')) {
         & $taskMSBuild "build\src\$taskName\$taskName.vcxproj" /m:4 /p:Configuration=Release /p:Platform=Win32 $taskSolutionProperty /nologo /verbosity:minimal
         if ($LASTEXITCODE -ne 0) { throw "Exporter build failed in $taskName." }

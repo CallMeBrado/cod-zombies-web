@@ -37,7 +37,7 @@ const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
 let deathFxTime=0,frameMsTotal=0;
-const loops=new Map();let papView=null;
+const loops=new Map();let papView=null,shake=null;
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
   ({reload:()=>game.reload(),melee:()=>{if(controls.aiming)openMods();else game.melee();},use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
@@ -239,7 +239,7 @@ function updateAudio(){
   audio.listen(camera.position.toArray(),forward);
   // Machine loops (rollers hum, take-it timer) live at the machine; restart
   // one if the audio session cut it (death, resume).
-  if(audio.context?.state==='running'&&game.phase!=='dead')for(const l of loops.values())if(!l.record||l.record.ended)l.record=audio.play(l.spec.alias,1,{...l.spec,loop:true});
+  if(audio.context?.state==='running'&&game.phase!=='dead')for(const l of loops.values())if(audio.sounds[l.spec.alias]&&(!l.record||l.record.ended))l.record=audio.play(l.spec.alias,1,{...l.spec,loop:true});
 }
 async function init() {
   const began=performance.now();
@@ -260,7 +260,10 @@ async function init() {
     removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
     traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),damage:()=>{damageFlash=1;},death,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
-    loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},stopLoop:({id})=>{loops.get(id)?.record?.stop(.05);loops.delete(id);},sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
+    loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
+    effect:e=>{const root=effects.create(e.name,game.time);root.position.fromArray(e.position);scene.add(root);bursts.push({root,due:game.time+e.duration});},
+    // Earthquake(): strength falls off with distance from the source.
+    shake:e=>{const d=camera.position.distanceTo(new THREE.Vector3(...e.position));if(d<e.radius)shake={until:game.time+e.duration,amplitude:e.amplitude*(1-d/e.radius)};},stopLoop:({id})=>{loops.get(id)?.record?.stop(.05);loops.delete(id);},sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
@@ -326,7 +329,7 @@ function frame(time) {
   const began=performance.now();
   const dt=Math.max(0,Math.min((time-frameTime)/1000,.1));frameTime=time;
   if(!paused)mouse.update(time);
-  if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);}cameraPose();if(game)game.ads=aimBlend;
+  if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){kickPitch+=(Math.random()-.5)*shake.amplitude*.04;kickYaw+=(Math.random()-.5)*shake.amplitude*.04;}}cameraPose();if(game)game.ads=aimBlend;
   if(game&&!paused&&state.mode==='playing')game.update(dt,input());
   const aimHeld=controls.aiming&&!game?.pendingGrenade&&!game?.gesture;
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;

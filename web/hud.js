@@ -26,7 +26,16 @@ export class OriginalHud {
       if(name.startsWith('chalk')||name.startsWith('scorebar')){
         const tint=document.createElement('canvas');tint.width=image.width;tint.height=image.height;const ctx=tint.getContext('2d');ctx.drawImage(image,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle=name.startsWith('chalk')?'#ffffff':'#6c0100';ctx.fillRect(0,0,tint.width,tint.height);this.images.set(name,tint);
       }else this.images.set(name,image);
-    }));this.ready=true;
+    }));
+    // _zombiemode_timer.gsc stopwatch art is Der Riese's; Nacht never shows it.
+    await Promise.all(['zombie_stopwatch','zombie_stopwatchneedle','zombie_stopwatch_glass'].map(name=>loadImage('/data/gameplay/hud/'+name+'.png').then(image=>this.images.set(name,image),()=>{})));
+    this.ready=true;
+  }
+  // start_timer(): a 96x96 stopwatch at (10,20) whose needle shows the seconds
+  // remaining on a 60-second dial, under its glass.
+  stopwatch(ctx,remaining){
+    const x=10,y=20,size=96,face=this.images.get('zombie_stopwatch'),needle=this.images.get('zombie_stopwatchneedle'),glass=this.images.get('zombie_stopwatch_glass');if(!face||!needle)return;
+    ctx.drawImage(face,x,y,size,size);ctx.save();ctx.translate(x+size/2,y+size/2);ctx.rotate(remaining/60*Math.PI*2);ctx.drawImage(needle,-size/2,-size/2,size,size);ctx.restore();if(glass)ctx.drawImage(glass,x,y,size,size);
   }
   text(value,x,y,size=20,align='left',color=null,ctx=this.ctx) {
     const atlas=this.tintedAtlases.get(color)||this.atlas;
@@ -45,7 +54,8 @@ export class OriginalHud {
     ctx.globalAlpha=indicator.alpha;ctx.drawImage(this.roundLayer,10,406);
     ctx.globalAlpha=1;
     if(game.mapRules){let slot=0;for(const perk of game.mapRules.perks)if(perkIcons[perk])image(perkIcons[perk],10+slot++*30,382,24,24);
-      if(game.mapRules.linkPending)this.text('LINK TO MAINFRAME · '+Math.ceil(game.mapRules.linkPending.due-game.time)+'s',W/2,40,16,'center');}
+      // teleport_pad_countdown runs the timer for time+1 (31 s) for VO sync.
+      if(game.mapRules.linkPending)this.stopwatch(ctx,Math.max(0,game.mapRules.linkPending.started+31-game.time));}
     image('ammocounterback',W-145,429,128,32);image('scorebar_zom_1',W-105,378,94,16);
     this.text(game.player.points,W-96,390,21);
     for(const popup of game.scorePopups){const state=scorePopupState(popup,game.time);if(!state)continue;

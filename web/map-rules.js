@@ -6,6 +6,8 @@ const JINGLES={mx_jugger_jingle:'jugger',mx_speed_jingle:'speed',mx_doubletap_ji
 // per kind of sound: music carries across nearby rooms, machinery is local.
 const RANGE={music:{near:150,far:1400},machine:{near:80,far:900},hum:{near:40,far:420},tick:{near:60,far:700},pa:{near:250,far:1800}};
 const PAP_TIMEOUT=15;
+// play_devil_dialog lines for each powerup grab.
+const ANNOUNCER={full_ammo:'ma_vox',insta_kill:'insta_vox',double_points:'dp_vox',nuke:'nuke_vox',carpenter:'carp_vox'};
 const between=(a,b)=>a+Math.random()*(b-a);
 
 // Map-specific interactions and zone connections recovered from the factory
@@ -87,7 +89,10 @@ export class FactoryRules {
     }
     if(key==='trigger_teleport_core'){
       // pa_countdown_success: a PA buzz, then the pad's activation announcement.
-      if(this.linkPending&&g.time<this.linkPending.due){const id=this.linkPending.id;this.links.add(id);this.linkPending=null;this.pa('pa_buzz');this.later(1.2,()=>this.pa('pa_audio_act_pad_'+id,true));g.message('Teleporter linked · '+this.links.size+' / 3');if(this.links.size===3){this.openTarget('pack_door');this.openTarget('pack_door_clip');}}return true;
+      if(this.linkPending&&g.time<this.linkPending.due){const id=this.linkPending.id;this.links.add(id);this.linkPending=null;this.pa('pa_buzz');this.later(1.2,()=>this.pa('pa_audio_act_pad_'+id,true));
+        // "Auto teleport the first time": after the pad's wire lights up, player_teleporting
+        // waits teleport_delay (2 s) and 2 s more, then drops a special powerup by the fence.
+        const drop=g.entities.find(e=>e.targetname==='teleporter_powerup');if(drop)this.later(this.wireSteps(id)*.1+4,()=>this.specialDrop(position(drop)));g.message('Teleporter linked · '+this.links.size+' / 3');if(this.links.size===3){this.openTarget('pack_door');this.openTarget('pack_door_clip');}}return true;
     }
     if(key==='zombie_vending_upgrade'){
       if(this.pap){if(this.pap.phase==='ready')this.takeUpgrade();return true;}
@@ -111,6 +116,25 @@ export class FactoryRules {
   loadState(s){if(!s)return;this.power=s.power;this.flags=new Set(s.flags);this.perks=new Set(s.perks);this.links=new Set(s.links);}
   // PA system speakers (pa_system structs); a speaker says one dialog line at a time.
   pa(alias,dialog=false){(this.speakers??=this.game.entities.filter(e=>e.targetname==='pa_system').map(position)).forEach((at,i)=>this.sound(alias,at,RANGE.pa,dialog?'pa'+i:undefined));}
+  wireSteps(id){let steps=0,node=this.game.entities.find(e=>e.targetname==='pad_'+id+'_wire');
+    while(node?.target&&steps<200){node=this.game.entities.find(e=>e.targetname===node.target);steps++;}return steps;}
+  // special_powerup_drop / special_drop_setup: always a powerup through round
+  // 10; later any special drop, with "nothing" increasingly likely after 15.
+  specialDrop(at){
+    const g=this.game,round=g.round,types=Object.keys(g.presentation.powerups||{});
+    let type=round<=10?g.nextPowerup():[...types,'dog'][Math.floor(Math.random()*(types.length+1))];
+    if(round>15&&Math.random()*100<(round-15)*5)type='nothing';
+    if(type==='full_ammo'&&round>10&&Math.random()*100<(round-10)*5)type=types[Math.floor(Math.random()*types.length)];
+    // Hellhounds are not in this build; their special drop yields nothing.
+    if(type==='dog')type=round>=15?'nothing':g.nextPowerup();
+    const fx=[at[0],at[1],at[2]+40];
+    g.emit('effect',{name:'maps/zombie/fx_zombie_dog_lightning_buildup',position:fx,duration:2});this.sound('pre_spawn',fx,RANGE.music);
+    this.later(1.5,()=>{
+      this.sound('bolt',fx,RANGE.music);this.sound('spawn',fx,RANGE.music);g.emit('shake',{position:fx,amplitude:.5,duration:.75,radius:1000});
+      if(type==='nothing')this.later(1,()=>g.emit('sound',{alias:'sam_nospawn'}));else g.addDrop(type,at);
+    });
+  }
+  get announcer(){return ANNOUNCER;}
   later(delay,run){this.pending.push({at:this.game.time+delay,run});}
   sound(alias,position,range,exclusive){this.game.emit('sound',{alias,position,...range,exclusive});}
   takeUpgrade(){

@@ -49,6 +49,11 @@ for(let id=0;id<3;id++){
   // Linking plays the PA buzz and announcement from the speakers, never the purchase sound.
   assert(!sounds.some(s=>/cha_ching/.test(s.alias)),'Linking a teleporter is not a purchase');assert(sounds.some(s=>s.alias==='pa_buzz'&&s.position));
   wait(1.3);assert(sounds.some(s=>s.alias==='pa_audio_act_pad_'+id&&s.position));
+  // player_teleporting's special drop: lightning by the spawn fence, then a powerup.
+  const fence=game.entities.find(e=>e.targetname==='teleporter_powerup').origin.split(' ').map(Number),effects=[];game.events.effect=e=>effects.push(e.name);
+  const before=game.drops.length;wait(game.mapRules.wireSteps(id)*.1+4+1.6-1.3);
+  assert(effects.includes('maps/zombie/fx_zombie_dog_lightning_buildup'),'Linking strikes lightning by the fence');assert(sounds.some(s=>s.alias==='bolt'&&s.position));
+  assert.equal(game.drops.length,before+1,'Linking a teleporter drops a powerup through round 10');assert(Math.hypot(game.drops.at(-1).position[0]-fence[0],game.drops.at(-1).position[1]-fence[1])<1);
 }
 assert(game.collision.disabled.has('pack_door_clip'));
 const pap=game.interactions.find(e=>e.targetname==='zombie_vending_upgrade');wait(.1);

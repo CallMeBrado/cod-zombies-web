@@ -37,6 +37,11 @@ PERK_SOUNDS = ['mx_jugger_sting', 'mx_speed_sting', 'mx_doubletap_sting', 'mx_re
 # nazi_zombie_factory_amb.csc PA system: teleporter link countdown, success and failure.
 TELEPORTER_SOUNDS = ['pa_buzz', 'pa_audio_link_start', 'pa_audio_link_fail', 'clock_tick_1sec',
                      *[f'pa_audio_link_{n}' for n in (20, 15, *range(10, 0, -1))], *[f'pa_audio_act_pad_{i}' for i in range(3)]]
+# _zombiemode_powerups.gsc special_drop_setup (teleporter drop) and the carpenter.
+POWERUP_SOUNDS = ['pre_spawn', 'bolt', 'spawn', 'spawn_powerup', 'spawn_powerup_loop', 'sam_nospawn', 'carp_loop', 'carp_end', 'carp_vox', 'ma_vox', 'insta_vox', 'dp_vox', 'nuke_vox']
+DER_RIESE_EFFECTS = ['maps/zombie/fx_zombie_dog_lightning_buildup', 'maps/zombie/fx_zombie_dog_lightning_spawn']
+# _zombiemode_timer.gsc stopwatch shown during a teleporter link countdown.
+HUD_IMAGES = ['zombie_stopwatch', 'zombie_stopwatchneedle', 'zombie_stopwatch_glass']
 
 
 def convert_sounds(aliases, sounds):
@@ -70,10 +75,22 @@ def convert_sounds(aliases, sounds):
 
 def add_perk_assets(manifest):
     gestures = {key: {**weapon(name, GESTURE_FIELDS), 'name': name} for key, name in GESTURES.items()}
-    aliases = set(PERK_SOUNDS) | set(TELEPORTER_SOUNDS)
+    aliases = set(PERK_SOUNDS) | set(TELEPORTER_SOUNDS) | set(POWERUP_SOUNDS)
     aliases.update(line.split()[-1] for g in gestures.values() for line in g['notetrackSoundMap'].splitlines() if line.split())
     convert_sounds(aliases - set(manifest['sounds']), manifest['sounds'])
     manifest['gestures'] = gestures
+
+
+def add_presentation_assets(path):
+    """Teleporter-drop lightning, the carpenter powerup model and stopwatch HUD art."""
+    from prepare_fidelity import add_effects
+    add_effects(path, 'der-riese', DER_RIESE_EFFECTS)
+    presentation = json.loads(path.read_text())
+    presentation['powerups']['carpenter'] = 'zombie_carpenter'
+    path.write_text(json.dumps(presentation,separators=(',',':')))
+    for name in HUD_IMAGES:
+        subprocess.run(['ffmpeg','-nostdin','-y','-loglevel','error','-i',str(ZONE/'images'/(name+'.dds')),
+                        '-frames:v','1',str(DATA/'gameplay/hud'/(name+'.png'))],check=True)
 
 
 def patch_perk_assets():
@@ -215,6 +232,7 @@ def prepare():
     (OUTPUT/'presentation.json').write_bytes((DATA/'gameplay/presentation.json').read_bytes())
     from prepare_fidelity import add_animations, DER_RIESE_GAITS
     add_animations(OUTPUT/'presentation.json', 'der-riese', DER_RIESE_GAITS)
+    add_presentation_assets(OUTPUT/'presentation.json')
     print(json.dumps({'entities':len(entities),'barriers':len(goals),'weapons':len(weapons),'texturesRecovered':len(wanted),'sounds':sum(len(v) for v in sounds.values())}))
 
 

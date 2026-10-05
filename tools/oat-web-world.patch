@@ -180,7 +180,7 @@ new file mode 100644
 +    void EffectDumperT4::DumpAsset(AssetDumpingContext& context, const XAssetInfo<FxEffectDef>& asset)
 +    {
 +        const std::string name = asset.m_name;
-+        if (name.find("fx_zombie_powerup") == std::string::npos && name.find("fx_ray_sun_sm_short") == std::string::npos
++        if (name.find("fx_zombie_powerup") == std::string::npos && name.find("fx_zombie_dog_lightning") == std::string::npos && name.find("fx_ray_sun_sm_short") == std::string::npos
 +            && name.find("grenadeexp") == std::string::npos && name.find("fx_grenade_flash") == std::string::npos
 +            && name.find("fx_grenade_smoke_w") == std::string::npos && name.find("fx_grenade_smk_ling_w") == std::string::npos) return;
 +        const auto* fx = asset.Asset(); json elements = json::array();

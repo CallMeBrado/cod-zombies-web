@@ -90,7 +90,7 @@ export class SoloGame {
     this.inventory=[this.makeWeapon('zombie_colt')];this.slot=0;
     this.time=0;this.round=0;this.zombieHealth=this.vars.zombie_health_start;this.phase='ready';this.roundDue=0;this.spawnDue=0;this.remaining=0;
     this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
-    this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;
+    this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;this.powerupOrder=[];this.powerupIndex=0;this.carpenter=null;this.nextDropId=1;
     this.boxes=new Map(this.interactions.filter(e=>e.targetname==='treasure_chest_use').map(e=>[e.target,{entity:e,phase:'closed',weapon:null}]));
     this.mapRules?.reset();
     this.yaw=Math.PI;this.pitch=0;this.ads=0;this.spreadBloom=0;this.moving=false;this.shots=0;this.hits=0;this.nextId=1;this.elapsed=0;
@@ -486,7 +486,8 @@ export class SoloGame {
     if(input.fire&&this.weapon.definition.fireType==='Full Auto')this.fire();
     if(input.use&&!this.pendingGrenade&&!this.gesture&&!this.nearGrenade()&&this.time>=this.rebuildDue){const w=this.nearWindow();if(w)this.rebuild(w);}
     for(const drop of this.drops)if(!drop.used&&distance([drop.position[0],drop.position[1],drop.position[2]+40],p.position)<64)this.pickup(drop);
-    this.drops=this.drops.filter(d=>!d.used&&this.time<d.expires);
+    for(const d of this.drops)if(!d.used&&this.time>=d.expires)this.emit('stopLoop',{id:'drop'+d.id});
+    this.drops=this.drops.filter(d=>!d.used&&this.time<d.expires);this.updateCarpenter();
     for(const key of Object.keys(this.powerup))if(this.powerup[key]<=this.time)delete this.powerup[key];
   }
   aim(yaw,pitch){this.yaw=yaw;this.pitch=pitch;}
@@ -542,8 +543,7 @@ export class SoloGame {
     // Hunt starts only after the barrier traversal has finished inside the map.
     // Outside and mid-vault kills still award points, but cannot drop powerups.
     if(enemy.stage==='hunt'&&(this.player.kills%6===0||Math.random()<.08)) {
-      const types=['full_ammo','insta_kill','double_points','nuke'];const type=types[Math.floor(Math.random()*types.length)];
-      const drop={type,position:enemy.position.slice(),expires:this.time+30};this.drops.push(drop);this.emit('drop',drop);
+      this.addDrop(this.nextPowerup(),enemy.position);
     }
   }
   melee() {
@@ -703,13 +703,41 @@ export class SoloGame {
     }
     this.grenades=this.grenades.filter(g=>!g.exploded);
   }
+  // get_next_powerup(): a shuffled cycle of the map's powerups; the carpenter is
+  // skipped while fewer than five windows have every board torn off.
+  nextPowerup(){
+    const types=Object.keys(this.presentation.powerups||{full_ammo:1,insta_kill:1,double_points:1,nuke:1});
+    for(let tries=0;tries<=types.length;tries++){
+      if(this.powerupIndex>=this.powerupOrder.length){this.powerupOrder=types.slice();for(let i=this.powerupOrder.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[this.powerupOrder[i],this.powerupOrder[j]]=[this.powerupOrder[j],this.powerupOrder[i]];}this.powerupIndex=0;}
+      const type=this.powerupOrder[this.powerupIndex++];
+      if(type!=='carpenter'||this.windows.filter(w=>w.boards===0).length>=5)return type;
+    }
+    return types.find(t=>t!=='carpenter');
+  }
+  // powerup_setup: spawn sound, then a looping hum until grabbed or expired.
+  addDrop(type,position){
+    const drop={id:this.nextDropId++,type,position:position.slice(),expires:this.time+30};this.drops.push(drop);this.emit('drop',drop);
+    const at=[position[0],position[1],position[2]+40];this.emit('sound',{alias:'spawn_powerup',position:at,near:100,far:1200});
+    this.emit('loop',{id:'drop'+drop.id,alias:'spawn_powerup_loop',position:at,near:60,far:700});return drop;
+  }
+  // start_carpenter: rebuild boards nearest-window first, one every 0.05 s,
+  // then carp_end and 200 points.
+  updateCarpenter(){
+    const c=this.carpenter;if(!c||this.time<c.next)return;c.next=this.time+.05;
+    const window=this.windows.filter(w=>w.boards<6).sort((a,b)=>distance(a.entry,c.origin)-distance(b.entry,c.origin))[0];
+    if(window){window.boards++;this.emit('barrier',window);return;}
+    this.carpenter=null;this.emit('stopLoop',{id:'carpenter'});this.emit('sound',{alias:'carp_end',position:c.origin,near:150,far:1400});this.changePoints(200);
+  }
   pickup(drop) {
     drop.used=true;
-    this.emit('pickup',drop);this.emit('sound',{alias:'powerup_grabbed'});this.emit('sound',{alias:{double_points:'double_point',full_ammo:'full_ammo',insta_kill:'insta_kill',nuke:'nuke'}[drop.type]});
+    this.emit('pickup',drop);this.emit('stopLoop',{id:'drop'+drop.id});this.emit('sound',{alias:'powerup_grabbed'});
+    // Der Riese's play_devil_dialog announcer; Nacht's script has no announcer.
+    const announcer=this.mapRules?.announcer?.[drop.type]??{full_ammo:'full_ammo',insta_kill:'insta_kill'}[drop.type];if(announcer)this.emit('sound',{alias:announcer,exclusive:'announcer'});
     if(drop.type==='full_ammo'){for(const w of this.inventory){w.clip=w.definition.clipSize;w.reserve=w.definition.maxAmmo;}this.player.grenades=4;}
     else if(drop.type==='nuke'){for(const e of this.enemies)if(!e.dead)this.hitEnemy(e,e.health);this.changePoints(400);}
+    else if(drop.type==='carpenter'){this.carpenter={origin:drop.position.slice(),next:this.time};this.emit('loop',{id:'carpenter',alias:'carp_loop',position:drop.position.slice(),near:150,far:1400});}
     else this.powerup[drop.type]=this.time+30;
-    this.message({'full_ammo':'Max ammo','insta_kill':'Insta-kill · 30 seconds','double_points':'Double points · 30 seconds','nuke':'Nuke'}[drop.type]);
+    this.message({'full_ammo':'Max ammo','insta_kill':'Insta-kill · 30 seconds','double_points':'Double points · 30 seconds','nuke':'Nuke','carpenter':'Carpenter'}[drop.type]);
   }
   snapshot(){return {phase:this.phase,time:this.time,round:this.round,health:this.player.health,points:this.player.points,kills:this.player.kills,position:this.player.position,physicsHz:1/PHYSICS_STEP,physicsTicks:this.physicsTicks,grounded:this.player.grounded,ammo:[this.weapon.clip,this.weapon.reserve],weapon:this.weapon.name,remaining:this.remaining,shots:this.shots,hits:this.hits,windows:this.windows.map(w=>({entry:w.entry,boards:w.boards})),enemies:this.enemies.filter(e=>!e.dead).map(e=>({id:e.id,position:e.position,health:e.health,stage:e.stage}))};}
 }
