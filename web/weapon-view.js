@@ -16,13 +16,14 @@ export class WeaponView {
   async load(weapon,light) {
     const version=++this.version;
     if(this.rigs.has(weapon.name)){this.activate(this.rigs.get(weapon.name),weapon);return;}
-    const [hands,template,knifeTemplate]=await Promise.all([model('viewmodel_hands'),model(weapon.definition.gunModel),model(weapon.definition.knifeModel)]);
+    // Perk bottles and the knuckle crack are viewmodel-only and carry no knife.
+    const [hands,template,knifeTemplate]=await Promise.all([model('viewmodel_hands'),model(weapon.definition.gunModel),weapon.definition.knifeModel?model(weapon.definition.knifeModel):null]);
     const object=cloneModel(hands),gun=cloneModel(template);
     // Attached weapon parts use XAnim translations relative to their model
     // bind positions; hand tracks use their authored local positions.
     gun.traverse(bone=>{if(bone.isBone)bone.userData.animationTranslationBase=bone.position.toArray();});
     object.getObjectByName('tag_weapon').add(gun);
-    const knife=cloneModel(knifeTemplate);knife.name='Original Ka-Bar knife';object.getObjectByName('tag_knife_attach').add(knife);knife.visible=false;
+    const knife=knifeTemplate?cloneModel(knifeTemplate):new THREE.Group();knife.name='Original Ka-Bar knife';object.getObjectByName('tag_knife_attach').add(knife);knife.visible=false;
     const root=new THREE.Group(),orientation=new THREE.Group();
     orientation.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0,-1,0,0,0,0,1,0,-1,0,0,0,0,0,0,1));orientation.add(object);root.add(orientation);
     shadeModel(object,light.map(c=>Math.max(.09,c*1.5)));
@@ -49,13 +50,13 @@ export class WeaponView {
     this.knife=knife;this.meleeRemaining=0;this.sprintBlend=0;this.flashTime=0;this.rechamberAt=0;
     this.rigs.set(weapon.name,{root,object,mixer,clips,adsAction:this.adsAction,flash:this.flash,knife});
   }
-  play(name,duration=0,loop=false) {
+  play(name,duration=0,loop=false,hold=false) {
     const clip=this.clips.get(name);if(!clip)return;
     let action=this.actions.get(name);if(!action){action=this.mixer.clipAction(clip);this.actions.set(name,action);}
     if(this.current&&this.current!==action)this.current.fadeOut(.035);
     action.reset().setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);action.clampWhenFinished=!loop;
     action.setEffectiveWeight(1).setEffectiveTimeScale(duration>0?clip.duration/duration:1).fadeIn(.025).play();
-    this.current=action;this.actionDue=loop?Infinity:(duration||clip.duration);this.actionElapsed=0;
+    this.current=action;this.actionDue=loop?Infinity:(duration||clip.duration);this.actionElapsed=0;this.hold=hold;
     this.queue=(clip.userData?.notifies||[]).map(n=>({...n,due:n.time*this.actionDue}));
   }
   shot(ads) {
@@ -75,7 +76,7 @@ export class WeaponView {
     const idle=this.weapon.clip?this.weapon.definition.idleAnim:this.weapon.definition.emptyIdleAnim,name=this.current?.getClip().name;
     // Physics can refill the magazine just after the rendered reload clip ends.
     // A looping empty idle must then change back to the loaded idle pose.
-    if(this.actionElapsed>=this.actionDue||(!reloading&&name!==idle&&[this.weapon.definition.idleAnim,this.weapon.definition.emptyIdleAnim].includes(name)))this.play(idle,0,true);
+    if(this.actionElapsed>=this.actionDue&&!this.hold||(!reloading&&name!==idle&&[this.weapon.definition.idleAnim,this.weapon.definition.emptyIdleAnim].includes(name)))this.play(idle,0,true);
     this.meleeRemaining=Math.max(0,this.meleeRemaining-dt);this.knife.visible=this.meleeRemaining>0;
     if(this.adsAction){this.adsAction.time=this.adsAction.getClip().duration;this.adsAction.setEffectiveWeight(reloading||this.meleeRemaining>0?0:ads*(1-offhand));}
     this.mixer.update(dt);

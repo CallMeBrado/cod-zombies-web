@@ -68,10 +68,10 @@ for(const material of Object.values(world.materials)){await texture(material.dif
 for(const lightmap of world.lightmaps)for(const name of Object.values(lightmap))await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
 const names=new Set(['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1',
   ...[manifest.grenade?.gunModel,manifest.grenade?.projectileModel].filter(Boolean),
-  ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel])]);
+  ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel]),...Object.values(manifest.gestures||{}).map(g=>g.gunModel)]);
 for(const name of names)await model(name);
 const animations=new Set(Object.keys(presentation.animations));
-for(const weapon of [...Object.values(manifest.weapons),manifest.grenade||{}])for(const [key,value] of Object.entries(weapon))if(key.endsWith('Anim')&&value)animations.add(value);
+for(const weapon of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade||{}])for(const [key,value] of Object.entries(weapon))if(key.endsWith('Anim')&&value)animations.add(value);
 for(const name of animations)for(const zone of zones)if(await add(`${zone}/web-anims/${name}.json`,false))break;
 const entries=[...files].sort(([a],[b])=>a.localeCompare(b));
 const stamp=createHash('sha256').update('sharded-v1').update(JSON.stringify(entries.map(([url,info])=>[url,info.size,info.mtime]))).digest('hex');

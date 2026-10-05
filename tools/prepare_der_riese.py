@@ -25,6 +25,63 @@ def weapon(name, fields):
             else props.get(key, '') for key in fields}
 
 
+# _zombiemode_perks.gsc: the perk bottles and Pack-a-Punch knuckle crack are
+# viewmodel-only "weapons" played between putting a gun away and raising it.
+GESTURES = {'specialty_armorvest': 'zombie_perk_bottle_jugg', 'specialty_fastreload': 'zombie_perk_bottle_sleight',
+            'specialty_rof': 'zombie_perk_bottle_doubletap', 'specialty_quickrevive': 'zombie_perk_bottle_revive',
+            'knuckle_crack': 'zombie_knuckle_crack'}
+GESTURE_FIELDS = ['gunModel', 'idleAnim', 'emptyIdleAnim', 'firstRaiseAnim', 'dropAnim', 'firstRaiseTime', 'dropTime', 'notetrackSoundMap']
+PERK_SOUNDS = ['mx_jugger_sting', 'mx_speed_sting', 'mx_doubletap_sting', 'mx_revive_sting', 'mx_packa_sting',
+               'bottle_dispense3d', 'perks_power_on', 'electrical_surge', 'broken_random_jingle',
+               'packa_rollers_loop', 'packa_weap_upgrade', 'packa_weap_ready', 'ticktock_loop', 'packa_deny']
+
+
+def convert_sounds(aliases, sounds):
+    archives = sorted((GAME / 'main').glob('*.iwd'))
+    sound_folder = OUTPUT/'sounds';sound_folder.mkdir(parents=True, exist_ok=True)
+    index = {}
+    for archive in archives:
+        with ZipFile(archive) as bundle:
+            for name in bundle.namelist():
+                if name.lower().startswith('sound/'): index[name.casefold()] = (archive,name)
+    for alias in sorted(x for x in aliases if x):
+        source = find(f'web-sounds/{alias}.json')
+        if not source: continue
+        available = []
+        for i, entry in enumerate(json.loads(source.read_text())[:4]):
+            file = entry['file'].replace('\\','/').lstrip(',/')
+            loaded = next((candidate for z in SEARCH for candidate in [DATA/z/'sound'/file,(DATA/z/'sound'/file).with_suffix('.xwma')] if candidate.is_file()),None)
+            location = index.get(('sound/'+file).casefold()) or index.get(file.casefold())
+            if location:
+                loaded = ROOT/'.cache'/('der-riese-audio'+Path(file).suffix)
+                with ZipFile(location[0]) as bundle: loaded.write_bytes(bundle.read(location[1]))
+            if not loaded: continue
+            output = sound_folder/f'{alias}_{i}.wav'
+            result = subprocess.run(['ffmpeg','-nostdin','-y','-loglevel','error','-i',str(loaded),'-c:a','pcm_s16le',str(output)],capture_output=True)
+            if result.returncode:
+                print(f'Skipped undecodable alias variant: {alias} #{i}')
+                continue
+            available.append({**entry,'url':'/data/'+output.relative_to(DATA).as_posix()})
+        if available: sounds[alias] = available
+
+
+def add_perk_assets(manifest):
+    gestures = {key: {**weapon(name, GESTURE_FIELDS), 'name': name} for key, name in GESTURES.items()}
+    aliases = set(PERK_SOUNDS)
+    aliases.update(line.split()[-1] for g in gestures.values() for line in g['notetrackSoundMap'].splitlines() if line.split())
+    convert_sounds(aliases - set(manifest['sounds']), manifest['sounds'])
+    manifest['gestures'] = gestures
+
+
+def patch_perk_assets():
+    """Add gestures and perk sounds to an already prepared Der Riese manifest."""
+    path = OUTPUT/'manifest.json'
+    manifest = json.loads(path.read_text())
+    add_perk_assets(manifest)
+    path.write_text(json.dumps(manifest,separators=(',',':')))
+    print(json.dumps({'gestures':len(manifest['gestures']),'sounds':len(manifest['sounds'])}))
+
+
 def prepare():
     OUTPUT.mkdir(parents=True, exist_ok=True)
     original = json.loads((DATA / 'gameplay/manifest.json').read_text())
@@ -142,31 +199,7 @@ def prepare():
     aliases = {w.get(k) for w in weapons.values() for k in ['fireSound','reloadSound','fireSoundPlayer','reloadSoundPlayer','emptyFireSoundPlayer','meleeSwipeSoundPlayer']}
     aliases.update(line.split()[-1] for w in weapons.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
     aliases.update(['switch_flip','bridge_lower','bridge_hit','mx_jugger_jingle','mx_speed_jingle','mx_doubletap_jingle','mx_revive_jingle','mx_packa_jingle','teleport_in','teleport_out','packa_door_2'])
-    sound_folder = OUTPUT/'sounds';sound_folder.mkdir(exist_ok=True)
-    index = {}
-    for archive in archives:
-        with ZipFile(archive) as bundle:
-            for name in bundle.namelist():
-                if name.lower().startswith('sound/'): index[name.casefold()] = (archive,name)
-    for alias in sorted(x for x in aliases if x):
-        source = find(f'web-sounds/{alias}.json')
-        if not source: continue
-        available = []
-        for i, entry in enumerate(json.loads(source.read_text())[:4]):
-            file = entry['file'].replace('\\','/').lstrip(',/')
-            loaded = next((candidate for z in SEARCH for candidate in [DATA/z/'sound'/file,(DATA/z/'sound'/file).with_suffix('.xwma')] if candidate.is_file()),None)
-            location = index.get(('sound/'+file).casefold()) or index.get(file.casefold())
-            if location:
-                loaded = ROOT/'.cache'/('der-riese-audio'+Path(file).suffix)
-                with ZipFile(location[0]) as bundle: loaded.write_bytes(bundle.read(location[1]))
-            if not loaded: continue
-            output = sound_folder/f'{alias}_{i}.wav'
-            result = subprocess.run(['ffmpeg','-nostdin','-y','-loglevel','error','-i',str(loaded),'-c:a','pcm_s16le',str(output)],capture_output=True)
-            if result.returncode:
-                print(f'Skipped undecodable alias variant: {alias} #{i}')
-                continue
-            available.append({**entry,'url':'/data/'+output.relative_to(DATA).as_posix()})
-        if available: sounds[alias] = available
+    convert_sounds(aliases, sounds)
     labels=['Colt M1911','Kar98k','Gewehr 43','M1A1 Carbine','M1 Garand','Thompson','BAR','Double barrel','Trench gun','MP40','.357 Magnum','STG-44','MG42','FG42','Type 100','PPSh-41','Browning M1919']
     weapon_names=dict(zip(names,labels))
     for name in names[1:]:
@@ -174,6 +207,7 @@ def prepare():
     manifest = {**original,'weapons':weapons,'weaponNames':weapon_names,'entities':entities,'sounds':sounds,
                 'map':{'id':'der-riese','title':'Der Riese','initialZone':'receiver_zone','volumes':volumes,'goals':goals,'connections':connections,
                        'boxWeapons':names,'initialBox':'magic_box_lid_0'}}
+    add_perk_assets(manifest)
     (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
     (OUTPUT/'presentation.json').write_bytes((DATA/'gameplay/presentation.json').read_bytes())
     from prepare_fidelity import add_animations, DER_RIESE_GAITS

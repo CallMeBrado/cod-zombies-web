@@ -57,10 +57,19 @@ function film(shader) {
 export function shadeModel(object,color) {
   object.traverse(node=>{if(!node.isMesh)return;
     const convert=old=>{const foliage=/tree|pine|foliage|grass/i.test(old.name);const mat=new THREE.MeshBasicMaterial({map:old.map,color:new THREE.Color(...color),vertexColors:!!node.geometry.attributes.color,
-      transparent:old.transparent,opacity:old.opacity,alphaTest:foliage?.3:old.alphaTest,side:foliage?THREE.DoubleSide:old.side});mat.name=old.name;
+      transparent:old.transparent,depthWrite:old.depthWrite,opacity:old.opacity,alphaTest:foliage?.3:old.alphaTest,side:foliage?THREE.DoubleSide:old.side});mat.name=old.name;
       mat.userData.fixedLight=/zombie.*eye/.test(old.name);if(mat.userData.fixedLight)mat.color.setRGB(1,1,1);else mat.onBeforeCompile=film;return mat;};
     node.material=Array.isArray(node.material)?node.material.map(convert):convert(node.material);
   });
+}
+const nativeMaterials=new Map();
+function nativeMaterial(name){
+  name=name.replace(/^,/, '');
+  if(!nativeMaterials.has(name))nativeMaterials.set(name,(async()=>{
+    for(const source of assetZones)try{return await get(`/data/${source}/materials/${name}.json`,true);}catch{}
+    return null;
+  })());
+  return nativeMaterials.get(name);
 }
 export async function model(name) {
   name=name.replace(/^,/, '');
@@ -76,12 +85,17 @@ export async function model(name) {
       // A model can reference a material owned by a different fastfile. OAT's
       // GLB then retains the material name but omits its image assignments.
       // Resolve those assignments from the original exported material records.
-      const missing=new Set();gltf.scene.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material])if(!m.map)missing.add(m);});
-      await Promise.all([...missing].map(async material=>{
-        let original;
-        for(const source of assetZones)try{original=await get(`/data/${source}/materials/${material.name.replace(/^,/, '')}.json`,true);break;}catch{}
+      const materials=new Set();gltf.scene.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material])materials.add(m);});
+      await Promise.all([...materials].map(async material=>{
+        const original=await nativeMaterial(material.name);
         const color=original?.textures?.find(t=>t.semantic==='colorMap');
-        if(color){material.map=await diffuse(color.image);material.color.setRGB(1,1,1);material.needsUpdate=true;}
+        if(!material.map&&color){material.map=await diffuse(color.image);material.color.setRGB(1,1,1);material.needsUpdate=true;}
+        // GLB materials are all opaque. The T4 technique set carries the
+        // blend: mc_l_sm_b* (glass, decals) alpha-blends and mc_l_sm_t*
+        // alpha-tests at 128, so e.g. perk bottle glass shows the liquid.
+        const technique=/^mc_l_sm_([a-z])\d/.exec(original?.techniqueSet||'')?.[1];
+        if(technique==='b'){material.transparent=true;material.depthWrite=false;material.needsUpdate=true;}
+        else if(technique==='t'){material.alphaTest=.5;material.needsUpdate=true;}
       }));
       // OAT converts model geometry and root bones to Y up. Restore T4's Z up.
       const group=new THREE.Group();group.rotation.x=Math.PI/2;group.add(gltf.scene);
@@ -310,7 +324,7 @@ export class OriginalAudio {
   }
   suspend(){this.context?.suspend().catch(console.warn);}
   stopSession(keepOneShots=false) {
-    for(const source of this.sources){if(keepOneShots&&!source.loop&&source.startAt<=this.context.currentTime)continue;source.node.onended=null;try{source.node.stop();}catch{}source.node.disconnect();source.gain.disconnect();this.sources.delete(source);}
+    for(const source of this.sources){if(keepOneShots&&!source.loop&&source.startAt<=this.context.currentTime)continue;source.node.onended=null;try{source.node.stop();}catch{}source.node.disconnect();source.gain.disconnect();source.panner?.disconnect();if(source.record)source.record.ended=true;this.sources.delete(source);}
     this.session=null;
   }
   startSession() {
@@ -325,16 +339,38 @@ export class OriginalAudio {
   }
   play(alias,volume=1,options={}) {
     if(!this.context||this.context.state!=='running')return;
+    // One instance per key, like the GSC level.*_jingle flags shared by a
+    // machine's purchase sting and its idle jingle.
+    if(options.exclusive&&[...this.sources].some(s=>s.exclusive===options.exclusive))return;
     const entries=this.sounds[alias]||[],s=entries[Math.floor(Math.random()*entries.length)];if(!s)return;
     const buffer=this.buffers.get(s.url);if(!buffer)return;
     const node=this.context.createBufferSource(),gain=this.context.createGain();node.buffer=buffer;
     const pitch=s.pitch>0?s.pitch:1,when=Math.max(this.context.currentTime,options.when??this.context.currentTime);
     gain.gain.value=volume*(s.volume??1);node.playbackRate.value=pitch;node.loop=!!options.loop;
-    node.connect(gain);gain.connect(this.master);
-    const record={alias,startAt:when,duration:buffer.duration/pitch,loop:node.loop,volume:gain.gain.value,pitch};
-    const source={...record,node,gain};this.sources.add(source);this.history.push(record);if(this.history.length>24)this.history.shift();
-    node.onended=()=>{this.sources.delete(source);node.disconnect();gain.disconnect();};node.start(when);
+    node.connect(gain);
+    // World sounds stay at their source (game units, Z up) and fade linearly
+    // from `near` to silence at `far`; others play on the listener.
+    let panner=null;
+    if(options.position){
+      panner=this.context.createPanner();panner.panningModel='HRTF';panner.distanceModel='linear';
+      panner.refDistance=options.near??100;panner.maxDistance=options.far??1200;panner.rolloffFactor=1;
+      const [x,y,z]=options.position;
+      if(panner.positionX){panner.positionX.value=x;panner.positionY.value=y;panner.positionZ.value=z;}else panner.setPosition(x,y,z);
+      gain.connect(panner);panner.connect(this.master);
+    }else gain.connect(this.master);
+    const record={alias,startAt:when,duration:buffer.duration/pitch,loop:node.loop,volume:gain.gain.value,pitch,position:options.position||null};
+    const source={...record,node,gain,panner,exclusive:options.exclusive};this.sources.add(source);this.history.push(record);if(this.history.length>24)this.history.shift();
+    source.record=record;
+    const release=()=>{record.ended=true;this.sources.delete(source);node.disconnect();gain.disconnect();panner?.disconnect();};
+    node.onended=release;node.start(when);
+    record.stop=(fade=.05)=>{if(!this.sources.has(source))return;const now=this.context.currentTime;gain.gain.setValueAtTime(gain.gain.value,now);gain.gain.linearRampToValueAtTime(0,now+fade);try{node.stop(now+fade);}catch{release();}};
     return record;
+  }
+  listen(position,forward){
+    const l=this.context?.listener;if(!l)return;
+    const [x,y,z]=position,[fx,fy,fz]=forward;
+    if(l.positionX){l.positionX.value=x;l.positionY.value=y;l.positionZ.value=z;l.forwardX.value=fx;l.forwardY.value=fy;l.forwardZ.value=fz;l.upX.value=0;l.upY.value=0;l.upZ.value=1;}
+    else{l.setPosition(x,y,z);l.setOrientation(fx,fy,fz,0,0,1);}
   }
   diagnostics() {
     this.meter?.getFloatTimeDomainData(this.samples);

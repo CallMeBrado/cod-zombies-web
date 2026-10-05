@@ -37,12 +37,13 @@ const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
 let deathFxTime=0;
+const loops=new Map();let papView=null;
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
   ({reload:()=>game.reload(),melee:()=>{if(controls.aiming)openMods();else game.melee();},use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
 },action=>{if(action==='grenade'&&state.mode==='playing')game.releaseGrenade();});
 const mouse=new MouseControls(canvas,document,{mode:()=>({playing:state.mode==='playing',inputMode:state.inputMode,aiming:controls.toggledAim||settings.value.aimMode==='hold'&&settings.value.bindings.aim.some(t=>t&&!t.startsWith('Mouse')&&controls.tokens.has(t))}),buttons:b=>settings.mouseActions(b),fire:()=>game.fire()});
-const pauseMenu=new PauseMenu(settings,{resume:enterPlay,restart:()=>{game.newGame();resetVisuals();enterPlay();},quit:()=>{game.newGame();resetVisuals();menu(mapChoice.title,'Solo Zombies');}});
+const pauseMenu=new PauseMenu(settings,{save:saveGame,resumeSave,savedGame,resume:enterPlay,restart:()=>{game.newGame();resetVisuals();enterPlay();},quit:()=>{game.newGame();resetVisuals();menu(mapChoice.title,'Solo Zombies');}});
 const lobby=new ZombiesLobby(pauseMenu);
 const testingMenu=new TestingMenu(pauseMenu,()=>state.ready?game:null);
 canvas.setAttribute('aria-label',mapChoice.title+' Zombies game');document.title='WaW Zombies - '+mapChoice.title;
@@ -62,6 +63,22 @@ function menu(title,description,button='Resume game') {
   $('menu-copy').textContent=game&&game.phase!=='ready'?'Round '+(game.round||1)+' · '+game.player.kills+' kills':description;
   pauseMenu.setContext(game&&game.phase!=='ready'?'pause':'start');
   if(document.pointerLockElement)document.exitPointerLock();
+}
+// One save slot per browser (localStorage), shared by both maps.
+function saveKey(){return 'waw-zombies-save-v1';}
+function savedGame(){try{const save=JSON.parse(storage?.getItem(saveKey())||'null');return save?.state?.version===1?save:null;}catch{return null;}}
+function saveSummary(save=savedGame()){return save?`Saved game: ${save.title}, round ${save.state.resumeRound}.`:'';}
+function saveGame(){
+  if(!game?.canSave()){$('message').textContent='Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';return;}
+  const state=game.saveState(),save={map:mapChoice.id,title:mapChoice.title,savedAt:Date.now(),state};
+  try{if(!storage)throw new Error('unavailable');storage.setItem(saveKey(),JSON.stringify(save));$('message').textContent='Game saved. '+saveSummary(save)+' Resume it from the main menu.';}
+  catch{$('message').textContent='This browser blocked saving the game.';}
+}
+function resumeSave(){
+  const save=savedGame();if(!save||!state.ready||state.mode==='starting')return;
+  if(save.map!==mapChoice.id){const url=new URL(location.href);url.searchParams.set('map',save.map);location.assign(url.href);return;}
+  // Synchronous from the click, so enterPlay can still capture the mouse.
+  game.loadState(save.state);state.yaw=save.state.yaw;state.pitch=save.state.pitch;cameraPose();enterPlay();
 }
 function keyName(action){return bindingName(settings.value.bindings[action].find(Boolean));}
 function openMods(){if(state.mode!=='playing')return;menu('Paused',mapChoice.title);testingMenu.sync();pauseMenu.show('mods');}
@@ -178,6 +195,52 @@ async function prepareBox(manifest){
 function updateBoxes(){
   for(const [target,v]of boxVisuals)updateBoxView(v,game.boxes.get(target),game.time,presentation.box,effects);
 }
+function preparePap(manifest){
+  const trigger=manifest.entities.find(e=>e.targetname==='zombie_vending_upgrade');if(!trigger)return;
+  const machine=manifest.entities.find(e=>e.targetname===trigger.target),flag=machine?.target&&dynamic.get(machine.target)?.[0];
+  const root=new THREE.Group();root.visible=false;scene.add(root);
+  papView={root,models:new Map(),flag,flagPitch:flag?Number((flag.entity.angles||'0 0 0').split(/\s+/)[0]):0};
+}
+// third_person_weapon_upgrade: the gun turns side-on (angles+90, where angles
+// is already the machine yaw+90) over 0.35 s, rolls
+// in (0.5-1.0 s, gone at 0.85 s), the upgraded gun rolls out at 3.85 s, then
+// slides back in over the 15 s timeout. The "please wait" flag flips meanwhile.
+function updatePap(){
+  if(!papView)return;const pap=game.mapRules?.pap,v=papView;
+  const smooth=(x,a,b)=>THREE.MathUtils.smoothstep(x,a,b),lerp=(a,b,t)=>a.map((x,i)=>x+(b[i]-x)*t);
+  let flip=0,name=null,at=null,yaw=0;
+  if(pap){
+    const t=game.time-pap.started,r=THREE.MathUtils.degToRad(pap.yaw),interact=[pap.origin[0]-Math.cos(r)*25,pap.origin[1]-Math.sin(r)*25,pap.origin[2]];
+    flip=t<3.85?smooth(t,.5,.75):1-smooth(t,3.85,4.1);
+    if(t<.85){name=pap.weapon;at=lerp(interact,pap.origin,THREE.MathUtils.clamp((t-.5)/.5,0,1));
+      const turn=THREE.MathUtils.clamp(t/.35,0,1),delta=((pap.yaw+90-pap.playerYaw)%360+540)%360-180;yaw=pap.playerYaw+delta*turn;}
+    else if(t>=3.85){name=pap.upgraded;yaw=pap.yaw+90;
+      at=pap.phase==='ready'?lerp(interact,pap.origin,THREE.MathUtils.clamp((game.time-pap.readyAt)/15,0,1)):lerp(pap.origin,interact,THREE.MathUtils.clamp((t-3.85)/.5,0,1));}
+  }
+  if(v.flag)v.flag.object.rotation.y=-THREE.MathUtils.degToRad(v.flagPitch+179*flip);
+  if(name&&!v.models.has(name)&&boxTemplates.has(name)){const object=cloneModel(boxTemplates.get(name));v.root.add(object);v.models.set(name,object);}
+  v.root.visible=!!(name&&at);for(const [key,object]of v.models)object.visible=key===name;
+  if(at){v.root.position.fromArray(at);v.root.rotation.set(0,0,THREE.MathUtils.degToRad(yaw));}
+}
+// perk_give_bottle_* / knuckle crack: show the viewmodel-only rig for its
+// raise (drink) and drop, then raise the gun the player returns to.
+function gesture(e){
+  if(e.phase==='raise'){
+    const d=e.definition;
+    weaponView.load({name:d.name,definition:d,clip:1},map.illumination(game.player.position)).then(()=>{
+      if(game.gesture?.key===e.key&&game.gesture.phase==='raise')weaponView.play(d.firstRaiseAnim,Math.max(.1,game.gesture.due-game.time),false,true);
+    }).catch(console.error);
+  }else if(e.phase==='drop')weaponView.play(e.definition.dropAnim,e.duration,false,true);
+  else loadGun(game.weapon).then(()=>{const raise=game.weapon.definition.raiseAnim;if(raise)weaponView.play(raise,e.duration);}).catch(console.error);
+}
+function updateAudio(){
+  if(!audio||!game)return;
+  const forward=[Math.cos(state.yaw)*Math.cos(state.pitch),Math.sin(state.yaw)*Math.cos(state.pitch),Math.sin(state.pitch)];
+  audio.listen(camera.position.toArray(),forward);
+  // Machine loops (rollers hum, take-it timer) live at the machine; restart
+  // one if the audio session cut it (death, resume).
+  if(audio.context?.state==='running'&&game.phase!=='dead')for(const l of loops.values())if(!l.record||l.record.ended)l.record=audio.play(l.spec.alias,1,{...l.spec,loop:true});
+}
 async function init() {
   const began=performance.now();
   const progress=text=>{$('message').textContent=text;state.loading=text;};
@@ -187,16 +250,17 @@ async function init() {
   audio=new OriginalAudio(manifest.sounds);audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
-  await Promise.all([hud.load(),effects.prepare(),actors.prepare(),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare(manifest.weapons,map.illumination([0,424,1])),
+  await Promise.all([hud.load(),effects.prepare(),actors.prepare(),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
     ...Object.entries(presentation.powerups).map(async([type,name])=>{const object=cloneModel(await model(name));shadeModel(object,[.9,.9,.9]);dropTemplates.set(type,object);})]);
-  await prepareBox(manifest);
+  await prepareBox(manifest);preparePap(manifest);
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
   game=new TestingGame(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     bindingName:keyName,
     message:notice,spawn:spawnVisual,
-    removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
+    removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
     traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),damage:()=>{damageFlash=1;},death,
-    sound:s=>audio.play(s.alias,s.volume??1),sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
+    sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
+    loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},stopLoop:({id})=>{loops.get(id)?.record?.stop(.05);loops.delete(id);},sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
@@ -215,7 +279,7 @@ async function init() {
   await renderer.compileAsync(gpuWarmScene,viewCamera);renderer.setRenderTarget(warmTarget);renderer.render(gpuWarmScene,viewCamera);renderer.setRenderTarget(null);warmTarget.dispose();
   for(const item of restore)if(item.mesh)item.mesh.frustumCulled=item.culled;else{gpuWarmScene.remove(item.root);item.root.visible=item.visible;item.parent?.add(item.root);}
   await pauseMenu.prepare(hud);state.ready=true;lobby.ready();testingMenu.sync();state.loading='complete';$('play').disabled=false;pauseMenu.setContext('start');
-  $('message').textContent='Map loaded and ready. Restarting keeps it loaded.';$('stats').textContent=mapChoice.title+' ready · Build '+document.documentElement.dataset.build.slice(0,8);state.build=document.documentElement.dataset.build;state.preload=preloadState;state.readyMs=performance.now()-began;updateHud();
+  $('message').textContent='Map loaded and ready. Restarting keeps it loaded. '+saveSummary();$('stats').textContent=mapChoice.title+' ready · Build '+document.documentElement.dataset.build.slice(0,8);state.build=document.documentElement.dataset.build;state.preload=preloadState;state.readyMs=performance.now()-began;updateHud();
 }
 $('play').addEventListener('click',()=>{if(!state.ready)return;if(game.phase==='dead'){game.newGame();resetVisuals();}enterPlay();});
 document.addEventListener('pointerlockchange',()=>{
@@ -264,7 +328,7 @@ function frame(time) {
   if(!paused)mouse.update(time);
   if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);}cameraPose();if(game)game.ads=aimBlend;
   if(game&&!paused&&state.mode==='playing')game.update(dt,input());
-  const aimHeld=controls.aiming&&!game?.pendingGrenade;
+  const aimHeld=controls.aiming&&!game?.pendingGrenade&&!game?.gesture;
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;
   if(!paused)aimBlend=THREE.MathUtils.clamp(aimBlend+(aimHeld&&!game?.reloadEnd?1:-1)*dt/adsTime,0,1);
   const adsFov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(game?.weapon.definition.adsZoomFov||60)/2)*.75));
@@ -275,7 +339,7 @@ function frame(time) {
     actors.updateOne(v,paused?0:dt,game.renderPosition(v.enemy));
   }
   for(const [drop,v]of dropVisuals){if(drop.used||game.time>drop.expires){effects.dispose(v.glow);scene.remove(v.root);dropVisuals.delete(drop);}else updateDrop(drop,v);}
-  if(game&&state.ready)updateBoxes();
+  if(game&&state.ready){updateBoxes();updatePap();updateAudio();}
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];if(game.time>=b.due){effects.dispose(b.root);bursts.splice(i,1);}else effects.update(b.root,game.time);}
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game)combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));

@@ -26,16 +26,37 @@ for(const e of game.interactions.filter(e=>e.script_flag))if(!game.opened.has(e.
 assert.equal(game.mapRules.activeZones().size,new Set(manifest.map.volumes.map(v=>v.name)).size);
 for(const w of game.availableWindows())assert(game.spawnRoutes.get(w.target).choices.length,'Unlocked areas must never select unreachable roof/drop spawns');
 report.spawns={totalBarriers:game.windows.length,preparedBarriers:game.availableWindows().length};
-for(const [perk,health]of [['specialty_armorvest',250],['specialty_fastreload',250],['specialty_rof',250]]){
-  purchase(game.interactions.find(e=>e.script_noteworthy===perk));assert(game.mapRules.perks.has(perk));assert.equal(game.mapRules.maxHealth,health);
+// Advance the gesture and map timelines without running zombies.
+const wait=seconds=>{for(let t=0;t<seconds;t+=1/120){game.time+=1/120;game.updateGesture();game.mapRules.tick();}};
+const sounds=[];game.events.sound=s=>sounds.push(s);
+for(const [perk,health,sting]of [['specialty_armorvest',250,'mx_jugger_sting'],['specialty_fastreload',250,'mx_speed_sting'],['specialty_rof',250,'mx_doubletap_sting']]){
+  const machine=game.interactions.find(e=>e.script_noteworthy===perk),before=game.player.points;sounds.length=0;
+  purchase(machine);assert(game.player.points<before);assert(!game.mapRules.perks.has(perk),'The perk is set after the drink, not on purchase');
+  // perk_give_bottle_begin: the bottle replaces the gun and actions are disabled.
+  assert.equal(game.gesture?.phase,'raise');assert.equal(game.fire(),false);assert.equal(game.throwGrenade(),false);
+  const stung=sounds.find(s=>s.alias===sting);assert(stung?.position,'The sting plays at the machine, not on the player');
+  assert(sounds.some(s=>s.alias==='bottle_dispense3d'&&s.position));
+  wait(game.data.gestures[perk].firstRaiseTime+.05);assert(game.mapRules.perks.has(perk));assert.equal(game.mapRules.maxHealth,health);
+  wait(1.5);assert.equal(game.gesture,null,'The gun is raised again after the bottle is lowered');
 }
-game.weapon.clip=0;const reloadTime=game.weapon.definition.reloadEmptyTime;game.reload();assert.equal(game.reloadEnd-game.time,reloadTime*.5);game.reloadEnd=0;
+game.weapon.clip=0;const reloadTime=game.weapon.definition.reloadEmptyTime;game.reload();assert(Math.abs(game.reloadEnd-game.time-reloadTime*.5)<1e-9);game.reloadEnd=0;
 const core=game.interactions.find(e=>e.targetname==='trigger_teleport_core');
 for(let id=0;id<3;id++){purchase(game.interactions.find(e=>e.targetname==='trigger_teleport_pad_'+id));game.time+=2;purchase(core);assert(game.mapRules.links.has(id));}
 assert(game.collision.disabled.has('pack_door_clip'));
-const upgraded=game.weapon.definition.upgrade;purchase(game.interactions.find(e=>e.targetname==='zombie_vending_upgrade'));game.time+=3;game.mapRules.tick();assert.equal(game.weapon.name,upgraded);assert.equal(game.weapon.clip,game.weapon.definition.clipSize);
+const pap=game.interactions.find(e=>e.targetname==='zombie_vending_upgrade'),loops=[];game.events.loop=l=>loops.push(l.id);game.events.stopLoop=l=>loops.splice(loops.indexOf(l.id),1);wait(.1);
+assert(loops.includes('packa_rollers'),'Pack-a-Punch rollers hum starts once all teleporters are linked');
+// vending_upgrade: the gun goes into the machine; take it before the timeout.
+const original=game.weapon.name,upgraded=game.weapon.definition.upgrade;purchase(pap);
+assert(!game.inventory.some(w=>w.name===original),'The weapon is taken while it is upgraded');assert.equal(game.gesture?.key,'knuckle_crack');
+wait(4.3);assert.notEqual(game.mapRules.pap.phase,'ready');wait(.1);assert.equal(game.mapRules.pap.phase,'ready');assert(loops.includes('packa_timer'));
+purchase(pap);assert.equal(game.weapon.name,upgraded);assert.equal(game.weapon.clip,game.weapon.definition.clipSize);assert.equal(game.weapon.reserve,game.weapon.definition.maxAmmo);
+assert.equal(game.mapRules.pap,null);assert(!loops.includes('packa_timer'));
+// wait_for_timeout: an upgrade left in the machine for 15 s is lost.
+game.giveWeapon('zombie_mp40');const lost=game.weapon.definition.upgrade;sounds.length=0;purchase(pap);wait(4.4+15.1);
+assert.equal(game.mapRules.pap,null);assert(!game.inventory.some(w=>w.name===lost||w.name==='zombie_mp40'));assert(sounds.some(s=>s.alias==='packa_deny'&&s.position));
+game.giveWeapon(upgraded);
 purchase(game.interactions.find(e=>e.targetname==='trigger_teleport_pad_0'));game.time+=2;game.mapRules.tick();assert(game.player.grounded);assert(Math.hypot(game.player.position[0]+88,game.player.position[1]-256)<1);
-report.progression={allZones:game.mapRules.activeZones().size,teleporters:game.mapRules.links.size,upgradedWeapon:game.weapon.name,mainframe:game.player.position.slice(),perks:[...game.mapRules.perks]};
+report.progression={allZones:game.mapRules.activeZones().size,teleporters:game.mapRules.links.size,upgradedWeapon:game.weapon.name,mainframe:game.player.position.slice(),perks:[...game.mapRules.perks],packAPunchTimeout:true};
 game.newGame();assert.equal(game.mapRules.links.size,0);assert.equal(game.mapRules.perks.size,0);assert(!game.mapRules.power);assert.equal(game.availableWindows().length,4);
 // Play a complete first round with the original starting pistol, actual native
 // collision/spawns, ordinary aim/fire/reload calls and normal player health.

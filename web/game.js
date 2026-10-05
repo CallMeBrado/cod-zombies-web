@@ -88,7 +88,7 @@ export class SoloGame {
     this.inventory=[this.makeWeapon('zombie_colt')];this.slot=0;
     this.time=0;this.round=0;this.zombieHealth=this.vars.zombie_health_start;this.phase='ready';this.roundDue=0;this.spawnDue=0;this.remaining=0;
     this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
-    this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;
+    this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;
     this.boxes=new Map(this.interactions.filter(e=>e.targetname==='treasure_chest_use').map(e=>[e.target,{entity:e,phase:'closed',weapon:null}]));
     this.mapRules?.reset();
     this.yaw=Math.PI;this.pitch=0;this.ads=0;this.spreadBloom=0;this.moving=false;this.shots=0;this.hits=0;this.nextId=1;this.elapsed=0;
@@ -115,7 +115,7 @@ export class SoloGame {
     this.changePoints(-cost);this.emit('sound',{alias:'cha_ching'});return true;
   }
   startRound() {
-    this.round++;this.roundStartedAt=this.time;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai);
+    this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai);
     this.spawnDue=this.time;this.phase='round';this.barrierReward=0;this.player.grenades=Math.min(4,this.player.grenades+2);
     this.emit('round',this.round);this.emit('sound',{alias:'chalk'});
   }
@@ -390,6 +390,45 @@ export class SoloGame {
       e.position=this.collision.step(e.position,[p[0]*scale,p[1]*scale,0],[14,14,35]).position;
     }
   }
+  // A save restarts the saved round from its beginning: live zombies and
+  // in-flight effects are not stored, everything the player earned is.
+  canSave(){return ['round','between'].includes(this.phase)&&!this.gesture&&!this.mapRules?.pap&&!this.pendingGrenade;}
+  saveState(){
+    const mid=this.phase==='round';
+    return {version:1,round:mid?this.round-1:this.round,zombieHealth:mid?this.roundBaseHealth:this.zombieHealth,resumeRound:mid?this.round:this.round+1,
+      player:{position:this.player.position.slice(),health:this.player.health,points:this.player.points,kills:this.player.kills,headshots:this.player.headshots,grenades:this.player.grenades},
+      yaw:this.yaw,pitch:this.pitch,inventory:this.inventory.map(w=>({name:w.name,clip:w.clip,reserve:w.reserve})),slot:this.slot,
+      opened:[...this.opened],disabled:[...this.collision.disabled],boards:this.windows.map(w=>[w.target,w.boards]),rules:this.mapRules?.saveState()};
+  }
+  loadState(s){
+    this.newGame();
+    this.round=s.round;this.zombieHealth=s.zombieHealth;this.yaw=s.yaw;this.pitch=s.pitch;
+    for(const target of s.opened)this.opened.add(target);for(const target of s.disabled)this.collision.disabled.add(target);
+    if(s.disabled.length)this.invalidateNavigation(s.disabled);
+    const boards=new Map(s.boards);for(const w of this.windows)if(boards.has(w.target))w.boards=boards.get(w.target);
+    this.mapRules?.loadState(s.rules);
+    const weapons=s.inventory.filter(w=>this.data.weapons[w.name]).map(w=>({...this.makeWeapon(w.name),clip:w.clip,reserve:w.reserve}));
+    this.inventory=weapons.length?weapons:[this.makeWeapon('zombie_colt')];this.slot=Math.min(s.slot,this.inventory.length-1);
+    const floor=this.collision.move(s.player.position,[0,0,-64]);
+    Object.assign(this.player,s.player,{position:floor.position,previousPosition:floor.position.slice(),velocityZ:0,grounded:floor.grounded});
+    for(const target of this.opened)this.emit('open',{target});for(const w of this.windows)this.emit('barrier',w);
+    if(this.mapRules)this.emit('power');this.emit('weapon',this.weapon);
+  }
+  startGesture(key,onRaised){
+    // perk_give_bottle_begin / upgrade_knuckle_crack_begin: the gun is put
+    // away, a viewmodel-only clip plays, then the gun is raised again. Firing,
+    // aiming, sprinting, melee, reloads, grenades and switching are disabled.
+    const d=this.data.gestures?.[key];if(!d){onRaised?.();return false;}
+    this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;this.pendingMelee=null;
+    this.gesture={key,definition:d,phase:'raise',due:this.time+d.firstRaiseTime,onRaised};
+    this.emit('gesture',{phase:'raise',key,definition:d,duration:d.firstRaiseTime});return true;
+  }
+  updateGesture(){
+    const g=this.gesture;if(!g||this.time<g.due)return;
+    if(g.phase==='raise'){g.onRaised?.();g.phase='drop';g.due=this.time+g.definition.dropTime;this.emit('gesture',{phase:'drop',key:g.key,definition:g.definition,duration:g.definition.dropTime});}
+    else if(g.phase==='drop'){g.phase='return';g.due=this.time+.5;this.emit('gesture',{phase:'return',key:g.key,duration:.5});}
+    else this.gesture=null;
+  }
   damagePlayer(amount) {
     if(this.phase==='dead')return;
     this.player.health=Math.max(0,this.player.health-amount);this.lastDamage=this.time;this.emit('damage',amount);
@@ -414,6 +453,7 @@ export class SoloGame {
     for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
     this.time+=dt;this.elapsed+=dt;this.expireScorePopups();this.updateBoxes();this.mapRules?.tick();
     if(this.pendingMelee&&this.time>=this.pendingMelee.due){this.resolveMelee();this.pendingMelee=null;}
+    this.updateGesture();
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
     if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<24){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay);}
     if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead)) {
@@ -427,7 +467,7 @@ export class SoloGame {
     const p=this.player,forward=[Math.cos(this.yaw),Math.sin(this.yaw)],right=[Math.sin(this.yaw),-Math.cos(this.yaw)];
     if(this.sprinting&&input.fire)this.fire();
     let dx=forward[0]*(input.forward||0)+right[0]*(input.side||0),dy=forward[1]*(input.forward||0)+right[1]*(input.side||0);
-    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&p.grounded;
+    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&p.grounded&&!this.gesture;
     const speed=(this.sprinting?285:190)*this.weapon.definition.moveSpeedScale;
     this.moving=len>0;this.spreadBloom=Math.max(0,this.spreadBloom-dt*(this.weapon.definition.hipSpreadDecayRate||4));
     if(len){dx=dx/len*speed*dt;dy=dy/len*speed*dt;}
@@ -442,7 +482,7 @@ export class SoloGame {
     this.updateGrenades(dt);
     if(this.pendingFire&&this.time+1e-9>=this.sprintExitUntil){this.pendingFire=false;this.fire();}
     if(input.fire&&this.weapon.definition.fireType==='Full Auto')this.fire();
-    if(input.use&&!this.pendingGrenade&&!this.nearGrenade()&&this.time>=this.rebuildDue){const w=this.nearWindow();if(w)this.rebuild(w);}
+    if(input.use&&!this.pendingGrenade&&!this.gesture&&!this.nearGrenade()&&this.time>=this.rebuildDue){const w=this.nearWindow();if(w)this.rebuild(w);}
     for(const drop of this.drops)if(!drop.used&&distance([drop.position[0],drop.position[1],drop.position[2]+40],p.position)<64)this.pickup(drop);
     this.drops=this.drops.filter(d=>!d.used&&this.time<d.expires);
     for(const key of Object.keys(this.powerup))if(this.powerup[key]<=this.time)delete this.powerup[key];
@@ -467,7 +507,7 @@ export class SoloGame {
     return {hit:result,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!result&&wall.fraction<1,normal:wall.normal};
   }
   fire() {
-    if(['dead','ready'].includes(this.phase)||this.pendingGrenade||this.time<this.cooldown||this.time<this.meleeDue||this.reloadEnd)return false;
+    if(['dead','ready'].includes(this.phase)||this.gesture||this.pendingGrenade||this.time<this.cooldown||this.time<this.meleeDue||this.reloadEnd)return false;
     if(this.sprinting){this.sprinting=false;this.pendingFire=true;this.sprintExitUntil=this.time+(this.weapon.definition.sprintOutTime||.3);return false;}
     if(this.pendingFire||this.time+1e-9<this.sprintExitUntil)return false;
     const w=this.weapon;if(w.clip<=0){this.reload();return false;}
@@ -505,7 +545,7 @@ export class SoloGame {
     }
   }
   melee() {
-    if(['dead','ready'].includes(this.phase)||this.pendingGrenade||this.time<this.meleeDue)return;
+    if(['dead','ready'].includes(this.phase)||this.gesture||this.pendingGrenade||this.time<this.meleeDue)return;
     const d=this.weapon.definition;this.meleeDue=this.time+(d.meleeTime||.5);this.reloadEnd=0;this.pendingFire=false;
     this.pendingMelee={due:this.time+(d.meleeDelay||.05),damage:d.meleeDamage||150};
     this.emit('melee',{duration:d.meleeTime||.5});this.emit('sound',{alias:d.meleeSwipeSoundPlayer});
@@ -517,11 +557,11 @@ export class SoloGame {
     if(enemy&&this.collision.trace([origin[0],origin[1],origin[2]+40],[enemy.position[0],enemy.position[1],enemy.position[2]+40],[0,0,0],1).fraction>.95){this.hitEnemy(enemy,this.pendingMelee.damage,false,true);this.emit('hit',false);this.emit('sound',{alias:'melee_hit'});}
   }
   reload() {
-    const w=this.weapon;if(this.pendingGrenade||this.reloadEnd||this.phase==='dead'||w.clip===w.definition.clipSize||!w.reserve)return;
+    const w=this.weapon;if(this.gesture||this.pendingGrenade||this.reloadEnd||this.phase==='dead'||w.clip===w.definition.clipSize||!w.reserve)return;
     const duration=(w.clip===0?w.definition.reloadEmptyTime:w.definition.reloadTime)*(this.mapRules?.reloadScale||1);
     this.pendingFire=false;this.reloadEnd=this.time+duration;this.emit('reload',{empty:w.clip===0,duration});
   }
-  switchWeapon(){if(this.pendingGrenade||this.inventory.length<2)return;this.pendingFire=false;this.slot=(this.slot+1)%this.inventory.length;this.reloadEnd=0;this.emit('weapon',this.weapon);}
+  switchWeapon(){if(this.gesture||this.pendingGrenade||this.inventory.length<2)return;this.pendingFire=false;this.slot=(this.slot+1)%this.inventory.length;this.reloadEnd=0;this.emit('weapon',this.weapon);}
   giveWeapon(name) {
     const owned=this.inventory.findIndex(w=>w.name===name);
     if(owned>=0){this.inventory[owned]=this.makeWeapon(name);this.slot=owned;}
@@ -541,7 +581,7 @@ export class SoloGame {
   }
   weaponName(name){return this.data.weaponNames?.[name]||{'zombie_colt':'Colt M1911','kar98k':'Kar98k','m1carbine':'M1A1 Carbine','thompson':'Thompson','bar':'BAR','doublebarrel':'Double barrel','shotgun':'Trench gun','mp40':'MP40','sw_357':'.357 Magnum','stg44':'STG-44','mg42_bipod':'MG42'}[name]||name;}
   use() {
-    if(this.pendingGrenade)return false;
+    if(this.pendingGrenade||this.gesture)return false;
     const grenade=this.nearGrenade();if(grenade)return this.rethrowGrenade(grenade);
     const e=this.nearInteraction();if(!e){const w=this.nearWindow();if(w)this.rebuild(w);return;}
     if(this.mapRules?.use(e))return true;
@@ -589,7 +629,7 @@ export class SoloGame {
   }
   renderPosition(actor){const a=Math.min(1,this.accumulator/PHYSICS_STEP),previous=actor.previousPosition||actor.position;return lerp(previous,actor.position,a);}
   throwGrenade(cook=false) {
-    if(!this.player.grenades||['ready','dead'].includes(this.phase)||this.pendingGrenade||this.time<this.meleeDue)return false;
+    if(!this.player.grenades||['ready','dead'].includes(this.phase)||this.gesture||this.pendingGrenade||this.time<this.meleeDue)return false;
     const d=this.data.grenade,started=this.time,pullAt=started+d.dropTime,throwAt=pullAt+d.holdFireTime;
     this.player.grenades--;this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;
     this.pendingGrenade={started,pullAt,holdEnd:throwAt,throwAt:cook?Infinity:throwAt,releaseAt:cook?Infinity:throwAt+d.fireDelay,end:cook?Infinity:throwAt+d.fireTime+d.raiseTime,due:throwAt+d.fuseTime,cookable:cook,cooking:cook};
