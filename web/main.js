@@ -17,6 +17,7 @@ import {selectedMap} from './maps.js';
 import {ZombiesLobby} from './lobby.js';
 import {SaveStore,SaveSlots} from './save-slots.js';
 import {PERKS} from './map-rules.js';
+import {powerSwitchRotation} from './factory-view.js';
 const mapChoice=selectedMap();
 
 const $=id=>document.getElementById(id);
@@ -146,13 +147,14 @@ function barrier(w) {
 function factoryVisuals(){
   if(mapChoice.id!=='der-riese')return;const powered=!!game?.mapRules?.power;
   for(const [target,angle]of [['wnuen_bridge',Math.PI/2],['warehouse_bridge',-Math.PI/2]])for(const item of dynamic.get(target)||[])item.object.rotation.y=powered?0:angle;
-  for(const item of dynamic.get('power_switch')||[])item.object.rotation.y=powered?0:-Math.PI/2;
+  for(const item of dynamic.get('power_switch')||[])item.object.rotation.set(...powerSwitchRotation(item.entity.angles,powered,game?.time||0,game?.mapRules?.powerStartedAt),'ZYX');
 }
 function open(e) {
   const targets=e.target.includes('upstairs')?['upstairs_blocker','upstairs_blocker2']:[e.target];
   for(const target of targets)for(const item of dynamic.get(target)||[])item.object.visible=false;
 }
 async function dynamicAssets(entities) {
+  const boardTargets=new Set(entities.filter(e=>e.targetname==='exterior_goal').map(e=>e.target));
   for(const entity of entities) {
     if(entity.script_noteworthy==='clip')continue;
     let object;
@@ -162,6 +164,7 @@ async function dynamicAssets(entities) {
     const group=new THREE.Group();group.position.fromArray(nodePos(entity));
     if(entity.classname==='script_model')shadeModel(object,map.illumination(nodePos(entity)));
     const angles=(entity.angles||'0 0 0').split(/\s+/).map(x=>Number(x)*Math.PI/180);group.rotation.set(angles[2],-angles[0],angles[1],'ZYX');group.add(object);scene.add(group);
+    map.bullets.addRoot(group,{penetrable:boardTargets.has(entity.targetname)});
     if(entity.targetname){if(!dynamic.has(entity.targetname))dynamic.set(entity.targetname,[]);dynamic.get(entity.targetname).push({object:group,entity});}
   }
 }
@@ -273,7 +276,7 @@ async function init() {
   const began=performance.now();
   const progress=text=>{$('message').textContent=text;state.loading=text;};
   await preloadAssets(progress);
-  const [manifest,collision,paths,recovered,navigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true)]);presentation=recovered;
+  const [manifest,collision,paths,recovered,navigation,powerNavigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true),mapChoice.id==='der-riese'?get('/data/'+mapChoice.data+'/power-navigation.json',true).catch(()=>null):null]);presentation=recovered;
   map=await loadMap(scene,progress);progress('Loading original weapons and Zombies…');await dynamicAssets(manifest.entities);
   audio=new OriginalAudio(manifest.sounds);audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
@@ -286,7 +289,7 @@ async function init() {
     bindingName:keyName,
     message:notice,spawn:spawnVisual,
     removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
-    traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),damage:()=>{damageFlash=1;},death,
+    traceShot:(origin,dir,range)=>map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),damage:()=>{damageFlash=1;},death,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
     // Weapon switch: hold the old gun's putaway, then draw the new gun.
@@ -297,7 +300,7 @@ async function init() {
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
-  factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);await audio.preload();resetVisuals();cameraPose();
+  factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);await audio.preload();resetVisuals();cameraPose();
   const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(actors.warmObject(),...dropTemplates.values());
   const warmFx=effects.create('misc/fx_zombie_powerup_on',0);warmScene.add(warmFx);
   for(const v of boxVisuals.values())for(const object of v.choices.values())object.visible=true;
@@ -384,7 +387,7 @@ function frame(time) {
     actors.updateOne(v,paused?0:dt,game.renderPosition(v.enemy));
   }
   for(const [drop,v]of dropVisuals){if(drop.used||game.time>drop.expires){effects.dispose(v.glow);scene.remove(v.root);dropVisuals.delete(drop);}else updateDrop(drop,v);}
-  if(game&&state.ready){updateBoxes();updatePap();updateAudio();}
+  if(game&&state.ready){factoryVisuals();updateBoxes();updatePap();updateAudio();}
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];if(game.time>=b.due){effects.dispose(b.root);bursts.splice(i,1);}else effects.update(b.root,game.time);}
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game)combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));

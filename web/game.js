@@ -1,10 +1,11 @@
 import { roundCount, nextHealth, spawnDelay } from './rules.js';
 import { SCORE_POPUP_SECONDS } from './score-hud.js';
-import {FactoryRules} from './map-rules.js';
+import {FactoryRules,POWER_TARGETS} from './map-rules.js';
 export const PHYSICS_STEP=1/120;
 // round_spawning() waits while get_enemy_count() > 31.
 const MAX_ALIVE=32;
 export const NAVIGATION_VERSION='native-triangles-physics-v3';
+export const POWER_NAVIGATION_VERSION='factory-power-v1';
 // Grenades hit physical surfaces, not the invisible player movement clips
 // that close window openings and simplify traversal around rubble.
 export const GRENADE_CONTENTS=1;
@@ -248,15 +249,46 @@ export class SoloGame {
     }
   }
   preparedNavigation(){return {version:NAVIGATION_VERSION,links:[...this.preparedLinkCache],insideNodes:this.windows.map(w=>w.insideNode),routes:[...this.spawnRoutes].map(([target,value])=>[target,{choices:value.choices,routes:[...value.routes]}])};}
+  preparePowerNavigation(prepared){
+    if(!this.mapRules)return;
+    if(prepared?.version===POWER_NAVIGATION_VERSION&&prepared.navigationVersion===NAVIGATION_VERSION){
+      this.powerNavigation={targets:prepared.targets,links:new Map(prepared.links)};return;
+    }
+    // Validate powered routes during preparation, including every state of
+    // overlapping doors/barriers, so using the switch needs no physics sweeps.
+    const power=new Set(POWER_TARGETS),changed=this.collision.brushes.filter(b=>power.has(b.target)),links=new Map(),disabled=this.collision.disabled;
+    try{
+      for(const key of this.linkCache.keys()){
+        const [a,b]=key.split(',').map(Number),p=this.nodes[a].origin,q=this.nodes[b].origin;
+        const low=[Math.min(p[0],q[0])-18,Math.min(p[1],q[1])-18,Math.min(p[2],q[2])-18],high=[Math.max(p[0],q[0])+18,Math.max(p[1],q[1])+18,Math.max(p[2],q[2])+88];
+        const overlaps=brush=>brush.mins.every((v,k)=>v<=high[k])&&brush.maxs.every((v,k)=>v>=low[k]);
+        if(!changed.some(overlaps))continue;
+        const targets=[...new Set(this.collision.brushes.filter(b=>b.target&&!power.has(b.target)&&overlaps(b)).map(b=>b.target))].sort(),values=[];
+        for(let mask=0;mask<2**targets.length;mask++){
+          this.collision.disabled=new Set([...disabled,...POWER_TARGETS]);
+          targets.forEach((target,i)=>{if(mask&(1<<i))this.collision.disabled.add(target);else this.collision.disabled.delete(target);});
+          values.push(this.walkableLink(p,q,true));
+        }
+        links.set(key,{targets,values});
+      }
+    }finally{this.collision.disabled=disabled;}
+    this.powerNavigation={targets:POWER_TARGETS,links};
+  }
+  preparedPowerNavigation(){return {version:POWER_NAVIGATION_VERSION,navigationVersion:NAVIGATION_VERSION,targets:this.powerNavigation.targets,links:[...this.powerNavigation.links]};}
   invalidateNavigation(targets){
     this.pathCache.clear();this.targetNodeDue=0;this.spawnDistanceCache=null;
     const changed=this.collision.brushes.filter(b=>targets.includes(b.target));
+    const powered=this.powerNavigation?.targets.every(target=>this.collision.disabled.has(target));
     // Retain static-world links. Re-test only edges whose swept body/step bounds
     // overlap the changed clip brush; re-test now rather than on an AI tick.
     for(const key of this.linkCache.keys()){
       const [a,b]=key.split(',').map(Number),p=this.nodes[a].origin,q=this.nodes[b].origin;
       const low=[Math.min(p[0],q[0])-18,Math.min(p[1],q[1])-18,Math.min(p[2],q[2])-18],high=[Math.max(p[0],q[0])+18,Math.max(p[1],q[1])+18,Math.max(p[2],q[2])+88];
-      if(changed.some(brush=>brush.mins.every((v,k)=>v<=high[k])&&brush.maxs.every((v,k)=>v>=low[k])))this.linkCache.set(key,this.walkableLink(p,q,true));
+      if(changed.some(brush=>brush.mins.every((v,k)=>v<=high[k])&&brush.maxs.every((v,k)=>v>=low[k]))){
+        const cached=powered&&this.powerNavigation.links.get(key);
+        if(cached){const mask=cached.targets.reduce((bits,target,i)=>bits|(this.collision.disabled.has(target)?1<<i:0),0);this.linkCache.set(key,cached.values[mask]);}
+        else this.linkCache.set(key,this.walkableLink(p,q,true));
+      }
     }
   }
   // zombie_think: the three exterior goals nearest the spawner, stopping where
@@ -597,6 +629,9 @@ export class SoloGame {
   rayHit(range=16000,yaw=this.yaw,pitch=this.pitch) {
     const origin=[this.player.position[0],this.player.position[1],this.player.position[2]+60];
     const dir=[Math.cos(yaw)*Math.cos(pitch),Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch)];
+    // Browser gunfire follows visible surfaces, including gaps in props. The
+    // walking hulls and invisible clips continue to govern actor movement.
+    if(this.events.traceShot)return this.events.traceShot(origin,dir,range);
     const wall=this.collision.trace(origin,origin.map((v,i)=>v+dir[i]*range),[0,0,0],1);
     let nearest=range*wall.fraction,result=null;
     if(this.events.traceEnemy) {

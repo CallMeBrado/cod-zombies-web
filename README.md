@@ -59,6 +59,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
 - **Weapons:**
   - Original viewmodels, iron sights, recoil, reloads, sprint poses and knife.
   - Wall buys, and the mystery box with weapon cycling and a manual grab.
+  - Gunfire uses the rendered map and prop triangles, so openings and transparent cutouts admit shots. Rebuildable window boards can be shot through; solid cover still blocks bullets.
   - Grenades: cook them, throw them through windows, or pick up live ones and throw them back.
 - **Barriers:** rebuilt with the use key, awarding points with the original repair sound.
 - **Power-ups:**
@@ -79,6 +80,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
 ### Working: Der Riese
 
 - Lobby and map selection, power switch, doors and zone unlocking.
+  - The power lever keeps its authored off pose and rolls upward over the original 0.3 seconds. Powered navigation routes are prepared before play to avoid a pause when the switch is used.
 - **Perks:** buying one plays the machine's sting at the machine, then the original drink animation and sounds. The perk takes effect when you finish drinking.
   - Jugger-Nog, Speed Cola and Double Tap work.
   - Each machine plays idle jingles and electrical sparks.

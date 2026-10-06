@@ -10,6 +10,7 @@ import {CollisionWorld} from '../web/collision.js';
 import {SoloGame} from '../web/game.js';
 import {MAPS,mapById} from '../web/maps.js';
 import {spawn} from 'node:child_process';
+import {prepareFactoryPowerNavigation} from './prepare_power_navigation.mjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url))),data=path.join(root,'local-data');
 const read=async relative=>JSON.parse(await readFile(path.join(data,relative),'utf8'));
 const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=[...new Set([chosen.zone,'common','nacht'])];
@@ -27,6 +28,7 @@ if(navigation?.sourceStamp!==navStamp){
   console.log(`Prepared ${navigation.links.length} directed navigation links and ${navigation.routes.length} window routes on E: in ${((performance.now()-began)/1000).toFixed(1)} seconds.`);
 }
 const files=new Map();
+if(chosen.id==='der-riese')await prepareFactoryPowerNavigation(data,navigation);
 async function add(relative,required=true){
   relative=relative.replaceAll('\\','/');const resolved=path.resolve(data,relative),inside=path.relative(data,resolved);
   if(inside.startsWith('..')||path.isAbsolute(inside))throw new Error('Asset path escapes local-data.');
@@ -60,6 +62,7 @@ async function model(name){
   }
 }
 await add(chosen.data+'/manifest.json');await add(chosen.data+'/presentation.json');await add(chosen.data+'/navigation.json');await add('ui/fonts/normalFont.json');
+if(chosen.id==='der-riese')await add(chosen.data+'/power-navigation.json');
 for(const effect of Object.values(presentation.effects))for(const element of effect.elements)for(const url of element.textures)await add(decodeURIComponent(url.slice('/data/'.length)));
 for(const entry of Object.values(manifest.sounds).flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));
 for(const name of await readdir(path.join(data,'gameplay/hud')))if(name.endsWith('.png'))await add('gameplay/hud/'+name);

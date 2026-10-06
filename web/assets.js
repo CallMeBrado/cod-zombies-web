@@ -5,6 +5,7 @@ import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import {assetData,assetResponse} from './preload.js';
 import {BakedLightSamples} from './baked-light.js';
 import {selectedMap} from './maps.js';
+import {BulletTrace} from './bullet-trace.js';
 const mapChoice=selectedMap(),assetZones=[...new Set([mapChoice.zone,'common','nacht'])];
 
 const dds=new DDSLoader(), textures=new Map(), models=new Map();
@@ -108,6 +109,7 @@ export async function model(name) {
 export function cloneModel(template){return clone(template);}
 export async function loadMap(scene,progress) {
   const world=await get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.json',true);
+  const bullets=new BulletTrace();
   const [vb,ib]=await Promise.all([get('/data/'+mapChoice.zone+'/web-world/'+world.vertices),get('/data/'+mapChoice.zone+'/web-world/'+world.indices)]);
   const view=new DataView(vb),idx=new Uint16Array(ib),positions=new Float32Array(world.vertexCount*3),uv=new Float32Array(world.vertexCount*2),uv1=new Float32Array(world.vertexCount*2),colors=new Float32Array(world.vertexCount*3);
   for(let i=0;i<world.vertexCount;i++) {
@@ -253,10 +255,10 @@ export async function loadMap(scene,progress) {
   let worldBatches=0;
   for(const [key,g]of arrayGroups){
     const m=g.meta,mat=buildMaterial({key:'array:'+key,map:arrayMap,normal:null,emissive:m.emissive,lm:m.lm,vertexColors:m.vertexColors,alpha:m.alpha,arrays:{diffuse:arrayTexture(m.d),normal:m.n?arrayTexture(m.n):null}});
-    const mesh=new THREE.Mesh(compactGeometry(g.indices,g.lights,g.layers,g.normalLayers),mat);mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);worldBatches++;
+    const mesh=new THREE.Mesh(compactGeometry(g.indices,g.lights,g.layers,g.normalLayers),mat);mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh,{layers:m.d.textures});worldBatches++;
   }
   for(const [id,groups]of grouped) {
-    if(id===0){for(const [key,group]of groups){const mesh=new THREE.Mesh(compactGeometry(group.indices,group.lights),mats.get(baseMaterials.get(key)));mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);worldBatches++;}}
+    if(id===0){for(const [key,group]of groups){const mesh=new THREE.Mesh(compactGeometry(group.indices,group.lights),mats.get(baseMaterials.get(key)));mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh);worldBatches++;}}
     else{
       const indices=[],lightsOf=[],materials=[],ranges=[];
       for(const [key,group]of groups){ranges.push([indices.length,group.indices.length,materials.length]);indices.push(...group.indices);lightsOf.push(...group.lights);materials.push(mats.get(baseMaterials.get(key)));}
@@ -308,6 +310,7 @@ export async function loadMap(scene,progress) {
     const mesh=new THREE.InstancedMesh(part.geometry,part.material,batch.instances.length);mesh.name='Static batch '+batch.name;mesh.matrixAutoUpdate=false;
     part.geometry.computeBoundingSphere();
     const instances=batch.instances.map(inst=>{const matrix=inst.matrix.clone().multiply(part.matrix),sphere=part.geometry.boundingSphere.clone().applyMatrix4(matrix);sphere.radius+=32;return {matrix,color:inst.color,sphere};});
+    bullets.addInstances(part.geometry,part.material,instances);
     instances.forEach((inst,i)=>{mesh.setMatrixAt(i,inst.matrix);mesh.setColorAt(i,inst.color);});
     mesh.frustumCulled=false;scene.add(mesh);batchCount++;cullBatches.push({mesh,instances,visible:null});
   }
@@ -320,7 +323,7 @@ export async function loadMap(scene,progress) {
       batch.mesh.count=visible.length;batch.mesh.visible=visible.length>0;batch.mesh.instanceMatrix.needsUpdate=true;batch.mesh.instanceColor.needsUpdate=true;batch.visible=visible;
     }
   };
-  return {world,brushMeshes,illumination,worldBatches,staticBatches:batchCount,staticPlacements:world.staticModels.length,lightmapCount:lightmaps.length,textures:()=>textures.size,
+  return {world,bullets,brushMeshes,illumination,worldBatches,staticBatches:batchCount,staticPlacements:world.staticModels.length,lightmapCount:lightmaps.length,textures:()=>textures.size,
     // Lightmaps and the light table are decoded here rather than through the
     // texture cache; upload them before play too, or each one uploads (a
     // 20-70 ms hitch) the first time its area comes into view.

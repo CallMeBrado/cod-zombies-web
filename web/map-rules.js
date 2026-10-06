@@ -9,12 +9,13 @@ const PAP_TIMEOUT=15;
 // play_devil_dialog lines for each powerup grab.
 const ANNOUNCER={full_ammo:'ma_vox',insta_kill:'insta_vox',double_points:'dp_vox',nuke:'nuke_vox',carpenter:'carp_vox'};
 const between=(a,b)=>a+Math.random()*(b-a);
+export const POWER_TARGETS=['outside_south_east_door','outside_south_west_door','wnuen_bridge_clip','warehouse_bridge_clip'];
 
 // Map-specific interactions and zone connections recovered from the factory
 // entities/GSC. The shared combat/physics loop remains the same on both maps.
 export class FactoryRules {
   constructor(game){this.game=game;this.data=game.data.map;}
-  reset(){this.flags=new Set();this.perks=new Set();this.power=false;this.links=new Set();this.linkPending=null;this.teleportDue=0;this.teleportCooldown=0;this.pap=null;this.machines=null;this.papOn=false;this.pending=[];}
+  reset(){this.flags=new Set();this.perks=new Set();this.power=false;this.powerStartedAt=null;this.links=new Set();this.linkPending=null;this.teleportDue=0;this.teleportCooldown=0;this.pap=null;this.machines=null;this.papOn=false;this.pending=[];this.quietPower=false;}
   activeZones(){
     const active=new Set([this.data.initialZone]);let changed=true;
     while(changed){changed=false;for(const [a,b,flag]of this.data.connections)if(this.flags.has(flag)){
@@ -77,8 +78,8 @@ export class FactoryRules {
   use(e){
     const g=this.game,key=e.targetname;
     if(key==='use_power_switch'){
-      this.power=true;this.flags.add('electricity_on');
-      for(const target of ['outside_south_east_door','outside_south_west_door','wnuen_bridge_clip','warehouse_bridge_clip'])this.openTarget(target);
+      this.power=true;this.powerStartedAt=g.time;this.flags.add('electricity_on');
+      this.openTargets(POWER_TARGETS);
       g.emit('power');g.emit('sound',{alias:'switch_flip'});g.emit('sound',{alias:'bridge_lower'});g.message('Power restored');return true;
     }
     if(key==='zombie_vending'){
@@ -125,9 +126,9 @@ export class FactoryRules {
     }
     return false;
   }
-  saveState(){return {power:this.power,flags:[...this.flags],perks:[...this.perks],links:[...this.links],linkPending:this.linkPending&&{...this.linkPending},
+  saveState(){return {power:this.power,powerStartedAt:this.powerStartedAt,flags:[...this.flags],perks:[...this.perks],links:[...this.links],linkPending:this.linkPending&&{...this.linkPending},
     teleportDue:this.teleportDue,teleportCooldown:this.teleportCooldown,pending:this.pending.map(job=>({...job}))};}
-  loadState(s){if(!s)return;this.power=s.power;this.flags=new Set(s.flags);this.perks=new Set(s.perks);this.links=new Set(s.links);
+  loadState(s){if(!s)return;this.power=s.power;this.powerStartedAt=s.powerStartedAt??null;this.flags=new Set(s.flags);this.perks=new Set(s.perks);this.links=new Set(s.links);
     this.linkPending=s.linkPending||null;this.teleportDue=s.teleportDue||0;this.teleportCooldown=s.teleportCooldown||0;this.pending=(s.pending||[]).map(job=>({...job}));
     // Machines resume their hum without replaying the power-on sound.
     this.quietPower=true;}
@@ -192,7 +193,8 @@ export class FactoryRules {
     if(pap.phase==='out'&&t>=4.35){pap.phase='ready';pap.readyAt=g.time;g.emit('loop',{id:'packa_timer',alias:'ticktock_loop',position:pap.at,...RANGE.tick});}
     if(pap.phase==='ready'&&g.time>=pap.readyAt+PAP_TIMEOUT){this.pap=null;g.emit('stopLoop',{id:'packa_timer'});this.sound('packa_deny',pap.at,RANGE.machine);}
   }
-  openTarget(target){const g=this.game;g.opened.add(target);g.collision.disabled.add(target);g.invalidateNavigation([target]);g.emit('open',{target});}
+  openTarget(target){this.openTargets([target]);}
+  openTargets(targets){const g=this.game;for(const target of targets){g.opened.add(target);g.collision.disabled.add(target);}g.invalidateNavigation(targets);for(const target of targets)g.emit('open',{target});}
   tick(){
     const g=this.game;
     for(const job of this.pending.filter(job=>g.time>=job.at)){this.pending.splice(this.pending.indexOf(job),1);this.runJob(job);}
