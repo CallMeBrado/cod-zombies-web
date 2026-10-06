@@ -60,7 +60,7 @@ let game,audio,map,weaponView,grenadeView,actors,effects,presentation;
 let playerBody,diveAudio,diveThirdPerson=false;
 const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts=[];
 let hudDue=0,domDue=0;const frameSamples=[];
-let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0,wasSprinting=false,aimReadyAt=0;
+let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
 let deathFxTime=0,frameMsTotal=0;
 const loops=new Map();let papView=null,shake=null;const cellObjects=[];let cellMask=null;
 const pauseKeys=new PauseKeys();
@@ -249,7 +249,7 @@ function resetVisuals() {
   combatEffects.reset();blood.reset();
   deathFxTime=0;
   grenadeView?.reset();
-  state.yaw=game?.data.map?Number(game.entities.find(e=>e.targetname==='initial_spawn_points').angles.split(' ')[1])*Math.PI/180:Math.PI;state.pitch=0;factoryVisuals();kickPitch=0;kickYaw=0;damageFlash=0;controls.reset();aimBlend=0;wasSprinting=false;aimReadyAt=0;mouse.reset();lastLight=-1;cameraPose();
+  state.yaw=game?.data.map?Number(game.entities.find(e=>e.targetname==='initial_spawn_points').angles.split(' ')[1])*Math.PI/180:Math.PI;state.pitch=0;factoryVisuals();kickPitch=0;kickYaw=0;damageFlash=0;controls.reset();aimBlend=0;mouse.reset();lastLight=-1;cameraPose();
 }
 function traceEnemy(origin,direction,max,all=false) {
   raycaster.set(new THREE.Vector3(...origin),new THREE.Vector3(...direction));raycaster.far=max;
@@ -476,15 +476,11 @@ function frame(time) {
   if(!state.ready||state.mode==='loading'){requestAnimationFrame(frame);return;}
   if(!paused)mouse.update(time);
   if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){kickPitch+=(Math.random()-.5)*shake.amplitude*.04;kickYaw+=(Math.random()-.5)*shake.amplitude*.04;}}cameraPose();if(game)game.ads=aimBlend;
-  // Aiming ends a sprint, and the sights only come up once the sprint-out
-  // animation has finished, as in the original. Blending the aim pose onto
-  // the lowered sprint pose swung the arms across the view.
-  const aimWanted=(gamepads.active?gamepads.aiming:controls.aiming)&&!game?.movementBlocked&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
-  if(aimWanted&&gamepads.active)gamepads.sprinting=false;
-  if(game&&!paused&&state.mode==='playing'){const frameInput=input();game.update(dt,aimWanted?{...frameInput,sprint:false}:frameInput);}
+  // Aiming ends a sprint at once; the sights rise while the player slows.
+  const aimHeld=(gamepads.active?gamepads.aiming:controls.aiming)&&!game?.movementBlocked&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
+  if(aimHeld&&gamepads.active)gamepads.sprinting=false;
+  if(game&&!paused&&state.mode==='playing'){const frameInput=input();game.update(dt,aimHeld?{...frameInput,sprint:false}:frameInput);}
   if(gamepads.active&&game?.player.stance!=='stand')gamepads.sprinting=false;
-  if(game?.sprinting)wasSprinting=true;else if(wasSprinting&&game){wasSprinting=false;aimReadyAt=game.time+(game.weapon.definition.sprintOutTime||.3);}
-  const aimHeld=aimWanted&&!game?.sprinting&&((game?.time??0)>=aimReadyAt||aimReadyAt-game.time>1);
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;
   if(!paused)aimBlend=THREE.MathUtils.clamp(aimBlend+(aimHeld&&!game?.reloadEnd?1:-1)*dt/adsTime,0,1);
   const adsFov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(game?.weapon.definition.adsZoomFov||60)/2)*.75));

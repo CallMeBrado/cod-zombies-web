@@ -50,12 +50,12 @@ export class WeaponView {
     this.knife=knife;this.meleeRemaining=0;this.sprintBlend=0;this.flashTime=0;this.rechamberAt=0;
     this.rigs.set(weapon.name,{root,object,mixer,clips,adsAction:this.adsAction,flash:this.flash,knife});
   }
-  play(name,duration=0,loop=false,hold=false) {
+  play(name,duration=0,loop=false,hold=false,fade=.035) {
     const clip=this.clips.get(name);if(!clip)return;this.sprintAnim=null;
     let action=this.actions.get(name);if(!action){action=this.mixer.clipAction(clip);this.actions.set(name,action);}
-    if(this.current&&this.current!==action)this.current.fadeOut(.035);
+    if(this.current&&this.current!==action)this.current.fadeOut(fade);
     action.reset().setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);action.clampWhenFinished=!loop;
-    action.setEffectiveWeight(1).setEffectiveTimeScale(duration>0?clip.duration/duration:1).fadeIn(.025).play();
+    action.setEffectiveWeight(1).setEffectiveTimeScale(duration>0?clip.duration/duration:1).fadeIn(Math.min(fade,.025)).play();
     this.current=action;this.actionDue=loop?Infinity:(duration||clip.duration);this.actionElapsed=0;this.hold=hold;
     this.queue=(clip.userData?.notifies||[]).map(n=>({...n,due:n.time*this.actionDue}));
   }
@@ -81,6 +81,9 @@ export class WeaponView {
       const empty=!this.weapon.clip,clip=(full,emptyName)=>empty&&this.clips.has(emptyName)?emptyName:full;
       if(target&&(!this.sprintAnim||this.sprintAnim==='out')){this.play(clip(d.sprintInAnim,d.sprintInEmptyAnim),d.sprintInTime||.3,false,true);this.sprintAnim='in';}
       else if(target&&this.sprintAnim==='in'&&this.actionElapsed>=this.actionDue){this.play(clip(d.sprintLoopAnim,d.sprintLoopEmptyAnim),d.sprintLoopTime||0,true);this.sprintAnim='loop';}
+      // Aiming blends the sprint pose straight back to idle under the rising
+      // sights; the sprint-out clip beneath the aim pose swung the arms across the view.
+      else if(!target&&ads>0&&this.sprintAnim){this.play(clip(d.idleAnim,d.emptyIdleAnim),0,true,false,.12);}
       else if(!target&&(this.sprintAnim==='in'||this.sprintAnim==='loop')){this.play(clip(d.sprintOutAnim,d.sprintOutEmptyAnim),d.sprintOutTime||.3);this.sprintAnim='out';}
     }
     const idle=this.weapon.clip?this.weapon.definition.idleAnim:this.weapon.definition.emptyIdleAnim,name=this.current?.getClip().name;
