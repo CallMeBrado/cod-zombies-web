@@ -21,6 +21,7 @@ def prepare(game=GAME):
     weapons = {}
     names = ['zombie_colt','kar98k','m1carbine','thompson','bar','doublebarrel','shotgun','mp40','sw_357','stg44','mg42_bipod']
     fields = ['displayName','gunModel','worldModel','damage','minDamage','maxDamageRange','minDamageRange','clipSize','startAmmo','maxAmmo','fireTime','reloadTime','reloadEmptyTime','fireSound','reloadSound','meleeDamage','adsZoomFov','moveSpeedScale','fireType','locHead','locTorsoUpper']
+    fields += ['weaponType','weaponClass','penetrateType','rifleBullet','maxRange']
     fields += ['handModel','idleAnim','emptyIdleAnim','fireAnim','lastShotAnim','adsFireAnim','adsLastShotAnim','reloadAnim','reloadEmptyAnim','rechamberAnim','adsRechamberAnim','adsUpAnim','adsDownAnim','meleeAnim','raiseAnim',
                'fireSoundPlayer','reloadSoundPlayer','emptyFireSoundPlayer','notetrackSoundMap','rechamberTime','rechamberBoltTime','shotCount','adsSpread','hipSpreadStandMin','hipSpreadMax','hipSpreadDecayRate','hipSpreadFireAdd','hipSpreadMoveAdd',
                'adsTransInTime','adsTransOutTime','adsViewKickPitchMin','adsViewKickPitchMax','adsViewKickYawMin','adsViewKickYawMax','hipViewKickPitchMin','hipViewKickPitchMax','hipViewKickYawMin','hipViewKickYawMax','hipViewKickCenterSpeed','adsViewKickCenterSpeed','hudIcon']

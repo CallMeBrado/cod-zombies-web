@@ -385,8 +385,8 @@ export async function originalAnimation(name,root,shared=false) {
 }
 
 export class OriginalAudio {
-  constructor(sounds){
-    this.sounds=sounds;this.context=null;this.buffers=new Map();this.loading=null;this._volume=.5;
+  constructor(sounds,unlockedContext=null){
+    this.sounds=sounds;this.context=null;this.unlockedContext=unlockedContext;this.buffers=new Map();this.loading=null;this._volume=.5;
     this.sources=new Set();this.history=[];this.session=null;
   }
   get volume(){return this._volume;}
@@ -408,7 +408,7 @@ export class OriginalAudio {
   }
   async start() {
     if(!this.context){
-      this.context=new AudioContext();this.master=this.context.createGain();this.master.gain.value=this._volume;
+      this.context=this.unlockedContext||new AudioContext();this.master=this.context.createGain();this.master.gain.value=this._volume;
       this.meter=this.context.createAnalyser();this.meter.fftSize=512;this.samples=new Float32Array(512);
       this.master.connect(this.meter);this.meter.connect(this.context.destination);
     }

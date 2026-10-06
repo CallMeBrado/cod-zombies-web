@@ -139,8 +139,9 @@ export class BulletTrace {
     return best;
   }
   shot(origin,dir,range,traceEnemy){
-    const surface=this.trace(origin,dir,range),hit=traceEnemy(origin,dir,surface?.distance??range);
+    const surface=this.trace(origin,dir,range),found=traceEnemy(origin,dir,surface?.distance??range,true);
+    const hits=(Array.isArray(found)?found:found?[found]:[]).sort((a,b)=>a.distance-b.distance),hit=hits[0]||null;
     const nearest=hit?.distance??surface?.distance??range;
-    return {hit,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!hit&&!!surface,normal:surface?.normal||[0,0,0]};
+    return {hit,hits,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!hit&&!!surface,normal:surface?.normal||[0,0,0]};
   }
 }

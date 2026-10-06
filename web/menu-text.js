@@ -7,7 +7,7 @@ export class MenuText {
   const response=await assetResponse('/data/gameplay/hud/'+name+'.png');if(!response.ok)throw new Error('Missing original menu artwork');
   const url=URL.createObjectURL(await response.blob());this.root.style.setProperty(variable,`url("${url}")`);
  }this.paint();}
- paint(){if(!this.font.ready)return;for(const element of this.root.querySelectorAll('[data-menu-text]'))this.draw(element);}
+ paint(){if(!this.font.fontReady&&!this.font.ready)return;for(const element of this.root.querySelectorAll('[data-menu-text]'))this.draw(element);}
  draw(element){
   let canvas=element.querySelector('canvas'),label=element.querySelector('.menu-label');if(!canvas){label=document.createElement('span');label.className='menu-label';label.textContent=element.textContent;canvas=document.createElement('canvas');canvas.setAttribute('aria-hidden','true');element.replaceChildren(label,canvas);}
   const text=label.textContent,style=getComputedStyle(element),size=parseFloat(style.fontSize),color=style.color,scale=size/this.font.font.pixelHeight,dpr=Math.min(devicePixelRatio,2);

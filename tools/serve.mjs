@@ -9,6 +9,7 @@ import { networkInterfaces } from 'node:os';
 import {MAPS,BO1_MAPS,mapById} from '../web/maps.js';
 import {pageRoute} from '../web/routes.js';
 import {createSaveApi} from './save-api.mjs';
+import {sendMovie} from './media-response.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const port = Number(process.env.PORT || 8789);
@@ -55,7 +56,7 @@ const server = http.createServer(async (req, res) => {
       const build=await currentBuild();
       const map=page.game==='black-ops'?BO1_MAPS[0]:MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||MAPS[0];
       const preview=page.game==='black-ops'&&build.maps[map.id]?.navigationVersion!=='kino-ground-v2';
-      const preloadConfig=page.game&&!preview?encodeURIComponent(JSON.stringify(build.maps[map.id].packs.map(pack=>pack.url))):'';
+      const preloadConfig=page.game&&!preview?encodeURIComponent(JSON.stringify(build.maps[map.id].packs.map(({url,bytes})=>({url,bytes})))):'';
       const html=build.files.get(preview?'bo1-progress.html':page.template).toString('utf8').replaceAll('__BUILD__',build.id).replaceAll('__PRELOAD__',preloadConfig);
       sendBuffer(req,res,Buffer.from(html),'text/html');return;
     }
@@ -81,7 +82,7 @@ const server = http.createServer(async (req, res) => {
       folder = path.join(root, 'local-data'); relative = pathname.slice(6);
       // Publish game assets, while keeping extraction reports, logs and process files local.
       const assetFolder = path.relative(folder, path.resolve(folder, relative)).split(path.sep)[0];
-      if (!['gameplay', 'nacht', 'der-riese', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui'].includes(assetFolder)) {
+      if (!['gameplay', 'nacht', 'der-riese', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','launch'].includes(assetFolder)) {
         res.writeHead(404); res.end('File not found.'); return;
       }
     } else if (pathname.startsWith('/vendor/')) {
@@ -108,6 +109,7 @@ const server = http.createServer(async (req, res) => {
     }
     const info = await stat(actual);
     if (!info.isFile()) { res.writeHead(404); res.end(); return; }
+    if(path.extname(actual)==='.mp4'){await sendMovie(req,res,actual,info);return;}
     res.writeHead(200, { 'Content-Type': mime[path.extname(actual)] || 'application/octet-stream',
       'Content-Length': info.size, 'Cache-Control': pathname.startsWith('/vendor/0.186.1/')?'public, max-age=31536000, immutable':'no-store',
       'X-Content-Type-Options': 'nosniff' });

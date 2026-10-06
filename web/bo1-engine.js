@@ -152,7 +152,7 @@ export class BlackOpsEngine extends TestingGame {
       for(const enemy of this.enemies.filter(e=>!e.dead).sort((a,b)=>distance(this.player.position,a.position)-distance(this.player.position,b.position))){if(distance(this.player.position,enemy.position)>512)continue;
         const d=enemy.position.map((v,k)=>v-this.player.position[k]),yaw=Math.atan2(d[1],d[0]);if(Math.cos(yaw-this.yaw)<.86)continue;
         const ray=this.rayHit(600,yaw,Math.atan2(d[2]-25,Math.hypot(d[0],d[1])));
-        if(ray.hit?.enemy===enemy)super.hitEnemy(enemy,enemy.health,false,false);
+        if(ray.hit?.enemy===enemy){super.hitEnemy(enemy,enemy.health,false,false);this.emit('hit',false);}
       }
     }return fired;
   }

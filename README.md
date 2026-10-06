@@ -62,6 +62,8 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Original viewmodels, iron sights, recoil, reloads, sprint poses and knife.
   - Wall buys, and the mystery box with weapon cycling and a manual grab.
   - Gunfire uses the rendered map and prop triangles, so openings and transparent cutouts admit shots. Rebuildable window boards can be shot through; solid cover still blocks bullets.
+  - Bullets can hit multiple living zombies along their path, using the original weapon penetration tier to approximate flesh penetration. Solid cover still stops the path.
+  - Range damage blends from each original weapon's close damage to its far damage, then stays at its minimum. Shotguns retain their native pellet count and cone width, with a centered pellet and distributed spread for consistent close blasts. Animated head and torso combat volumes supplement mesh hits, so torn clothing and pose seams cannot make an otherwise valid hit miss. These mechanics are shared by WaW and Black Ops.
   - Grenades: cook them, throw them through windows, or pick up live ones and throw them back.
 - **Barriers:** rebuilt with the use key, awarding points with the original repair sound.
 - **Power-ups:**
@@ -75,6 +77,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Mouse and aim sensitivity, invert, hold/toggle aim.
   - Volume, field of view, render scale, fullscreen.
   - FPS counter.
+- **Launching a map:** selecting a map opens its lobby without downloading the game pack. START GAME plays the installed game's original loading movie and soundtrack while downloading assets. The progress bar measures downloaded bytes, then completed preparation stages. Once the map is ready, SKIP INTRO starts immediately; otherwise it waits for the movie to end. Der Riese's original loading clip is a silent still frame and remains on screen while the map loads. Saved-game loading uses the same flow across both games. `npm run prepare:launch` converts the original movies on E:; the normal launcher also prepares them when necessary.
 - **Save game:** three named server slots per map, shared by everyone who has access to the site, with no extra sign-in. Pause → SAVE GAME, enter a name, then choose a slot. Resume from LOAD GAME on any browser or device. Saves keep live zombies, round progress, drops, timers and map state, with thumbnail and statistics. Files live under `local-data/saves/` on E: and persist across server restarts; existing browser saves import into empty slots once. A changed slot rejects stale writes from another device; overwrites and deletions retain a recovery backup.
 - **Testing mod menu:** choose MOD MENU from the pause menu. It has god mode, unlimited points, ammo and grenades, a weapon selector and a round selector.
 - **Network play:** other devices on your local network can connect. Each browser runs its own solo game.

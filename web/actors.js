@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {model,cloneModel,originalAnimation,shadeModel} from './assets.js';
-import {PosedTrace} from './posed-trace.js';
+import {ZombieHitTrace} from './zombie-hit-trace.js';
 
 // Retarget shared clips before gameplay. Spawning only acquires a prepared rig.
 export class ZombieActors {
@@ -18,7 +18,7 @@ export class ZombieActors {
       });
       const mixer=new THREE.AnimationMixer(object),actions=new Map([...clips].map(([name,clip])=>[name,mixer.clipAction(clip)]));
       for(const [name,action]of actions){const once=name.includes('death')||name.includes('tear')||name.includes('traverse');action.setLoop(once?THREE.LoopOnce:THREE.LoopRepeat,once?1:Infinity);action.clampWhenFinished=once;}
-      this.pool.push({root,object,mixer,actions,materials,current:null,enemy:null,started:null,trace:new PosedTrace(root)});
+      this.pool.push({root,object,mixer,actions,materials,current:null,enemy:null,started:null,trace:new ZombieHitTrace(root)});
     }
   }
   acquire(enemy){
@@ -51,6 +51,7 @@ export class ZombieActors {
       if(name==='ai_zombie_walk_v1'&&!e.gait)action.setEffectiveTimeScale(e.speed/37.64);
     }
     v.mixer.update(dt);
+    v.trace.tick=-1;v.traceTick=-1;
   }
   light(v){const color=this.map.illumination(v.enemy.position);for(const m of v.materials)if(!m.userData.fixedLight)m.color.setRGB(...color);}
   release(id){const v=this.active.get(id);if(!v)return;this.scene.remove(v.root);v.mixer.stopAllAction();v.enemy=null;this.active.delete(id);this.pool.push(v);}

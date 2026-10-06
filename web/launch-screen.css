@@ -1,0 +1,8 @@
+#launch-screen{position:fixed;inset:0;z-index:30;background:#000 center/contain no-repeat;color:#eee;font-family:Arial,sans-serif}
+#launch-movie{position:absolute;width:100%;height:100%;object-fit:contain;background:transparent}
+.launch-footer{position:absolute;left:0;right:0;bottom:0;padding:24px max(5vw,20px) 20px;background:linear-gradient(transparent,#000e 35%);text-shadow:1px 1px 3px #000}
+.launch-heading,.launch-detail{display:flex;justify-content:space-between;gap:20px;align-items:center}.launch-heading{font-size:15px;letter-spacing:1.5px;margin-bottom:10px}.launch-heading strong{font-weight:400}.launch-detail{font-size:12px;color:#bbb;margin-top:8px}
+#launch-progress{display:block;width:100%;height:7px;border:1px solid #9a9a9a;background:#181818;appearance:none;border-radius:0}#launch-progress::-webkit-progress-bar{background:#181818}#launch-progress::-webkit-progress-value{background:#ddd}#launch-progress::-moz-progress-bar{background:#ddd}
+.launch-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:12px;min-height:34px}.launch-actions button{border:1px solid #8c8c8c;background:#161616bb;color:#eee;padding:8px 15px;font-size:12px;letter-spacing:1px}.launch-actions button:disabled{opacity:.5;cursor:default}.launch-actions button:hover:not(:disabled),.launch-actions button:focus-visible{color:#e5ca7d;border-color:#e5ca7d}
+body.launching #overlay,body.launching footer,body.launching #fps-counter{visibility:hidden}body.launching #blood{display:none}
+@media(max-width:600px){.launch-detail{display:block}.launch-detail span{display:block;margin-top:4px}.launch-heading{font-size:12px}.launch-footer{padding-bottom:12px}}

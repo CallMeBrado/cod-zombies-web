@@ -1,6 +1,7 @@
 import { roundCount, nextHealth, spawnDelay } from './rules.js';
 import { SCORE_POPUP_SECONDS } from './score-hud.js';
 import {FactoryRules,POWER_TARGETS} from './map-rules.js';
+import {hitDamage,fleshPenetration,pelletAngles} from './ballistics.js';
 export const PHYSICS_STEP=1/120;
 // round_spawning() waits while get_enemy_count() > 31.
 const MAX_ALIVE=32;
@@ -600,6 +601,7 @@ export class SoloGame {
     if(this.time>=this.reloadEnd&&this.reloadEnd>0) {
       const w=this.weapon,amount=Math.min(w.definition.clipSize-w.clip,w.reserve);w.clip+=amount;w.reserve-=amount;this.reloadEnd=0;this.emit('reloaded');
     }
+    this.autoReload();
     const p=this.player,forward=[Math.cos(this.yaw),Math.sin(this.yaw)],right=[Math.sin(this.yaw),-Math.cos(this.yaw)];
     if(this.sprinting&&input.fire)this.fire();
     let dx=forward[0]*(input.forward||0)+right[0]*(input.side||0),dy=forward[1]*(input.forward||0)+right[1]*(input.side||0);
@@ -627,27 +629,27 @@ export class SoloGame {
     for(const key of Object.keys(this.powerup))if(this.powerup[key]<=this.time)delete this.powerup[key];
   }
   aim(yaw,pitch){this.yaw=yaw;this.pitch=pitch;}
-  rayHit(range=16000,yaw=this.yaw,pitch=this.pitch) {
+  rayHits(range=16000,yaw=this.yaw,pitch=this.pitch) {
     const origin=[this.player.position[0],this.player.position[1],this.player.position[2]+60];
     const dir=[Math.cos(yaw)*Math.cos(pitch),Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch)];
     // Browser gunfire follows visible surfaces, including gaps in props. The
     // walking hulls and invisible clips continue to govern actor movement.
-    if(this.events.traceShot)return this.events.traceShot(origin,dir,range);
+    if(this.events.traceShot){const ray=this.events.traceShot(origin,dir,range);return {...ray,hits:ray.hits||(ray.hit?[ray.hit]:[])};}
     const wall=this.collision.trace(origin,origin.map((v,i)=>v+dir[i]*range),[0,0,0],1);
-    let nearest=range*wall.fraction,result=null;
+    const limit=range*wall.fraction;let hits=[];
     if(this.events.traceEnemy) {
-      result=this.events.traceEnemy(origin,dir,nearest);if(result)nearest=result.distance;
-      return {hit:result,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!result&&wall.fraction<1,normal:wall.normal};
-    }
-    for(const enemy of this.enemies) {
+      const found=this.events.traceEnemy(origin,dir,limit,true);hits=Array.isArray(found)?found:found?[found]:[];
+    }else for(const enemy of this.enemies) {
       if(enemy.dead)continue;const p=enemy.position;
-      const head=rayBox(origin,dir,[p[0]-8,p[1]-8,p[2]+58],[p[0]+8,p[1]+8,p[2]+73],nearest);
-      const body=rayBox(origin,dir,[p[0]-15,p[1]-15,p[2]+4],[p[0]+15,p[1]+15,p[2]+58],nearest);
+      const head=rayBox(origin,dir,[p[0]-8,p[1]-8,p[2]+58],[p[0]+8,p[1]+8,p[2]+73],limit);
+      const body=rayBox(origin,dir,[p[0]-15,p[1]-15,p[2]+4],[p[0]+15,p[1]+15,p[2]+58],limit);
       const hit=head!==null?head:body;
-      if(hit!==null&&hit<nearest){nearest=hit;result={enemy,head:head!==null,distance:hit};}
+      if(hit!==null&&hit<limit)hits.push({enemy,head:head!==null,distance:hit});
     }
-    return {hit:result,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!result&&wall.fraction<1,normal:wall.normal};
+    hits.sort((a,b)=>a.distance-b.distance);const result=hits[0]||null,nearest=result?.distance??limit;
+    return {hit:result,hits,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!result&&wall.fraction<1,normal:wall.normal};
   }
+  rayHit(range=16000,yaw=this.yaw,pitch=this.pitch){return this.rayHits(range,yaw,pitch);}
   fire() {
     if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.cooldown||this.time<this.meleeDue||this.reloadEnd)return false;
     if(this.sprinting){this.sprinting=false;this.pendingFire=true;this.sprintExitUntil=this.time+(this.weapon.definition.sprintOutTime||.3);return false;}
@@ -657,15 +659,18 @@ export class SoloGame {
     w.clip--;this.cooldown=this.time+Math.max(.075,(d.fireTime+(d.rechamberAnim&&w.clip>0?d.rechamberTime:0))*(this.mapRules?.fireScale||1));this.shots++;
     const hip=Math.min(d.hipSpreadMax||6,(d.hipSpreadStandMin||0)+this.spreadBloom+(this.moving?d.hipSpreadMoveAdd||0:0));
     const spread=(hip*(1-this.ads)+(d.adsSpread||0)*this.ads)*Math.PI/180;
-    const rays=[];
-    for(let pellet=0;pellet<Math.max(1,d.shotCount||1);pellet++) {
-    const radius=Math.sqrt(Math.random())*spread,angle=Math.random()*Math.PI*2;
-    const ray=this.rayHit(16000,this.yaw+Math.cos(angle)*radius/Math.max(.2,Math.cos(this.pitch)),this.pitch+Math.sin(angle)*radius);rays.push(ray);if(ray.hit) {
-      this.hits++;const d=w.definition,maxRange=d.maxDamageRange||1000,minRange=Math.max(maxRange+1,d.minDamageRange||4000);
-      const falloff=Math.min(1,Math.max(0,(ray.hit.distance-maxRange)/(minRange-maxRange)));
-      const base=d.damage+(d.minDamage-d.damage)*falloff;
-      this.hitEnemy(ray.hit.enemy,base*(ray.hit.head?d.locHead:d.locTorsoUpper),ray.hit.head,false);this.emit('hit',ray.hit.head);
-    }
+    const penetration=fleshPenetration(d),range=d.maxRange>0?d.maxRange:16000;
+    // Resolve the complete blast before changing health, so killing the first
+    // zombie does not give later pellets an unattenuated path through its body.
+    const rays=pelletAngles(Math.max(1,d.shotCount||1),spread,this.yaw,this.pitch).map(([yaw,pitch])=>{
+      const ray=this.rayHits(range,yaw,pitch),seen=new Set();
+      ray.hits=(ray.hits||[]).filter(h=>{if(seen.has(h.enemy))return false;seen.add(h.enemy);return true;}).sort((a,b)=>a.distance-b.distance).slice(0,penetration.count);
+      ray.hit=ray.hits[0]||null;return ray;
+    });
+    for(const ray of rays)for(const [index,hit]of ray.hits.entries()){
+      const damage=hitDamage(d,hit.distance,hit.head,penetration.retention**index);hit.damage=damage;
+      if(damage<=0||hit.enemy.dead)continue;
+      this.hits++;this.hitEnemy(hit.enemy,damage,hit.head,false);this.emit('hit',hit.head);
     }
     this.spreadBloom+=d.hipSpreadFireAdd||0;
     this.emit('shot',{...rays[0],rays});this.emit('sound',{alias:d.fireSoundPlayer||d.fireSound});return true;
@@ -696,6 +701,12 @@ export class SoloGame {
     const targets=this.enemies.filter(e=>!e.dead&&distance(e.position,origin)<95&&Math.cos(Math.atan2(e.position[1]-origin[1],e.position[0]-origin[0])-this.yaw)>.55);
     const enemy=targets.sort((a,b)=>distance(a.position,origin)-distance(b.position,origin))[0];
     if(enemy&&this.collision.trace([origin[0],origin[1],origin[2]+40],[enemy.position[0],enemy.position[1],enemy.position[2]+40],[0,0,0],1).fraction>.95){this.hitEnemy(enemy,this.pendingMelee.damage,false,true);this.emit('hit',false);this.emit('sound',{alias:'melee_hit'});}
+  }
+  autoReload() {
+    // Use simulation time so the last shot finishes before the empty reload,
+    // and interrupted reloads resume once the other weapon action ends.
+    if(this.weapon.clip>0||!this.weapon.reserve||this.time<this.cooldown||this.time<this.meleeDue||this.mapRules?.reviveDue)return;
+    this.reload();
   }
   reload() {
     const w=this.weapon;if(this.gesture||this.switching||this.pendingGrenade||this.reloadEnd||this.phase==='dead'||w.clip===w.definition.clipSize||!w.reserve)return;

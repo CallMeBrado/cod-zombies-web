@@ -21,7 +21,7 @@ export class ZombiesLobby {
     $('map-description').textContent=this.selection.description;
     for(const [id,map]of [['lobby-preview',this.current],['map-preview',this.selection]]){$(id).src='/data/'+(map.game==='black-ops'?map.data:'gameplay')+'/hud/'+map.image+'.png';$(id).alt=map.title;}
     for(const button of $('map-list').children)button.setAttribute('aria-selected',String(button.dataset.map===this.selection.id));
-    this.menu.setText('map-accept',this.selection.id===this.current.id?'SELECT MAP':'LOAD MAP');this.menu.text?.paint();
+    this.menu.setText('map-accept','SELECT MAP');this.menu.text?.paint();
   }
   ready(){this.menu.setText('lobby-player-status','READY');}
 }

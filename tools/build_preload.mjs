@@ -13,21 +13,16 @@ import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {spawn} from 'node:child_process';
 import {prepareFactoryPowerNavigation} from './prepare_power_navigation.mjs';
 import {prepareKinoDoors} from './prepare_kino_doors.mjs';
+import {navigationStamp} from './navigation_stamp.mjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url))),data=path.join(root,'local-data');
+await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_launch_media.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Loading movie preparation failed.')));});
 const read=async relative=>JSON.parse(await readFile(path.join(data,relative),'utf8'));
 const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=chosen.assetZones||[...new Set([chosen.zone,'common','nacht'])],blackOps=chosen.game==='black-ops';
 const manifest=await read(chosen.data+'/manifest.json'),presentation=await read(chosen.data+'/presentation.json'),world=await read(chosen.zone+'/web-world/'+chosen.asset+'.json');
 // Validate small physics steps on the host once, and ship the ready graph.
 // Repeat only when the collision, entities, graph or movement code changes.
 const navSources=[chosen.zone+'/web-world/'+chosen.asset+'.collision.json',chosen.zone+'/web-world/'+chosen.asset+'.paths.json',chosen.data+'/manifest.json'];
-const navHash=createHash('sha256');for(const [i,file] of navSources.entries()){
-  if(blackOps&&i===2){const {entities,map}=manifest;navHash.update(JSON.stringify({entities,map:{id:map.id,negotiationBegin:map.negotiationBegin,negotiationEnd:map.negotiationEnd,initialZone:map.initialZone,connections:map.connections,volumes:map.volumes,goals:map.goals,powerTargets:map.powerTargets}}));}
-  else navHash.update(await readFile(path.join(data,file)));
-}
-for(const file of ['game.js','map-rules.js','collision.js','native-triangles.js'])navHash.update(await readFile(path.join(root,'web',file)));
-if(blackOps){const source=await readFile(path.join(root,'web/bo1-engine.js'),'utf8'),start=source.indexOf('export class BlackOpsEngine');
-  navHash.update(source.slice(start,source.indexOf('  newGame(){',start)));navHash.update(BlackOpsEngine.prototype.settleFeet.toString());}
-const navStamp=navHash.digest('hex');let navigation;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
+const navStamp=await navigationStamp(root,chosen,manifest);let navigation;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
 if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&&navigation?.version)){
   const began=performance.now(),collision=await read(navSources[0]),paths=await read(navSources[1]);
   const game=new (blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();
@@ -113,7 +108,7 @@ await writeFile(metaFile,JSON.stringify(metadata,null,2));console.log(`Prepared 
 async function prepareOtherMaps(){
   if(process.argv.includes('--map'))return;
   for(const map of [...MAPS.slice(1),...BO1_MAPS]){if(!await stat(path.join(data,map.data+'/manifest.json')).catch(()=>null))continue;
-    await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[fileURLToPath(import.meta.url),'--map',map.id],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(map.title+' preparation failed')));});
+    await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[fileURLToPath(import.meta.url),'--map',map.id,...(process.argv.includes('--assets-only')?['--assets-only']:[])],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(map.title+' preparation failed')));});
   }
 }
 await prepareOtherMaps();

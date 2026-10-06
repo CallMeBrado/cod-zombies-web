@@ -13,7 +13,8 @@ const loadImage=async src=>{
 export class OriginalHud {
   constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.ready=false;this.images=new Map();this.crosshair=new CrosshairHud();
     this.roundLayer=document.createElement('canvas');this.roundLayer.width=128;this.roundLayer.height=64;this.roundCtx=this.roundLayer.getContext('2d');}
-  async load() {
+  async loadFont() {
+    if(this.fontReady)return;
     this.font=await get('/data/ui/fonts/normalFont.json',true);this.glyphs=new Map(this.font.glyphs.map(g=>[g.letter,g]));
     this.atlas=await loadImage('/data/gameplay/hud/gamefonts_pc.png');
     this.tintedAtlases=new Map(['#e6e600','#6c0100'].map(color=>{
@@ -21,6 +22,10 @@ export class OriginalHud {
       const ctx=tint.getContext('2d');ctx.drawImage(this.atlas,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle=color;ctx.fillRect(0,0,tint.width,tint.height);
       return [color,tint];
     }));
+    this.fontReady=true;
+  }
+  async load() {
+    await this.loadFont();
     await Promise.all(['ammocounterback','scorebar_zom_1','hud_us_grenade',...Object.values(perkIcons),...[1,2,3,4,5].map(i=>'chalkmarks_'+i)].map(async name=>{
       const image=await loadImage('/data/gameplay/hud/'+name+'.png');
       if(name.startsWith('chalk')||name.startsWith('scorebar')){
