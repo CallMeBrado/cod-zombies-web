@@ -18,6 +18,10 @@ import {PauseMenu} from './pause-menu.js';
 import {GrenadeView} from './grenade-view.js';
 import {selectedMap,MAPS,BO1_MAPS} from './maps.js';
 import {ZombiesLobby} from './lobby.js';
+import {LobbyPresence} from './lobby-presence.js';
+import {NetSession} from './net-session.js';
+import {Coop} from './coop.js';
+import {RemotePlayers} from './remote-players.js';
 import {SaveSlots} from './save-slots.js';
 import {PERKS} from './map-rules.js';
 import {powerSwitchRotation} from './factory-view.js';
@@ -58,6 +62,8 @@ const launch=new LaunchScreen(mapChoice,()=>settings.value.volume);
 let gameLoading,launchAudioContext;
 let game,audio,map,weaponView,grenadeView,actors,effects,presentation;
 let playerBody,diveAudio,diveThirdPerson=false;
+// Online co-op: the relay session, the co-op rules and the other players' bodies.
+let session=null,coop=null,remotePlayers=null,coopEnded=false,hiddenStep=performance.now();
 const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts=[];
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
@@ -79,9 +85,33 @@ const gamepads=new GamepadControls(gamepadSettings,{
   changed:owner=>{const previous=state.activeInput||'keyboard';state.activeInput=owner;if(owner==='controller'){if(previous==='keyboard'&&state.mode==='playing'&&game?.pendingGrenade?.cooking)game.releaseGrenade();controls.reset();mouse.reset();state.inputMode='controller';state.controllerUnlockAt=performance.now();if(document.pointerLockElement===canvas)document.exitPointerLock();}else if(state.inputMode==='controller')state.inputMode=document.pointerLockElement===canvas?'locked':'idle';controllerHud?.sync();controllerPanel?.sync();inputHint();},
   devicesChanged:()=>controllerPanel?.sync(),disconnect:()=>{if(state.mode==='playing')menu('Paused','Controller disconnected. Reconnect it or use mouse and keyboard.');}
 });
-const pauseMenu=new PauseMenu(settings,{openSaves:mode=>saveSlots.open(mode),saveCount:()=>saves.count(),resume:enterPlay,restart:()=>startGame(),quit:()=>{game.newGame();resetVisuals();menu(mapChoice.title,'Solo Zombies');}});
+const pauseMenu=new PauseMenu(settings,{openSaves:mode=>saveSlots.open(mode),saveCount:()=>saves.count(),resume:enterPlay,restart:()=>coop?leaveCoop():startGame(),quit:()=>{if(coop){leaveCoop();return;}game.newGame();resetVisuals();presence.setStatus('lobby');menu(mapChoice.title,'Solo Zombies');}});
+// Leaving a co-op game returns this player to the lobby; the others play on.
+function leaveCoop(){teardownCoop();game.newGame();resetVisuals();presence.setStatus('lobby');menu(mapChoice.title,'Solo Zombies');pauseMenu.setContext('start');lobbyMode=null;if(presence.state)syncLobbyStart(presence.state);}
 controllerPanel=new ControllerPanel(gamepadSettings,gamepads,pauseMenu);controllerMenu=new ControllerMenu(pauseMenu,{mode:()=>state.mode,launch,notice:text=>{$('message').textContent=text;notice(text);}});controllerHud=new ControllerHud(gamepads);controllerHud.sync();
 const lobby=new ZombiesLobby(pauseMenu);
+// Black Ops rows name each player's character; World at War rows are numbered.
+lobby.nameFor=(player,mine)=>blackOps?CHARACTERS[player.character??(mine?character:0)].toUpperCase():'PLAYER '+(player.slot+1);
+// Players on this server who open the same map share its pre-game lobby.
+// Black Ops characters are unique per lobby: before the map loads, take the
+// character the lobby assigns. Starting a game is still a solo game.
+// Only the host starts: everyone in the lobby loads, then all go in together.
+let matchGo=null,lobbyMode=null;
+const presence=new LobbyPresence(mapChoice.id,{character:blackOps?character:null,
+  onChange:shared=>{const me=shared.players.find(p=>p.id===shared.you);if(blackOps&&me&&me.character!==character&&!gameLoading){character=me.character;presence.character=character;}lobby.setShared(shared);syncLobbyStart(shared);},
+  onFull:full=>{lobby.setShared(null);$('message').textContent=`This lobby already has ${full.max} players. You can still play solo.`;},
+  onStart:match=>{if(!['loading','starting','playing'].includes(state.mode))startGame(null,match);},
+  onGo:()=>matchGo?.resolve()});
+function syncLobbyStart(shared){
+  const others=shared.players.length>1,waiting=shared.match&&!shared.match.go&&shared.match.players.includes(shared.you);
+  if(waiting&&matchGo?.loaded)launch.waiting(`Map ready · waiting for players (${shared.match.loaded.length}/${shared.match.players.length})`);
+  // Never wait on a match that went ahead (or ended) without this player.
+  else if(matchGo?.loaded)matchGo.resolve();
+  if(pauseMenu.context!=='start'||['loading','starting','playing'].includes(state.mode))return;
+  const label=!others||presence.isHost?'START GAME':'WAITING FOR HOST';if($('play').textContent!==label)pauseMenu.setText('play',label);
+  const mode=!others?'solo':presence.isHost?'host':'guest';if(mode===lobbyMode)return;lobbyMode=mode;
+  $('message').textContent=mode==='host'?'You are the host. Start Game when everyone is here; all players load in together.':mode==='guest'?'Waiting for the host to start the game.':'Choose your map, then Start Game. Assets load with the original loading movie.';
+}
 const saveSlots=new SaveSlots(pauseMenu,saves,{currentMap:mapChoice.id,canSave:saveBlocked,save:saveGame,load:loadSlot,weaponName:n=>game?game.weaponName(n):n});
 const testingMenu=new TestingMenu(pauseMenu,()=>state.ready?game:null);
 canvas.setAttribute('aria-label',mapChoice.title+' Zombies game');document.title=(blackOps?'Black Ops':'WaW')+' Zombies - '+mapChoice.title;
@@ -90,6 +120,8 @@ const nodePos=e=>e.origin.split(/\s+/).map(Number);
 
 function notice(text){$('notice').textContent=text;noticeDue=performance.now()+3500;}
 function cameraPose() {
+  if(coop?.dead&&session){const id=[...coop.remotes.keys()].find(id=>{const s=session.sample(id);return s&&!s.dead;}),s=id&&session.sample(id);
+    if(s){camera.up.set(0,0,1);camera.position.set(s.p[0],s.p[1],s.p[2]+(s.stance==='prone'||s.down?11:s.stance==='crouch'?40:60));camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(s.yaw)*Math.cos(s.pitch),Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch))));return;}}
   const p=game?game.renderPosition(game.player):[0,424,17],d=game?divePresentation(game,game.time-1/120+game.accumulator):null;
   camera.up.set(0,0,1);camera.position.set(p[0],p[1],p[2]+(game?.viewHeight??60)+(d?.cameraOffsetUnits||0));
   let yaw=state.yaw+kickYaw,pitch=THREE.MathUtils.clamp(state.pitch+kickPitch+(d?.cameraPitchRadians||0),-1.45,1.45);
@@ -100,14 +132,14 @@ function cameraPose() {
 }
 function menu(title,description,button='Resume game') {
   paused=true;state.mode='menu';controls.reset();mouse.reset();gamepads.suppressHeld();controllerPanel.cancel();document.body.classList.remove('playing');
-  audio?.suspend();
+  if(!coop)audio?.suspend();
   $('menu-copy').textContent=game&&game.phase!=='ready'?'Round '+(game.round||1)+' · '+game.player.kills+' kills':description;
   pauseMenu.setContext(game&&game.phase!=='ready'?'pause':'start');
   if(state.inputMode==='locked')state.lockLostAt=performance.now();state.inputMode='idle';
   if(document.pointerLockElement)document.exitPointerLock();
 }
 // Three named server slots per map. A save snapshots the whole session.
-function saveBlocked(){return game?.dive||game?.diveRecovery?'Finish the dive and weapon recovery before saving.':game?.canSave()?null:'Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';}
+function saveBlocked(){if(coop)return 'Co-op games cannot be saved.';return game?.dive||game?.diveRecovery?'Finish the dive and weapon recovery before saving.':game?.canSave()?null:'Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';}
 function slotSummary(){
   const g=game,r=g.mapRules;
   return {round:g.round,phase:g.phase,points:g.player.points,kills:g.player.kills,headshots:g.player.headshots,health:Math.round(g.player.health),
@@ -140,7 +172,7 @@ function saveToast(detail){
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),3600);
 }
 // The lobby's player row names the character (Black Ops).
-function showCharacter(){if(!blackOps)return;const label=document.querySelector('.lobby-player-row span');if(label)label.textContent=CHARACTERS[character].toUpperCase();}
+function showCharacter(){lobby.renderPlayers();}
 async function loadSlot(map,slot){
   if(map===mapChoice.id)return startGame(slot);
   const mode=state.mode;await saves.refresh();if(state.mode!==mode)return;
@@ -154,10 +186,17 @@ function enableDrag(){if(state.mode==='menu'||state.mode==='dead')return;state.i
 // click recaptures it; temporary browser refusals do not reopen the pause menu.
 function requestMouse(source){if(!pauseKeys.canCaptureMouse){enableDrag();return;}state.lockSource=source;try{const result=canvas.requestPointerLock();if(result?.catch)result.catch(lockRefused);}catch{lockRefused();}}
 function lockRefused(){if(state.lockSource==='click'&&performance.now()-(state.lockLostAt||-Infinity)>1500)state.lockUnsupported=true;enableDrag();}
-async function startGame(slot=null){
+async function startGame(slot=null,match=null){
   if(['loading','starting'].includes(state.mode))return;
-  paused=true;state.mode='loading';state.error=null;controls.reset();mouse.reset();document.body.classList.remove('playing');
-  const movieFinished=launch.begin();
+  if(!match&&(pauseMenu.context==='start'||coopEnded)&&presence.others.length){
+    // A shared lobby starts only from the host's Start, and as a new game.
+    if(slot!==null){$('message').textContent='Saves can be loaded when you are alone in the lobby.';return;}
+    if(presence.isHost)presence.start().then(result=>{if(typeof result==='string')$('message').textContent=result;});
+    return;
+  }
+  if(match){let resolve;matchGo={id:match.id,loaded:false,promise:new Promise(r=>resolve=r)};matchGo.resolve=resolve;}else matchGo=null;
+  paused=true;state.mode='loading';state.error=null;controls.reset();mouse.reset();document.body.classList.remove('playing');presence.setStatus('loading');
+  const movieFinished=launch.begin({hold:!!match});
   try{
     // Unlock game audio on this click, before the movie/download await points.
     launchAudioContext??=new AudioContext();launchAudioContext.resume().catch(console.warn);
@@ -166,31 +205,58 @@ async function startGame(slot=null){
     if(blackOps&&/^[0-3]$/.test(String(save?.state.character))&&save.state.character!==character){
       // The arms rigs are built for one character; reopen the save as its own.
       if(state.ready){const url=new URL(location.href);url.searchParams.set('load',String(slot+1));url.searchParams.set('character',String(save.state.character));location.assign(url.href);return;}
-      character=save.state.character;showCharacter();
+      character=save.state.character;presence.setCharacter(character);showCharacter();
     }
     if(!state.ready){gameLoading??=init();await gameLoading;}
+    teardownCoop();
     if(save){game.loadState(save.state);state.yaw=save.state.yaw;state.pitch=save.state.pitch;cameraPose();}
     else{game.newGame();resetVisuals();}
+    if(match)setupCoop(match);
     const url=new URL(location.href);url.searchParams.delete('load');history.replaceState(null,'',url.href);
-    launch.ready();await movieFinished;await enterPlay();
+    launch.ready();
+    if(match){
+      // Hold on the loading screen until every player in the match has loaded.
+      matchGo.loaded=true;launch.waiting('Map ready · waiting for players…');await presence.loaded(match.id);await matchGo.promise;launch.release();
+    }
+    await movieFinished;await enterPlay(!!match);
   }catch(error){console.error(error);state.error=error.message;launch.fail(error);}
 }
-async function enterPlay() {
+// Co-op: this browser joins the match's relay as host or guest.
+function setupCoop(match){
+  const shared=presence.state,me=shared?.players.find(p=>p.id===shared.you);if(!shared||!me)return;
+  const host=match.host===shared.you;
+  session=new NetSession(mapChoice.id,shared.you,{state:()=>coop?.state(),snapshot:host?()=>coop?.snapshot():null,
+    onEvent:(from,msg)=>coop?.handle(from,msg),onSnapshot:(snap,now)=>coop?.receive(snap,now),
+    onHostLost:()=>{if(coop&&!coop.over){notice('The host left the game.');coop.gameOver({});}}});
+  coop=new Coop(game,session,{host,localId:shared.you,slot:me.slot??0,character:blackOps?character:null});coopEnded=false;
+  remotePlayers=new RemotePlayers(scene,{definitions:game.data.playerBodies||null,illumination:p=>map.illumination(p),weapons:game.data.weapons,audio});
+  const spawn=coop.spawnPoint();game.player.position=spawn.slice();game.player.previousPosition=spawn.slice();const yaw=coop.spawnYaw();if(yaw!==null){state.yaw=yaw;cameraPose();}
+  session.start();
+}
+function teardownCoop(){
+  session?.stop();remotePlayers?.dispose();
+  if(coop&&game){for(const key of ['damagePlayer','changeStance','use','tickEnemy','pickup','startRound','updateCarpenter','emit'])delete game[key];game.coop=null;game.mirror=false;}
+  session=null;coop=null;remotePlayers=null;
+}
+async function enterPlay(fromMatch=false) {
   if(state.mode==='starting')return;
   paused=true;state.mode='starting';$('play').disabled=true;controls.reset();mouse.reset();canvas.focus();
   const soundReady=audio.start();
   controllerPanel.cancel();gamepads.suppressHeld();if(gamepads.active){state.inputMode='controller';inputHint();}else requestMouse('resume');
   try{
-    await soundReady;paused=false;state.mode='playing';document.body.classList.add('playing');game.start();
+    // A match can begin without a click in this tab, before the browser allows
+    // sound; play on silently and resume sound on the first click or key.
+    if(fromMatch)await Promise.race([soundReady,audio.preload()]);else await soundReady;paused=false;state.mode='playing';document.body.classList.add('playing');game.start();presence.setStatus('playing');
     if(game.pendingGrenade?.cooking&&!settings.held('grenade',controls.tokens)&&!gamepads.grenadeHeld)game.releaseGrenade();
   }catch(error){console.error(error);state.error=error.message;menu('Unable to start audio',error.message,'Try again');}
   finally{$('play').disabled=false;}
 }
 function death(stats) {
-  state.mode='dead';paused=true;controls.reset();mouse.reset();
+  state.mode='dead';paused=true;controls.reset();mouse.reset();presence.setStatus('lobby');if(coop){coopEnded=true;session?.stop();}
   audio?.stopSession(true);deathFxTime=0;grenadeView?.reset();
   $('menu-copy').textContent=`Reached round ${stats.round} · ${stats.kills} kills · ${game.player.headshots} headshots · ${stats.points} points. Take another run at ${mapChoice.title}.`;
-  pauseMenu.setContext('dead');document.body.classList.remove('playing');
+  pauseMenu.setContext(coopEnded?'start':'dead');document.body.classList.remove('playing');
+  if(coopEnded){lobbyMode=null;if(presence.state)syncLobbyStart(presence.state);}
   if(document.pointerLockElement)document.exitPointerLock();
 }
 async function loadGun(weapon) {
@@ -267,6 +333,7 @@ function traceEnemy(origin,direction,max,all=false) {
   return all?hits.sort((a,b)=>a.distance-b.distance):best;
 }
 function shot(ray) {
+  if(coop)coop.shots++;
   const d=game.weapon.definition,prefix=aimBlend>.8?'ads':'hip';
   const range=(a,b)=>a+(b-a)*Math.random();
   // Kick values are impulses; the view settles between shots.
@@ -373,7 +440,7 @@ async function init() {
     diveEvent:e=>diveAudio?.handle(e),contactSurface:(p,n)=>contactSurfaceName(map.bullets.trace([p[0]+n[0]*4,p[1]+n[1]*4,p[2]+6],[0,0,-1],24)),
     bindingName:keyName,controllerPrompts:()=>gamepads.active,
     message:notice,spawn:spawnVisual,
-    kill:e=>{const direction=e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
+    kill:e=>{const direction=e.killDirection||e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
     traceShot:(origin,dir,range)=>map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:()=>{damageFlash=1;},death,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
@@ -479,7 +546,11 @@ function frame(time) {
   // Aiming ends a sprint at once; the sights rise while the player slows.
   const aimHeld=(gamepads.active?gamepads.aiming:controls.aiming)&&!game?.movementBlocked&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
   if(aimHeld&&gamepads.active)gamepads.sprinting=false;
-  if(game&&!paused&&state.mode==='playing'){const frameInput=input();game.update(dt,aimHeld?{...frameInput,sprint:false}:frameInput);}
+  const playing=!!game&&!paused&&state.mode==='playing';
+  let frameInput=playing?input():{};if(coop?.down)frameInput={...frameInput,sprint:false,jump:false};if(coop?.dead)frameInput={};
+  if(playing||coop&&!coop.over&&!['ready','dead'].includes(game?.phase)&&['menu','playing'].includes(state.mode)){game.update(dt,aimHeld&&playing?{...frameInput,sprint:false}:frameInput);}
+  if(coop){coop.update();coop.updateRevive(playing&&!!frameInput.use,dt);remotePlayers?.update(coop,session,dt,game.time);}
+  hiddenStep=performance.now();
   if(gamepads.active&&game?.player.stance!=='stand')gamepads.sprinting=false;
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;
   if(!paused)aimBlend=THREE.MathUtils.clamp(aimBlend+(aimHeld&&!game?.reloadEnd?1:-1)*dt/adsTime,0,1);
@@ -505,7 +576,12 @@ function frame(time) {
   damageFlash=Math.max(0,damageFlash-dt*.75);$('blood').style.opacity=String(damageFlash*.65+(game&&game.player.health<40 ? .25 : 0));
   map?.updateVisibility(camera);applyCellCulling();
   renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
-  if(game&&state.mode==='playing'&&time>=hudDue){hud.draw(game,aimBlend,time<hitTime,camera.fov);hudDue=time+1000/60;}
+  if(game&&state.mode==='playing'&&time>=hudDue){
+    if(coop){const names=blackOps?CHARACTERS.map(n=>n.toUpperCase()):null,target=coop.reviveTarget();
+      game.coopHud={rows:coop.scoreboard(names),markers:(remotePlayers?.markers(camera,innerWidth,innerHeight)||[]).map(m=>({...m,name:coop.nameOf(m.id,names),color:coop.scoreboard(names).find(r=>r.id===m.id)?.color})),
+        down:coop.down?Math.max(0,Math.ceil(coop.down.bleedout-game.time)):null,dead:coop.dead,revive:target?{name:coop.nameOf(target.id,names),progress:coop.revive?.id===target.id?coop.revive.progress:0,key:keyName('use')}:null};}
+    else game.coopHud=null;
+    hud.draw(game,aimBlend,time<hitTime,camera.fov);hudDue=time+1000/60;}
   if(state.ready&&state.mode==='playing'){frameSamples.push({dt:dt*1000,cpu:performance.now()-began});if(frameSamples.length>600)frameSamples.shift();}
   // Frame counter: FPS and mean CPU frame time, refreshed twice a second.
   frames++;frameMsTotal+=performance.now()-began;
@@ -536,9 +612,11 @@ async function bootLobby(){
   // Only menu artwork, fonts and the save catalogue are needed before Start.
   saves.prepare().then(()=>{$('resume-save').hidden=pauseMenu.context==='pause'||!saves.count();}).catch(error=>{state.savesError=error.message;});
   if(!blackOps){await hud.loadFont();await pauseMenu.prepare(hud);}
-  pauseMenu.setContext('start');lobby.ready();showCharacter();state.lobbyReady=true;
+  pauseMenu.setContext('start');lobby.ready();presence.connect();state.lobbyReady=true;
   const load=Number(new URLSearchParams(location.search).get('load'));
   $('message').textContent=load>=1&&load<=3?'Start Game to continue saved slot '+load+'.':'Choose your map, then Start Game. Assets load with the original loading movie.';
   $('stats').textContent=mapChoice.title+' · Ready to launch';$('play').disabled=false;
 }
-cameraPose();requestAnimationFrame(frame);bootLobby().catch(error=>{console.warn(error);state.lobbyReady=true;pauseMenu.setContext('start');$('message').textContent='Start Game to load '+mapChoice.title+'.';$('play').disabled=false;});
+setInterval(()=>{if(!document.hidden||!coop||!game||coop.over)return;const now=performance.now(),elapsed=Math.min(1,(now-hiddenStep)/1000);hiddenStep=now;for(let t=elapsed;t>1e-3;t-=.1)game.update(Math.min(.1,t),{});coop.update();},100);
+for(const type of ['pointerdown','keydown'])document.addEventListener(type,()=>{if(audio?.context?.state==='suspended'&&state.mode==='playing')audio.context.resume().catch(()=>{});},true);
+cameraPose();requestAnimationFrame(frame);bootLobby().catch(error=>{console.warn(error);state.lobbyReady=true;pauseMenu.setContext('start');presence.connect();$('message').textContent='Start Game to load '+mapChoice.title+'.';$('play').disabled=false;});

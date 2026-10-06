@@ -131,7 +131,9 @@ export class SoloGame {
     this.changePoints(-cost);this.emit('sound',{alias:'cha_ching'});return true;
   }
   startRound() {
-    this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai,this.vars.zombie_ai_per_player,this.mapRules?.soloAiFactor??0);
+    // round_spawning(): solo adds the map's solo bonus, co-op (players-1) per-player sets.
+    const players=this.coop?.playerCount()||1,factor=players>1?players-1:this.mapRules?.soloAiFactor??0;
+    this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai,this.vars.zombie_ai_per_player,factor);
     this.spawnDue=this.time;this.phase='round';this.barrierReward=0;this.player.grenades=Math.min(4,this.player.grenades+2);
     this.emit('round',this.round);this.emit('sound',{alias:'chalk'});
   }
@@ -649,16 +651,19 @@ export class SoloGame {
     this.enemies=this.enemies.filter(enemy=>{if(enemy.dead&&this.time-enemy.deathTime>5){this.emit('removeEnemy',enemy);return false;}return true;});
     dt=Math.min(dt,.05);this.player.previousPosition.splice(0,3,...this.player.position);
     for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
-    this.time+=dt;this.elapsed+=dt;this.expireScorePopups();this.updateBoxes();this.mapRules?.tick();
+    this.time+=dt;this.elapsed+=dt;this.expireScorePopups();if(!this.mirror)this.updateBoxes();this.mapRules?.tick();
     input=movementInput(this,input,dt);
     if(moveKnifeLunge(this,dt,input))input={...input,forward:0,side:0,sprint:false,jump:false};
     if(this.pendingMelee&&this.time>=this.pendingMelee.due){this.resolveMelee();this.pendingMelee=null;}
     this.updateGesture();this.updateSwitch();
+    // A co-op guest takes rounds, zombies, the box and drops from the host.
+    if(!this.mirror){
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
     if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<MAX_ALIVE){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay);}
     if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead)) {
       this.phase='between';this.roundEndedAt=this.time;this.roundDue=this.time+this.vars.zombie_between_round_time;
       this.emit('sound',{alias:'round_over'});
+    }
     }
     if(this.time>=this.ambientDue){this.emit('sound',{alias:'amb_spooky_2d'});this.ambientDue=this.time+5+Math.random()*3;}
     if(this.time>=this.reloadEnd&&this.reloadEnd>0) {
@@ -696,17 +701,18 @@ export class SoloGame {
     const p=this.player;
     if(p.position[2]<-600&&!this.noclipping)this.damagePlayer(100);
     if(this.time-this.lastDamage>3)p.health=Math.min(this.mapRules?.maxHealth||100,p.health+30*dt);
-    for(const enemy of this.enemies)this.tickEnemy(enemy,dt);
-    this.separateZombies(dt);
+    if(!this.mirror){for(const enemy of this.enemies)this.tickEnemy(enemy,dt);this.separateZombies(dt);}
     this.updateGrenades(dt);
     if(this.pendingFire&&this.time+1e-9>=this.sprintExitUntil){this.pendingFire=false;this.fire();}
     if(input.fire&&this.weapon.definition.fireType==='Full Auto')this.fire();
     // blocker_trigger_think: 0.4 s after use goes down, then one board per second while held.
     if(input.use&&!this.useHeld)this.rebuildDue=Math.max(this.rebuildDue,this.time+.4);this.useHeld=!!input.use;
     if(input.use&&!this.pendingGrenade&&!this.gesture&&!this.nearGrenade()&&this.time>=this.rebuildDue){const w=this.nearWindow();if(w)this.rebuild(w);}
-    for(const drop of this.drops)if(!drop.used&&distance([drop.position[0],drop.position[1],drop.position[2]+40],p.position)<64)this.pickup(drop);
+    if(!this.mirror){
+    for(const drop of this.drops)if(!drop.used&&!this.coop?.cannotPickUp()&&distance([drop.position[0],drop.position[1],drop.position[2]+40],p.position)<64)this.pickup(drop);
     for(const d of this.drops)if(!d.used&&this.time>=d.expires)this.emit('stopLoop',{id:'drop'+d.id});
     this.drops=this.drops.filter(d=>!d.used&&this.time<d.expires);this.updateCarpenter();
+    }
     for(const key of Object.keys(this.powerup))if(this.powerup[key]<=this.time)delete this.powerup[key];
   }
   aim(yaw,pitch){this.yaw=yaw;this.pitch=pitch;}
@@ -769,20 +775,24 @@ export class SoloGame {
   }
   hitEnemy(enemy,damage,head=false,melee=false) {
     if(enemy.dead)return;
+    // A co-op guest reports the hit; the host owns zombie health.
+    if(this.coop?.forwardHit(enemy,damage,head,melee))return;
     if(this.powerup.insta_kill)damage=enemy.health;
     enemy.health-=damage;
-    const scalar=this.powerup.double_points?2:1;
-    if(enemy.health>0){this.changePoints(Math.ceil(this.vars.zombie_score_damage/10)*10*scalar);return;}
-    enemy.dead=true;enemy.deathTime=this.time;this.player.kills++;if(head)this.player.headshots++;
+    const scalar=this.powerup.double_points?2:1,shooter=this.coop?.shooter()||this.player;
+    if(enemy.health>0){this.awardPoints(Math.ceil(this.vars.zombie_score_damage/10)*10*scalar);return;}
+    enemy.dead=true;enemy.deathTime=this.time;shooter.kills++;if(head)shooter.headshots++;
     enemy.deathHeadshot=!!head&&!melee;
     const bonus=melee?this.vars.zombie_score_bonus_melee:head?this.vars.zombie_score_bonus_head:this.vars.zombie_score_bonus_torso;
-    this.changePoints(Math.ceil((this.vars.zombie_score_kill+bonus)/10)*10*scalar);this.emit('kill',enemy);
+    this.awardPoints(Math.ceil((this.vars.zombie_score_kill+bonus)/10)*10*scalar);this.emit('kill',enemy);
     // Hunt starts only after the barrier traversal has finished inside the map.
     // Outside and mid-vault kills still award points, but cannot drop powerups.
-    if(enemy.stage==='hunt'&&(this.player.kills%6===0||Math.random()<.08)) {
+    if(enemy.stage==='hunt'&&(shooter.kills%6===0||Math.random()<.08)) {
       this.addDrop(this.nextPowerup(),enemy.position);
     }
   }
+  // Points go to the player who earned them (on the host, a co-op teammate).
+  awardPoints(amount){if(!this.coop?.awardPoints(amount))this.changePoints(amount);}
   melee() {
     if(this.movementBlocked)return false;
     if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.mapRules?.reviveDue||this.time<this.meleeDue)return false;
@@ -867,26 +877,44 @@ export class SoloGame {
       if(owned){owned.reserve=owned.definition.maxAmmo;this.message('Ammo replenished');}else{this.giveWeapon(name);this.message(this.weaponName(name)+' purchased');this.voiceEvent?.('weapon',name);}
     } else if(e.targetname==='treasure_chest_use') {
       const box=this.boxes.get(e.target),settings=this.presentation.box||{offerTime:12,closeTime:.5,cooldown:3};
-      if(box.phase==='offered'){this.giveWeapon(box.weapon);this.voiceEvent?.('weapon',box.weapon);box.phase='closing';box.closedAt=this.time;box.due=this.time+settings.cooldown;box.timedOut=false;this.emit('sound',{alias:'lid_close'});return;}
+      if(box.phase==='offered'){
+        // Only the player who paid can take the box's weapon.
+        if(this.coop&&!this.coop.ownsBox(box))return;
+        this.giveWeapon(box.weapon);this.voiceEvent?.('weapon',box.weapon);
+        if(this.coop?.guest){this.coop.toHost({type:'boxTake',target:e.target});box.phase='closing';return;}
+        box.phase='closing';box.closedAt=this.time;box.due=this.time+settings.cooldown;box.timedOut=false;this.emit('sound',{alias:'lid_close'});return;}
       if(box.phase!=='closed')return;
       if(!this.spendPoints(cost)){this.voiceEvent?.('denied','box');return;}
-      box.names=(this.data.map?.boxWeapons||Object.keys(this.data.weapons)).filter(x=>!this.inventory.some(w=>w.name===x));box.phase='cycling';box.started=this.time;box.index=0;box.nextAt=this.time;box.weapon=null;
-      this.emit('sound',{alias:'lid_open'});this.emit('sound',{alias:'music_box'});this.updateBoxes();
+      const names=(this.data.map?.boxWeapons||Object.keys(this.data.weapons)).filter(x=>!this.inventory.some(w=>w.name===x));
+      if(this.coop?.guest){this.coop.toHost({type:'box',target:e.target,names,cost});return;}
+      this.openBox(box,names,this.coop?.localId??null);
     } else {
       if(!this.spendPoints(cost)){this.voiceEvent?.('denied',e.targetname==='zombie_debris'?'debris':'door');return;}
-      this.opened.add(e.target);this.collision.disabled.add(e.target);
-      this.mapRules?.onOpen(e);
-      if(e.target.includes('upstairs')){this.opened.add('upstairs_blocker');this.opened.add('upstairs_blocker2');this.collision.disabled.add('upstairs_blocker');this.collision.disabled.add('upstairs_blocker2');}
-      this.invalidateNavigation(e.target.includes('upstairs')?[e.target,'upstairs_blocker','upstairs_blocker2']:[e.target]);
-      this.emit('open',e);this.message('Passage opened');
+      if(this.coop?.guest){this.coop.toHost({type:'open',target:e.target});return;}
+      this.openDoor(e);
     }
+  }
+  openDoor(e){
+    if(this.opened.has(e.target))return;
+    this.opened.add(e.target);this.collision.disabled.add(e.target);
+    this.mapRules?.onOpen(e);
+    if(e.target.includes('upstairs')){this.opened.add('upstairs_blocker');this.opened.add('upstairs_blocker2');this.collision.disabled.add('upstairs_blocker');this.collision.disabled.add('upstairs_blocker2');}
+    this.invalidateNavigation(e.target.includes('upstairs')?[e.target,'upstairs_blocker','upstairs_blocker2']:[e.target]);
+    this.emit('open',e);this.message('Passage opened');
+  }
+  openBox(box,names,owner=null){
+    box.names=names.length?names:Object.keys(this.data.weapons);box.owner=owner;box.phase='cycling';box.started=this.time;box.index=0;box.nextAt=this.time;box.weapon=null;
+    this.emit('sound',{alias:'lid_open'});this.emit('sound',{alias:'music_box'});this.updateBoxes();
   }
   rebuild(w) {
     if(w.boards>=6||this.time<this.rebuildDue||w.traverser&&!w.traverser.dead)return;
+    // A co-op guest repairs through the host, which pays its points.
+    if(this.coop?.guest){this.rebuildDue=this.time+1;this.coop.toHost({type:'rebuild',target:w.target});this.emit('sound',{alias:'repair_boards'});return;}
     const wasOpen=w.boards===0;w.boards++;this.rebuildDue=this.time+1;this.collision.disabled.delete(w.target);
     if(wasOpen)this.invalidateNavigation([w.target]);
     this.emit('sound',{alias:'repair_boards'});
-    if(this.barrierReward<Math.min(500,50*this.round)){this.changePoints(10*(this.powerup.double_points?2:1));this.barrierReward+=10;}
+    const repairer=this.coop?.shooter()||this;
+    if((repairer.barrierReward||0)<Math.min(500,50*this.round)){this.awardPoints(10*(this.powerup.double_points?2:1));repairer.barrierReward=(repairer.barrierReward||0)+10;}
     this.emit('barrier',w);
   }
   updateBoxes() {

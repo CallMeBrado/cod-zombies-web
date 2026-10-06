@@ -1,10 +1,11 @@
 // A finished movie cannot start an unprepared map, and Skip never bypasses loading.
 export class LaunchGate {
-  constructor(finish){this.finish=finish;this.ready=false;this.mediaDone=false;this.skipped=false;this.finished=false;}
-  check(){if(!this.finished&&this.ready&&(this.mediaDone||this.skipped)){this.finished=true;this.finish();}}
+  // A lobby match holds every player on the loading screen until all have loaded.
+  constructor(finish){this.finish=finish;this.ready=false;this.mediaDone=false;this.skipped=false;this.finished=false;this.held=false;}
+  check(){if(!this.finished&&!this.held&&this.ready&&(this.mediaDone||this.skipped)){this.finished=true;this.finish();}}
   loaded(){this.ready=true;this.check();}
   ended(){this.mediaDone=true;this.check();}
-  skip(){if(!this.ready)return false;this.skipped=true;this.check();return true;}
+  skip(){if(!this.ready||this.held)return false;this.skipped=true;this.check();return true;}
 }
 
 export class LaunchScreen {
@@ -41,13 +42,13 @@ export class LaunchScreen {
       else this.gate.ended();
     });
   }
-  begin(){
+  begin({hold=false}={}){
     this.active=true;this.root.hidden=false;document.body.classList.add('launching');
     this.element('back').hidden=true;this.element('skip').disabled=true;this.element('skip').textContent='LOADING MAP…';
     this.element('bytes').textContent='';this.update(0,'Loading '+this.map.title+'…');
     this.movie.style.opacity='1';this.root.style.backgroundImage=`url("${this.movie.poster}")`;
     this.movie.src='/data/launch/'+this.map.id+'.mp4?build='+document.documentElement.dataset.build;
-    this.gate=new LaunchGate(()=>this.finishIfVisible());
+    this.gate=new LaunchGate(()=>this.finishIfVisible());this.gate.held=hold;
     const completion=new Promise(resolve=>this.resolve=resolve);
     this.play();return completion;
   }
@@ -70,6 +71,10 @@ export class LaunchScreen {
     this.update(100,'Map ready · waiting for the intro to finish');this.element('skip').disabled=false;
     this.element('skip').textContent='SKIP INTRO & START GAME';this.gate.loaded();
   }
+  // Lobby match: loaded, waiting for the other players.
+  waiting(status){if(!this.gate?.held)return;this.update(100,status);this.element('skip').disabled=true;this.element('skip').textContent='WAITING FOR PLAYERS…';}
+  // Everyone has loaded: all players go in together, cutting the intro.
+  release(){if(!this.gate)return;this.gate.held=false;this.gate.skipped=true;this.gate.check();}
   fail(error){
     this.gate=null;this.movie.pause();this.element('play').hidden=true;
     this.element('skip').disabled=true;this.element('skip').textContent='LOAD FAILED';

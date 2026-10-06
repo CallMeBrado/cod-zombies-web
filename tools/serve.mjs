@@ -9,12 +9,14 @@ import { networkInterfaces } from 'node:os';
 import {MAPS,BO1_MAPS,mapById} from '../web/maps.js';
 import {pageRoute} from '../web/routes.js';
 import {createSaveApi} from './save-api.mjs';
+import {createLobbyApi} from './lobby-api.mjs';
 import {sendMovie} from './media-response.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const port = Number(process.env.PORT || 8789);
 const host = process.env.HOST || '0.0.0.0';
 const saveApi=createSaveApi({directory:path.join(root,'local-data/saves'),maps:[...MAPS,...BO1_MAPS]});
+const lobbyApi=createLobbyApi({maps:[...MAPS,...BO1_MAPS],log:line=>console.log(new Date().toISOString()+' '+line)});
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be between 1 and 65535.');
 function lanUrls() {
   if (host === '127.0.0.1' || host === '::1') return [];
@@ -46,7 +48,7 @@ function sendBuffer(req,res,buffer,type,cache='no-store'){
 }
 const server = http.createServer(async (req, res) => {
   try {
-    const apiUrl=new URL(req.url,'http://localhost');if(await saveApi(req,res,apiUrl))return;
+    const apiUrl=new URL(req.url,'http://localhost');if(await saveApi(req,res,apiUrl)||await lobbyApi(req,res,apiUrl))return;
     if (!['GET', 'HEAD'].includes(req.method)) {
       res.writeHead(405); res.end(); return;
     }

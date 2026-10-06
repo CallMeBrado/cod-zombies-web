@@ -2,6 +2,7 @@ import {assetResponse} from './preload.js';
 import {roundIndicatorState} from './round-hud.js';
 import {scorePopupState} from './score-hud.js';
 import {CrosshairHud} from './crosshair-hud.js';
+import {drawCoop} from './coop-hud.js';
 const icons={specialty_armorvest:'specialty_juggernaut_zombies',specialty_fastreload:'specialty_fastreload_zombies',specialty_rof:'specialty_doubletap_zombies',specialty_quickrevive:'specialty_quickrevive_zombies'};
 export class BlackOpsHud {
   constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.images=new Map();this.crosshair=new CrosshairHud();this.ready=false;this.roundLayer=document.createElement('canvas');this.roundLayer.width=128;this.roundLayer.height=64;}
@@ -21,6 +22,7 @@ export class BlackOpsHud {
     r.globalCompositeOperation='source-in';r.fillStyle=round.color;r.fillRect(0,0,128,64);r.globalCompositeOperation='source-over';ctx.globalAlpha=round.alpha;ctx.drawImage(this.roundLayer,10,406);ctx.globalAlpha=1;
     let slot=0;for(const id of game.mapRules.perks)ctx.drawImage(this.images.get(icons[id]),12+slot++*28,379,24,24);
     ctx.drawImage(this.images.get('scorebar_zom_1'),W-125,383,110,18);this.text(game.player.points,W-27,398,21,'right');
+    if(game.coopHud)drawCoop(this,ctx,game.coopHud,W,s);
     this.text(game.weapon.clip,W-88,456,32,'right');this.text('/ '+game.weapon.reserve,W-81,456,19);this.text(game.weaponName(game.weapon.name),W-25,472,10,'right','#aaa');
     ctx.drawImage(this.images.get('hud_us_grenade'),W-38,418,13,15);this.text(game.player.grenades,W-43,430,13,'right');
     for(const p of game.scorePopups){const v=scorePopupState(p,game.time);if(v){ctx.globalAlpha=v.alpha;this.text(v.text,W-28+v.x,398+v.y,19,'right',v.color);}}ctx.globalAlpha=1;

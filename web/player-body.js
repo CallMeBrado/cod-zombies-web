@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {model,cloneModel,shadeModel,applyHideTags} from './assets.js';
 import {divePresentation} from './player-movement.js';
-import {units} from './dive-config.js';
+import {units,DEFAULT_DIVE_CONFIG} from './dive-config.js';
 const v=new THREE.Vector3(),a=new THREE.Vector3(),b=new THREE.Vector3(),q=new THREE.Quaternion(),parentQ=new THREE.Quaternion(),worldQ=new THREE.Quaternion();
 
 // Rotate an authored joint in world space, then express the rotation in its
@@ -65,6 +65,16 @@ export class PlayerBody {
     const time=game.time-1/120+game.accumulator,presentation=divePresentation(game,time);posePlayerBody(this.rig,game,presentation,game.renderPosition(game.player));
     if(game.time>=(this.lightDue||0)){this.lightDue=game.time+.25;const color=this.illumination(game.player.position);for(const object of [this.rig.object,this.head,this.rig.gun])object?.traverse(mesh=>{if(mesh.isMesh)for(const material of [mesh.material].flat())if(!material.userData.fixedLight)material.color.setRGB(...color);});}
   }
+  // Another co-op player, from their network state: stance, prone/down or a
+  // dive lay the body out, the gun follows their weapon.
+  poseRemote(s,dt,time){
+    if(!this.ready)return;this.root.visible=!!s&&!s.dead;if(!this.root.visible)return;
+    const flat=s.down||s.stance==='prone'||!!s.dive,target=flat?1:0;this.blend=this.blend??target;this.blend+=(target-this.blend)*Math.min(1,dt*8);
+    const subject={player:{stance:s.down?'prone':s.stance},dive:!!s.dive};
+    posePlayerBody(this.rig,subject,{yaw:s.dive?.yaw??s.yaw,bodyBlend:this.blend,compressionMeters:0,cameraOffsetUnits:0,config:DEFAULT_DIVE_CONFIG},s.p);
+    if(time>=(this.lightDue||0)){this.lightDue=time+.25;const color=this.illumination(s.p);for(const object of [this.rig.object,this.head,this.rig.gun])object?.traverse(mesh=>{if(mesh.isMesh)for(const material of [mesh.material].flat())if(!material.userData.fixedLight)material.color.setRGB(...color);});}
+  }
+  dispose(){this.root?.removeFromParent();}
   warmObjects(){return this.root?[this.root]:[];}
   diagnostics(){return {ready:this.ready,character:this.definitions[this.character]?.name,thirdPerson:this.thirdPerson,visible:this.root?.visible,bones:this.rig?.rest.size,bodyTiltDegrees:(this.rig?.pivot.rotation.y||0)*180/Math.PI};}
 }

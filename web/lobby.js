@@ -2,7 +2,8 @@ import {MAPS,BO1_MAPS,selectedMap} from './maps.js';
 const $=id=>document.getElementById(id);
 export class ZombiesLobby {
   constructor(menu){
-    this.menu=menu;this.current=selectedMap();this.selection=this.current;
+    this.menu=menu;this.current=selectedMap();this.selection=this.current;this.shared=null;this.localStatus='LOADING';
+    this.nameFor=(player,mine)=>'PLAYER '+(player.slot+1);
     for(const map of this.current.game==='black-ops'?BO1_MAPS:MAPS){
       const button=document.createElement('button');button.type='button';button.dataset.menuText='';button.dataset.map=map.id;button.textContent=map.title.toUpperCase();
       button.onclick=()=>this.choose(map);$('map-list').append(button);
@@ -23,5 +24,22 @@ export class ZombiesLobby {
     for(const button of $('map-list').children)button.setAttribute('aria-selected',String(button.dataset.map===this.selection.id));
     this.menu.setText('map-accept','SELECT MAP');this.menu.text?.paint();
   }
-  ready(){this.menu.setText('lobby-player-status','READY');}
+  ready(){this.localStatus='READY';this.renderPlayers();}
+  // Everyone on this server in the same map's lobby (LobbyPresence), or just
+  // this browser when the lobby service is unavailable or full.
+  setShared(state){this.shared=state;this.renderPlayers();}
+  renderPlayers(){
+    const box=$('lobby-players'),state=this.shared,you=state?.you??'local',players=state?.players.length?state.players:[{id:'local',slot:0,character:null,status:'lobby'}];
+    const rows=players.map(p=>{
+      const mine=p.id===you,row=document.createElement('div'),name=document.createElement('span'),status=document.createElement('span');
+      row.className='lobby-player-row'+(mine?' you':'');name.dataset.menuText='';status.dataset.menuText='';status.className='lobby-status';
+      name.textContent=this.nameFor(p,mine)+(players.length>1&&p.id===state?.host?' · HOST':'');
+      if(mine)status.id='lobby-player-status';status.textContent=mine?this.localStatus||'LOADING':STATUS[p.status]||'';
+      row.append(name,status);return row;
+    });
+    box.replaceChildren(box.querySelector('.lobby-players-heading'),...rows);
+    if(document.body.dataset.menuContext==='start')$('menu-copy').textContent=players.length>1?`Lobby · ${players.length} of ${state.max} players`:'Solo Zombies';
+    this.menu.text?.paint();
+  }
 }
+const STATUS={lobby:'READY',loading:'LOADING',waiting:'WAITING',playing:'IN GAME'};

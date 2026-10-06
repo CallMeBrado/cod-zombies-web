@@ -36,8 +36,9 @@ export class FactoryRules {
   // connected by an opened door, enable their spawners (receiver_zone when
   // the player is in none).
   enabledSpawners(){
-    const g=this.game,p=g.player.position,point=[p[0],p[1],p[2]+25],enabled=this.activeZones();
-    const inside=v=>v.hulls.some(h=>h.mins.every((m,k)=>point[k]>=m-2)&&h.maxs.every((m,k)=>point[k]<=m+2)&&h.planes.every(pl=>pl[0]*point[0]+pl[1]*point[1]+pl[2]*point[2]<=pl[3]+2));
+    // Co-op: every player's zone counts.
+    const g=this.game,points=(g.coop?.playerPositions()||[g.player.position]).map(p=>[p[0],p[1],p[2]+25]),enabled=this.activeZones();
+    const inside=v=>points.some(point=>v.hulls.some(h=>h.mins.every((m,k)=>point[k]>=m-2)&&h.maxs.every((m,k)=>point[k]<=m+2)&&h.planes.every(pl=>pl[0]*point[0]+pl[1]*point[1]+pl[2]*point[2]<=pl[3]+2)));
     const occupied=new Set(this.data.volumes.filter(v=>enabled.has(v.name)&&inside(v)).map(v=>v.name));
     if(!occupied.size)occupied.add(this.data.initialZone);
     const active=new Set(occupied);
@@ -197,6 +198,8 @@ export class FactoryRules {
   openTargets(targets){const g=this.game;for(const target of targets){g.opened.add(target);g.collision.disabled.add(target);}g.invalidateNavigation(targets);for(const target of targets)g.emit('open',{target});}
   tick(){
     const g=this.game;
+    // A co-op guest's world (PA steps, link countdown) comes from the host.
+    if(!g.mirror){
     for(const job of this.pending.filter(job=>g.time>=job.at)){this.pending.splice(this.pending.indexOf(job),1);this.runJob(job);}
     // pa_countdown: a clock tick each second, with the PA counting at 20, 15
     // and 10..1; on timeout a buzz and the link-failed announcement.
@@ -205,6 +208,7 @@ export class FactoryRules {
       if(count===20||count===15||count<=10)this.pa('pa_audio_link_'+count);
     }
     if(this.linkPending&&g.time>=this.linkPending.due){this.linkPending=null;g.message('Teleporter link timed out');this.pa('pa_buzz');this.later(1.2,{pa:'pa_audio_link_fail',dialog:true});}
+    }
     if(this.teleportDue&&g.time>=this.teleportDue){
       this.teleportDue=0;this.teleportCooldown=g.time+5;
       const destination=position(g.entities.find(e=>e.targetname==='origin_teleport_player_0'));

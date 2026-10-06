@@ -17,7 +17,7 @@ export class KinoRules extends FactoryRules {
   visible(e){
     if(e.targetname==='use_power_switch')return !this.power;
     if(e.targetname==='treasure_chest_use')return e.target===this.data.initialBox;
-    if(e.targetname==='zombie_vending'&&e.script_noteworthy==='specialty_quickrevive')return this.revivesUsed<3;
+    if(e.targetname==='zombie_vending'&&e.script_noteworthy==='specialty_quickrevive')return !!this.game.coop||this.revivesUsed<3;
     return !e.script_noteworthy?.includes('electric_door');
   }
   prompt(e,key){
@@ -25,8 +25,8 @@ export class KinoRules extends FactoryRules {
     if(e.targetname==='zombie_vending'){
       const p=PERKS[e.script_noteworthy],quick=e.script_noteworthy==='specialty_quickrevive';
       if(!p)return '';if(this.perks.has(e.script_noteworthy))return p.name+' purchased';
-      if(!this.power&&!quick)return 'You must turn on the power first';
-      return key+' · Buy '+p.name+' · '+(quick?500:p.cost)+' points';
+      if(!this.power&&!(quick&&!this.game.coop))return 'You must turn on the power first';
+      return key+' · Buy '+p.name+' · '+(quick&&!this.game.coop?500:p.cost)+' points';
     }
     if(e.targetname==='trigger_teleport_pad_0'){
       if(!this.power)return 'You must turn on the power first';
@@ -50,8 +50,10 @@ export class KinoRules extends FactoryRules {
     if(tag==='zombie_vending'){
       const id=e.script_noteworthy,p=PERKS[id],quick=id==='specialty_quickrevive';
       if(p&&this.perks.has(id)){g.voiceEvent('denied','perk_owned');return true;}
-      if(!p||(!this.power&&!quick)||g.gesture||quick&&this.revivesUsed>=3)return true;
-      if(!g.spendPoints(quick?500:p.cost)){g.voiceEvent('denied','perk');return true;}
+      // Co-op Quick Revive needs the power, costs 1500 and speeds up reviving teammates.
+      const solo=!g.coop;
+      if(!p||(!this.power&&!(quick&&solo))||g.gesture||quick&&solo&&this.revivesUsed>=3)return true;
+      if(!g.spendPoints(quick&&solo?500:p.cost)){g.voiceEvent('denied','perk');return true;}
       // give_perk() threads perk_vox(), which waits 1.5 s after the drink.
       g.startGesture(id,()=>{this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;g.laterDialog(1.5,'perk',id);});g.emit('sound',{alias:p.sting});return true;
     }
@@ -188,14 +190,16 @@ export class BlackOpsEngine extends TestingGame {
   startRound(){
     super.startRound();
     // Original T5 default_max_zombie_func, distinct from the T4 cuts.
-    const r=this.round,m=Math.max(1,r/5)*(r>=10?r*.15:1),max=this.vars.zombie_max_ai+Math.trunc(3*m);
+    // Solo adds half a per-player set; co-op (players-1) full sets of 6.
+    const players=this.coop?.playerCount()||1,r=this.round,m=Math.max(1,r/5)*(r>=10?r*.15:1),max=this.vars.zombie_max_ai+Math.trunc((players>1?(players-1)*6:3)*m);
     this.remaining=Math.trunc(max*(r===1?.25:r===2?.3:r===3?.5:r===4?.7:r===5?.9:1));
   }
   damagePlayer(amount){
     if(this.attackingEnemy)this.attackingEnemy.hitPlayer=true;
     if(this.mods?.god||this.mapRules.reviveDue)return;
     const r=this.mapRules;
-    if(this.player.health<=amount&&r.perks.has('specialty_quickrevive')&&r.revivesUsed<3){
+    // Solo Quick Revive revives the player; in co-op teammates revive instead.
+    if(!this.coop&&this.player.health<=amount&&r.perks.has('specialty_quickrevive')&&r.revivesUsed<3){
       r.revivesUsed++;r.perks.clear();r.reviveDue=this.time+8;this.player.health=1;this.lastDamage=this.time;
       this.pendingFire=false;this.sprinting=false;this.message('Downed · Quick Revive');this.emit('damage',amount);this.dialog('general','revive_down');return;
     }
@@ -217,14 +221,16 @@ export class BlackOpsEngine extends TestingGame {
   saveState(){return {...super.saveState(),character:this.character};}
   loadState(s){const character=this.character;super.loadState(s);this.character=Number.isInteger(s.character)?s.character:character;}
   tickEnemy(enemy,dt){
-    if(this.mapRules.projectionUntil||this.mapRules.reviveDue){if(!enemy.dead)enemy.age+=dt;return;}
+    // Solo: the zombies wait while the only player is away or reviving.
+    if(!this.coop&&(this.mapRules.projectionUntil||this.mapRules.reviveDue)){if(!enemy.dead)enemy.age+=dt;return;}
     this.attackingEnemy=enemy;try{super.tickEnemy(enemy,dt);}finally{this.attackingEnemy=null;}
   }
   hitEnemy(enemy,damage,head=false,melee=false){
     if(this.firingNative&&this.weapon.name.startsWith('thundergun')&&!melee)return;
     const alive=!enemy.dead;
     super.hitEnemy(enemy,damage,head,melee);
-    if(alive&&enemy.dead)this.killVox(enemy,head,melee);
+    // A co-op teammate's kill is voiced on their own browser.
+    if(alive&&enemy.dead&&!this.coop?.credit)this.killVox(enemy,head,melee);
     if(this.firingNative&&this.weapon.name.startsWith('ray_gun')&&!melee){
       const d=this.weapon.definition,at=enemy.position;
       for(const other of this.enemies){if(other===enemy||other.dead)continue;const range=distance(at,other.position);if(range>=d.explosionRadius)continue;

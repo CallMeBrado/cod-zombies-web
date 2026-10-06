@@ -3,6 +3,7 @@ import {assetResponse} from './preload.js';
 import {roundIndicatorState} from './round-hud.js';
 import {scorePopupState} from './score-hud.js';
 import {CrosshairHud} from './crosshair-hud.js';
+import {drawCoop} from './coop-hud.js';
 const perkIcons={specialty_armorvest:'specialty_juggernaut_zombies',specialty_fastreload:'specialty_fastreload_zombies',specialty_rof:'specialty_doubletap_zombies'};
 const loadImage=async src=>{
   const response=await assetResponse(src);if(!response.ok)throw new Error(`Missing HUD image: ${src}`);
@@ -42,8 +43,12 @@ export class OriginalHud {
     const x=10,y=20,size=96,face=this.images.get('zombie_stopwatch'),needle=this.images.get('zombie_stopwatchneedle'),glass=this.images.get('zombie_stopwatch_glass');if(!face||!needle)return;
     ctx.drawImage(face,x,y,size,size);ctx.save();ctx.translate(x+size/2,y+size/2);ctx.rotate(remaining/60*Math.PI*2);ctx.drawImage(needle,-size/2,-size/2,size,size);ctx.restore();if(glass)ctx.drawImage(glass,x,y,size,size);
   }
+  tint(color){
+    if(!color)return this.atlas;let atlas=this.tintedAtlases.get(color);if(atlas)return atlas;
+    atlas=document.createElement('canvas');atlas.width=this.atlas.width;atlas.height=this.atlas.height;const ctx=atlas.getContext('2d');ctx.drawImage(this.atlas,0,0);ctx.globalCompositeOperation='source-in';ctx.fillStyle=color;ctx.fillRect(0,0,atlas.width,atlas.height);this.tintedAtlases.set(color,atlas);return atlas;
+  }
   text(value,x,y,size=20,align='left',color=null,ctx=this.ctx) {
-    const atlas=this.tintedAtlases.get(color)||this.atlas;
+    const atlas=this.tint(color);
     const s=size/this.font.pixelHeight,letters=[...String(value)].map(c=>this.glyphs.get(c)||this.glyphs.get(' '));
     const width=letters.reduce((sum,g)=>sum+g.dx*s,0);if(align==='right')x-=width;if(align==='center')x-=width/2;
     for(const g of letters){if(g.pixelWidth)ctx.drawImage(atlas,g.s0*atlas.width,g.t0*atlas.height,(g.s1-g.s0)*atlas.width,(g.t1-g.t0)*atlas.height,x+g.x0*s,y+g.y0*s,g.pixelWidth*s,g.pixelHeight*s);x+=g.dx*s;}
@@ -63,6 +68,7 @@ export class OriginalHud {
       if(game.mapRules.linkPending)this.stopwatch(ctx,Math.max(0,game.mapRules.linkPending.started+31-game.time));}
     image('ammocounterback',W-145,429,128,32);image('scorebar_zom_1',W-105,378,94,16);
     this.text(game.player.points,W-96,390,21);
+    if(game.coopHud)drawCoop(this,ctx,game.coopHud,W,s);
     for(const popup of game.scorePopups){const state=scorePopupState(popup,game.time);if(!state)continue;
       ctx.globalAlpha=state.alpha;this.text(state.text,W-103+state.x,390+state.y,21,'right',state.color);
     }ctx.globalAlpha=1;
