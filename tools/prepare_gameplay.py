@@ -27,6 +27,8 @@ def prepare(game=GAME):
     fields += ['knifeModel','meleeChargeAnim','meleeTime','meleeDelay','meleeChargeTime','meleeChargeDelay','meleeSwipeSoundPlayer','meleeHitSound',
                'sprintInAnim','sprintLoopAnim','sprintOutAnim','sprintInTime','sprintLoopTime','sprintOutTime','sprintDurationScale',
                'sprintOfsF','sprintOfsR','sprintOfsU','sprintRotP','sprintRotY','sprintRotR','sprintBobH','sprintBobV','sprintScale']
+    from prepare_weapon_switch import SWITCH_FIELDS
+    fields += SWITCH_FIELDS
     for name in names:
         values = (DATA / 'nacht/weapons' / name).read_text().split('\\')
         props = dict(zip(values[1::2], values[2::2]))
@@ -35,7 +37,7 @@ def prepare(game=GAME):
     grenade_props = dict(zip(grenade_values[1::2], grenade_values[2::2]))
     grenade_fields = ['gunModel','handModel','worldModel','projectileModel','idleAnim','holdFireAnim','fireAnim','altRaiseAnim','altRaiseTime','altDropTime','holdFireTime','fireTime','fireDelay','dropTime','raiseTime','fuseTime','projectileSpeed','projectileSpeedUp','explosionRadius','explosionInnerDamage','explosionOuterDamage','parallelDefaultBounce','perpendicularDefaultBounce','pullbackSoundPlayer','fireSoundPlayer']
     grenade = {key: float(grenade_props[key]) if re.fullmatch(r'-?\d+(?:\.\d*)?', grenade_props.get(key,'')) else grenade_props.get(key,'') for key in grenade_fields}
-    aliases = {w[key] for w in weapons.values() for key in ['fireSound','reloadSound','fireSoundPlayer','reloadSoundPlayer','emptyFireSoundPlayer'] if w[key]}
+    aliases = {w[key] for w in weapons.values() for key in ['fireSound','reloadSound','fireSoundPlayer','reloadSoundPlayer','emptyFireSoundPlayer','raiseSoundPlayer','putawaySoundPlayer'] if w[key]}
     aliases.update(['grenade_pull_pin','foley_throw','grenade_bounce_concrete','grenade_explode','grenade_explode_bass'])
     aliases.update(line.split()[-1] for w in weapons.values() for line in w['notetrackSoundMap'].splitlines() if line.split())
     aliases.update(['amb_zombies_left','amb_zombies_right','amb_spooky_2d','zombie_head_gib',

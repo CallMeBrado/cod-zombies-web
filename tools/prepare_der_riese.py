@@ -44,21 +44,22 @@ DER_RIESE_EFFECTS = ['maps/zombie/fx_zombie_dog_lightning_buildup', 'maps/zombie
 HUD_IMAGES = ['zombie_stopwatch', 'zombie_stopwatchneedle', 'zombie_stopwatch_glass']
 
 
-def convert_sounds(aliases, sounds):
+def convert_sounds(aliases, sounds, output=None, search=None):
     archives = sorted((GAME / 'main').glob('*.iwd'))
-    sound_folder = OUTPUT/'sounds';sound_folder.mkdir(parents=True, exist_ok=True)
+    search = search or SEARCH
+    sound_folder = (output or OUTPUT)/'sounds';sound_folder.mkdir(parents=True, exist_ok=True)
     index = {}
     for archive in archives:
         with ZipFile(archive) as bundle:
             for name in bundle.namelist():
                 if name.lower().startswith('sound/'): index[name.casefold()] = (archive,name)
     for alias in sorted(x for x in aliases if x):
-        source = find(f'web-sounds/{alias}.json')
+        source = next((DATA/z/'web-sounds'/f'{alias}.json' for z in search if (DATA/z/'web-sounds'/f'{alias}.json').is_file()), None)
         if not source: continue
         available = []
         for i, entry in enumerate(json.loads(source.read_text())[:4]):
             file = entry['file'].replace('\\','/').lstrip(',/')
-            loaded = next((candidate for z in SEARCH for candidate in [DATA/z/'sound'/file,(DATA/z/'sound'/file).with_suffix('.xwma')] if candidate.is_file()),None)
+            loaded = next((candidate for z in search for candidate in [DATA/z/'sound'/file,(DATA/z/'sound'/file).with_suffix('.xwma')] if candidate.is_file()),None)
             location = index.get(('sound/'+file).casefold()) or index.get(file.casefold())
             if location:
                 loaded = ROOT/'.cache'/('der-riese-audio'+Path(file).suffix)
@@ -216,7 +217,7 @@ def prepare():
             subprocess.run(['ffmpeg','-nostdin','-y','-loglevel','error','-i',str(raw.with_suffix('.dds')),
                             '-frames:v','1',str(DATA/'gameplay/hud'/ (name+'.png'))],check=True)
     sounds = dict(original['sounds'])
-    aliases = {w.get(k) for w in weapons.values() for k in ['fireSound','reloadSound','fireSoundPlayer','reloadSoundPlayer','emptyFireSoundPlayer','meleeSwipeSoundPlayer']}
+    aliases = {w.get(k) for w in weapons.values() for k in ['fireSound','reloadSound','fireSoundPlayer','reloadSoundPlayer','emptyFireSoundPlayer','meleeSwipeSoundPlayer','raiseSoundPlayer','putawaySoundPlayer']}
     aliases.update(line.split()[-1] for w in weapons.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
     aliases.update(['switch_flip','bridge_lower','bridge_hit','mx_jugger_jingle','mx_speed_jingle','mx_doubletap_jingle','mx_revive_jingle','mx_packa_jingle','teleport_in','teleport_out','packa_door_2'])
     convert_sounds(aliases, sounds)

@@ -261,6 +261,8 @@ async function init() {
     traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),damage:()=>{damageFlash=1;},death,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
+    // Weapon switch: hold the old gun's putaway, then draw the new gun.
+    weaponSwitch:e=>{if(e.phase==='drop')weaponView.play(e.anim,e.duration,false,true);else loadGun(e.weapon).then(()=>weaponView.play(e.anim,e.duration)).catch(console.error);},
     effect:e=>{const root=effects.create(e.name,game.time);root.position.fromArray(e.position);scene.add(root);bursts.push({root,due:game.time+e.duration});},
     // Earthquake(): strength falls off with distance from the source.
     shake:e=>{const d=camera.position.distanceTo(new THREE.Vector3(...e.position));if(d<e.radius)shake={until:game.time+e.duration,amplitude:e.amplitude*(1-d/e.radius)};},stopLoop:({id})=>{loops.get(id)?.record?.stop(.05);loops.delete(id);},sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
@@ -281,6 +283,15 @@ async function init() {
   const warmTarget=new THREE.WebGLRenderTarget(64,64);
   await renderer.compileAsync(gpuWarmScene,viewCamera);renderer.setRenderTarget(warmTarget);renderer.render(gpuWarmScene,viewCamera);renderer.setRenderTarget(null);warmTarget.dispose();
   for(const item of restore)if(item.mesh)item.mesh.frustumCulled=item.culled;else{gpuWarmScene.remove(item.root);item.root.visible=item.visible;item.parent?.add(item.root);}
+  // Draw every map object once offscreen (culling off, hidden props shown) so
+  // its textures and buffers upload while loading. Otherwise each upload is a
+  // 20-70 ms hitch the first time the player looks toward that object.
+  const warmStarted=performance.now(),sceneRestore=[];
+  scene.traverse(n=>{sceneRestore.push({n,visible:n.visible,culled:n.frustumCulled,count:n.isInstancedMesh?n.count:undefined});n.visible=true;n.frustumCulled=false;if(n.isInstancedMesh)n.count=n.instanceMatrix.count;});
+  await renderer.compileAsync(scene,camera);const sceneTarget=new THREE.WebGLRenderTarget(64,64);
+  renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);renderer.setRenderTarget(null);sceneTarget.dispose();
+  for(const s of sceneRestore){s.n.visible=s.visible;s.n.frustumCulled=s.culled;if(s.count!==undefined)s.n.count=s.count;}
+  state.sceneWarmMs=Math.round(performance.now()-warmStarted);
   await pauseMenu.prepare(hud);state.ready=true;lobby.ready();testingMenu.sync();state.loading='complete';$('play').disabled=false;pauseMenu.setContext('start');
   $('message').textContent='Map loaded and ready. Restarting keeps it loaded. '+saveSummary();$('stats').textContent=mapChoice.title+' ready · Build '+document.documentElement.dataset.build.slice(0,8);state.build=document.documentElement.dataset.build;state.preload=preloadState;state.readyMs=performance.now()-began;updateHud();
 }
@@ -331,7 +342,7 @@ function frame(time) {
   if(!paused)mouse.update(time);
   if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){kickPitch+=(Math.random()-.5)*shake.amplitude*.04;kickYaw+=(Math.random()-.5)*shake.amplitude*.04;}}cameraPose();if(game)game.ads=aimBlend;
   if(game&&!paused&&state.mode==='playing')game.update(dt,input());
-  const aimHeld=controls.aiming&&!game?.pendingGrenade&&!game?.gesture;
+  const aimHeld=controls.aiming&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;
   if(!paused)aimBlend=THREE.MathUtils.clamp(aimBlend+(aimHeld&&!game?.reloadEnd?1:-1)*dt/adsTime,0,1);
   const adsFov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(game?.weapon.definition.adsZoomFov||60)/2)*.75));
@@ -364,7 +375,7 @@ function frame(time) {
   if(time>=domDue){updateHud();domDue=time+100;}
   requestAnimationFrame(frame);
 }
-window.wawPreview={state,camera,renderer,scene,get game(){return game;},diagnostics:()=>({state,...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:controls.aiming},originalExecutableRunning:false,originalGscInterpreter:false,
+window.wawPreview={state,camera,renderer,scene,get game(){return game;},get map(){return map;},diagnostics:()=>({state,...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:controls.aiming},originalExecutableRunning:false,originalGscInterpreter:false,
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
   grenadeView:grenadeView?.diagnostics(),grenades:game?.grenades.map(g=>({position:g.position,velocity:g.velocity,due:g.due,resting:g.resting,held:!!g.held})),pendingGrenade:game?.pendingGrenade,

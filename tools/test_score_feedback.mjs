@@ -28,7 +28,7 @@ game.time=2;barrier.boards=5;game.barrierReward=50;const capped=game.player.poin
 assert.equal(game.player.points,capped);assert.equal(awards.length,awardCount,'A capped repair must not show an unearned award');assert.equal(sounds.at(-1),'repair_boards');
 const interact=e=>{const p=e.origin.split(/\s+/).map(Number);game.player.position=[p[0],p[1],p[2]-35];game.use();};
 const wall=game.interactions.find(e=>e.zombie_weapon_upgrade==='kar98k');game.player.points=5000;
-interact(wall);assert.equal(game.weapon.name,'kar98k');assert.equal(awards.at(-1),-Number(wall.zombie_cost));assert.equal(sounds.at(-1),'cha_ching');
+interact(wall);assert.equal(game.weapon.name,'kar98k');assert.equal(awards.at(-1),-Number(wall.zombie_cost));assert(sounds.slice(-2).includes('cha_ching'),'A purchase plays cha_ching (then the weapon switch putaway)');
 const deduction=scorePopupState(game.scorePopups.at(-1),game.time);assert.equal(deduction.text,String(-Number(wall.zombie_cost)));assert.equal(deduction.color,'#6c0100');
 interact(wall);assert.equal(awards.at(-1),-Number(wall.script_ammo_clip||Number(wall.zombie_cost)*.5));assert.equal(sounds.at(-1),'cha_ching');
 game.player.points=0;const rejectedAwards=awards.length;interact(wall);assert.equal(game.player.points,0);assert.equal(awards.length,rejectedAwards);assert.equal(sounds.at(-1),'no_cha_ching');

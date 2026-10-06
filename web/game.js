@@ -87,7 +87,7 @@ export class SoloGame {
     this.player={position:floor.position,health:100,points:this.vars.zombie_score_start,kills:0,headshots:0,velocityZ:0,grounded:true,grenades:4};
     this.scorePopups=[];
     this.accumulator=0;this.physicsTicks=0;this.jumpQueued=false;this.player.previousPosition=this.player.position.slice();this.pathCache.clear();this.linkCache=new Map(this.preparedLinkCache||[]);
-    this.inventory=[this.makeWeapon('zombie_colt')];this.slot=0;
+    this.inventory=[this.makeWeapon('zombie_colt')];this.slot=0;this.inventory[0].raised=true;this.switching=null;
     this.time=0;this.round=0;this.zombieHealth=this.vars.zombie_health_start;this.phase='ready';this.roundDue=0;this.spawnDue=0;this.remaining=0;
     this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
     this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;this.powerupOrder=[];this.powerupIndex=0;this.carpenter=null;this.nextDropId=1;
@@ -469,7 +469,7 @@ export class SoloGame {
     const boards=new Map(s.boards);for(const w of this.windows)if(boards.has(w.target))w.boards=boards.get(w.target);
     this.mapRules?.loadState(s.rules);
     const weapons=s.inventory.filter(w=>this.data.weapons[w.name]).map(w=>({...this.makeWeapon(w.name),clip:w.clip,reserve:w.reserve}));
-    this.inventory=weapons.length?weapons:[this.makeWeapon('zombie_colt')];this.slot=Math.min(s.slot,this.inventory.length-1);
+    this.inventory=weapons.length?weapons:[this.makeWeapon('zombie_colt')];this.slot=Math.min(s.slot,this.inventory.length-1);for(const w of this.inventory)w.raised=true;
     const floor=this.collision.move(s.player.position,[0,0,-64]);
     Object.assign(this.player,s.player,{position:floor.position,previousPosition:floor.position.slice(),velocityZ:0,grounded:floor.grounded});
     for(const target of this.opened)this.emit('open',{target});for(const w of this.windows)this.emit('barrier',w);
@@ -480,7 +480,7 @@ export class SoloGame {
     // away, a viewmodel-only clip plays, then the gun is raised again. Firing,
     // aiming, sprinting, melee, reloads, grenades and switching are disabled.
     const d=this.data.gestures?.[key];if(!d){onRaised?.();return false;}
-    this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;this.pendingMelee=null;
+    this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;this.pendingMelee=null;this.switching=null;
     this.gesture={key,definition:d,phase:'raise',due:this.time+d.firstRaiseTime,onRaised};
     this.emit('gesture',{phase:'raise',key,definition:d,duration:d.firstRaiseTime});return true;
   }
@@ -514,7 +514,7 @@ export class SoloGame {
     for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
     this.time+=dt;this.elapsed+=dt;this.expireScorePopups();this.updateBoxes();this.mapRules?.tick();
     if(this.pendingMelee&&this.time>=this.pendingMelee.due){this.resolveMelee();this.pendingMelee=null;}
-    this.updateGesture();
+    this.updateGesture();this.updateSwitch();
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
     if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<MAX_ALIVE){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay);}
     if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead)) {
@@ -528,7 +528,7 @@ export class SoloGame {
     const p=this.player,forward=[Math.cos(this.yaw),Math.sin(this.yaw)],right=[Math.sin(this.yaw),-Math.cos(this.yaw)];
     if(this.sprinting&&input.fire)this.fire();
     let dx=forward[0]*(input.forward||0)+right[0]*(input.side||0),dy=forward[1]*(input.forward||0)+right[1]*(input.side||0);
-    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&p.grounded&&!this.gesture;
+    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&p.grounded&&!this.gesture&&!this.switching;
     const speed=(this.sprinting?285:190)*this.weapon.definition.moveSpeedScale;
     this.moving=len>0;this.spreadBloom=Math.max(0,this.spreadBloom-dt*(this.weapon.definition.hipSpreadDecayRate||4));
     if(len){dx=dx/len*speed*dt;dy=dy/len*speed*dt;}
@@ -571,7 +571,7 @@ export class SoloGame {
     return {hit:result,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!result&&wall.fraction<1,normal:wall.normal};
   }
   fire() {
-    if(['dead','ready'].includes(this.phase)||this.gesture||this.pendingGrenade||this.time<this.cooldown||this.time<this.meleeDue||this.reloadEnd)return false;
+    if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.cooldown||this.time<this.meleeDue||this.reloadEnd)return false;
     if(this.sprinting){this.sprinting=false;this.pendingFire=true;this.sprintExitUntil=this.time+(this.weapon.definition.sprintOutTime||.3);return false;}
     if(this.pendingFire||this.time+1e-9<this.sprintExitUntil)return false;
     const w=this.weapon;if(w.clip<=0){this.reload();return false;}
@@ -608,7 +608,7 @@ export class SoloGame {
     }
   }
   melee() {
-    if(['dead','ready'].includes(this.phase)||this.gesture||this.pendingGrenade||this.time<this.meleeDue)return;
+    if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.meleeDue)return;
     const d=this.weapon.definition;this.meleeDue=this.time+(d.meleeTime||.5);this.reloadEnd=0;this.pendingFire=false;
     this.pendingMelee={due:this.time+(d.meleeDelay||.05),damage:d.meleeDamage||150};
     this.emit('melee',{duration:d.meleeTime||.5});this.emit('sound',{alias:d.meleeSwipeSoundPlayer});
@@ -620,16 +620,36 @@ export class SoloGame {
     if(enemy&&this.collision.trace([origin[0],origin[1],origin[2]+40],[enemy.position[0],enemy.position[1],enemy.position[2]+40],[0,0,0],1).fraction>.95){this.hitEnemy(enemy,this.pendingMelee.damage,false,true);this.emit('hit',false);this.emit('sound',{alias:'melee_hit'});}
   }
   reload() {
-    const w=this.weapon;if(this.gesture||this.pendingGrenade||this.reloadEnd||this.phase==='dead'||w.clip===w.definition.clipSize||!w.reserve)return;
+    const w=this.weapon;if(this.gesture||this.switching||this.pendingGrenade||this.reloadEnd||this.phase==='dead'||w.clip===w.definition.clipSize||!w.reserve)return;
     const duration=(w.clip===0?w.definition.reloadEmptyTime:w.definition.reloadTime)*(this.mapRules?.reloadScale||1);
     this.pendingFire=false;this.reloadEnd=this.time+duration;this.emit('reload',{empty:w.clip===0,duration});
   }
-  switchWeapon(){if(this.gesture||this.pendingGrenade||this.inventory.length<2)return;this.pendingFire=false;this.slot=(this.slot+1)%this.inventory.length;this.reloadEnd=0;this.emit('weapon',this.weapon);}
+  switchWeapon(){if(this.gesture||this.pendingGrenade||this.switching||this.inventory.length<2)return;const previous=this.weapon;this.slot=(this.slot+1)%this.inventory.length;this.beginSwitch(previous);}
   giveWeapon(name) {
-    const owned=this.inventory.findIndex(w=>w.name===name);
+    const previous=this.weapon,owned=this.inventory.findIndex(w=>w.name===name);
     if(owned>=0){this.inventory[owned]=this.makeWeapon(name);this.slot=owned;}
     else {if(this.inventory.length<2)this.inventory.push(this.makeWeapon(name));else this.inventory[this.slot]=this.makeWeapon(name);this.slot=this.inventory.findIndex(w=>w.name===name);}
-    this.pendingFire=false;this.reloadEnd=0;this.emit('weapon',this.weapon);
+    this.beginSwitch(previous);
+  }
+  // SwitchToWeapon: the current gun plays its putaway (empty variant at 0 ammo)
+  // for dropTime, then the new gun its pullout for raiseTime. A weapon's first
+  // draw uses firstRaiseAnim/firstRaiseTime. Firing, aiming, reloading, melee,
+  // grenades and sprint wait for the raise to finish.
+  beginSwitch(previous){
+    this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;
+    const d=previous?.definition,empty=previous?.clip===0,anim=d&&((empty&&d.emptyDropAnim)||d.dropAnim),duration=d?((empty&&d.emptyDropTime)||d.dropTime||0):0;
+    this.switching={phase:'drop',due:this.time+(anim?duration:0)};
+    if(anim&&duration>0){this.emit('weaponSwitch',{phase:'drop',anim,duration});if(d.putawaySoundPlayer)this.emit('sound',{alias:d.putawaySoundPlayer});}
+  }
+  updateSwitch(){
+    const s=this.switching;if(!s||this.time<s.due)return;
+    if(s.phase==='drop'){
+      const w=this.weapon,d=w.definition,first=!w.raised,empty=w.clip===0;
+      const anim=first?(d.firstRaiseAnim||d.raiseAnim):((empty&&d.emptyRaiseAnim)||d.raiseAnim),duration=first?(d.firstRaiseTime||d.raiseTime||.4):((empty&&d.emptyRaiseTime)||d.raiseTime||.4);
+      w.raised=true;s.phase='raise';s.due=this.time+duration;
+      this.emit('weaponSwitch',{phase:'raise',weapon:w,anim,duration});
+      const sound=first?(d.firstRaiseSoundPlayer||d.raiseSoundPlayer):d.raiseSoundPlayer;if(sound)this.emit('sound',{alias:sound});
+    }else this.switching=null;
   }
   nearWindow(){return this.windows.filter(w=>w.boards<6&&distance(w.entry,this.player.position)<115).sort((a,b)=>distance(a.entry,this.player.position)-distance(b.entry,this.player.position))[0];}
   nearInteraction(){return this.interactions.filter(e=>!this.opened.has(e.target)&&(!this.mapRules||this.mapRules.visible(e))&&distance(e.position,[...this.player.position.slice(0,2),this.player.position[2]+35])<100).sort((a,b)=>distance(a.position,this.player.position)-distance(b.position,this.player.position))[0];}
@@ -692,7 +712,7 @@ export class SoloGame {
   }
   renderPosition(actor){const a=Math.min(1,this.accumulator/PHYSICS_STEP),previous=actor.previousPosition||actor.position;return lerp(previous,actor.position,a);}
   throwGrenade(cook=false) {
-    if(!this.player.grenades||['ready','dead'].includes(this.phase)||this.gesture||this.pendingGrenade||this.time<this.meleeDue)return false;
+    if(!this.player.grenades||['ready','dead'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.meleeDue)return false;
     const d=this.data.grenade,started=this.time,pullAt=started+d.dropTime,throwAt=pullAt+d.holdFireTime;
     this.player.grenades--;this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;
     this.pendingGrenade={started,pullAt,holdEnd:throwAt,throwAt:cook?Infinity:throwAt,releaseAt:cook?Infinity:throwAt+d.fireDelay,end:cook?Infinity:throwAt+d.fireTime+d.raiseTime,due:throwAt+d.fuseTime,cookable:cook,cooking:cook};

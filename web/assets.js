@@ -122,6 +122,14 @@ export async function loadMap(scene,progress) {
       t.colorSpace=THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;t.channel=1;return t;};
     lightmaps.push({primary:await load(lm.primary),secondary:await load(lm.secondary)});
   }
+  // Every primary light's parameters in one float texture (4 RGBA texels per
+  // light), looked up per vertex. Per-light uniforms used to split each
+  // material into a separate draw call for every light touching it.
+  const lightData=new Float32Array(Math.max(1,lights.length)*16);
+  lights.forEach((l,i)=>lightData.set([...l.color,l.radius,...l.direction,l.type,...l.origin,l.outer,l.inner,0,0,0],i*16));
+  const lightTexture=new THREE.DataTexture(lightData,4,Math.max(1,lights.length),THREE.RGBAFormat,THREE.FloatType);
+  lightTexture.minFilter=lightTexture.magFilter=THREE.NearestFilter;lightTexture.needsUpdate=true;
+  const lightIndex=s=>lights[s.primaryLight]?s.primaryLight:0;
   const maps=new Map(),mats=new Map();
   progress('Loading original map textures…');
   await Promise.all(Object.entries(world.materials).map(async([name,info])=>{
@@ -129,32 +137,40 @@ export async function loadMap(scene,progress) {
     let normal=null;if(info.normal&&!info.normal.includes('$identity'))try{normal=await diffuse(info.normal);normal.colorSpace=THREE.NoColorSpace;}catch{}
     maps.set(name,{map,normal,info});
   }));
-  const material=(s)=>{
-    const key=[s.material,s.lightmap,s.primaryLight].join('|');if(mats.has(key))return key;
-    const {map,normal,info}=maps.get(s.material),lm=lightmaps[s.lightmap],light=lights[s.primaryLight]||lights[0];
-    const mat=new THREE.MeshBasicMaterial({map,side:THREE.DoubleSide,vertexColors:!s.material.startsWith('*'),alphaTest:/foliage|chalk|puddle/.test(s.material)?.2:0,lightMap:!info.emissive&&lm?lm.secondary:null});mat.name=key;
+  // World materials. With `arrays`, the diffuse/normal textures come from
+  // texture arrays indexed per vertex, so many materials share one draw call.
+  const buildMaterial=({key,map,normal,emissive,lm,vertexColors,alpha,arrays})=>{
+    const mat=new THREE.MeshBasicMaterial({map,side:THREE.DoubleSide,vertexColors,alphaTest:alpha?.2:0,lightMap:!emissive&&lm?lm.secondary:null});mat.name=key;
+    const hasNormal=!!(arrays?arrays.normal:normal);
     mat.onBeforeCompile=shader=>{
-      if(lm&&!info.emissive){
-        Object.assign(shader.uniforms,{wawPrimary:{value:lm.primary},wawNormal:{value:normal||map},wawHasNormal:{value:!!normal},
-          wawLightColor:{value:new THREE.Vector3(...light.color)},wawLightDir:{value:new THREE.Vector3(...light.direction)},
-          wawLightOrigin:{value:new THREE.Vector3(...light.origin)},wawLightRadius:{value:light.radius},wawLightType:{value:light.type},
-          wawCone:{value:new THREE.Vector2(light.outer,light.inner)}});
-        shader.vertexShader='varying vec3 wawWorldPos; varying vec3 wawWorldNormal;\n'+shader.vertexShader;
+      if(arrays){
+        shader.uniforms.wawDiffuse={value:arrays.diffuse};if(arrays.normal)shader.uniforms.wawNormalArray={value:arrays.normal};
+        shader.vertexShader='attribute float wawLayer; attribute float wawNormalLayer; flat varying float vWawLayer; flat varying float vWawNormalLayer;\n'+shader.vertexShader;
+        shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n          vWawLayer=wawLayer; vWawNormalLayer=wawNormalLayer;');
+        shader.fragmentShader='uniform mediump sampler2DArray wawDiffuse;'+(arrays.normal?' uniform mediump sampler2DArray wawNormalArray;':'')+' flat varying float vWawLayer; flat varying float vWawNormalLayer;\n'+shader.fragmentShader;
+        shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>','diffuseColor*=texture(wawDiffuse,vec3(vMapUv,vWawLayer));');
+      }
+      if(lm&&!emissive){
+        Object.assign(shader.uniforms,{wawPrimary:{value:lm.primary},wawNormal:{value:arrays?map:(normal||map)},wawHasNormal:{value:hasNormal},wawLights:{value:lightTexture}});
+        shader.vertexShader='attribute float wawLight; varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;\n'+shader.vertexShader;
         shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
           wawWorldPos=(modelMatrix*vec4(position,1.)).xyz;
-          wawWorldNormal=normalize(mat3(modelMatrix)*normal);`);
-        shader.fragmentShader=`varying vec3 wawWorldPos; varying vec3 wawWorldNormal;
-          uniform sampler2D wawPrimary,wawNormal; uniform bool wawHasNormal;
-          uniform vec3 wawLightColor,wawLightDir,wawLightOrigin; uniform float wawLightRadius; uniform int wawLightType; uniform vec2 wawCone;\n`+shader.fragmentShader;
+          wawWorldNormal=normalize(mat3(modelMatrix)*normal);
+          wawLightIndex=int(wawLight+.5);`);
+        shader.fragmentShader=`varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;
+          uniform sampler2D wawPrimary,wawNormal; uniform bool wawHasNormal; uniform highp sampler2D wawLights;\n`+shader.fragmentShader;
+        const normalSample=arrays?.normal?'texture(wawNormalArray,vec3(vMapUv,vWawNormalLayer))':'texture2D(wawNormal,vMapUv)';
         shader.fragmentShader=shader.fragmentShader.replace('vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );',`
           // The recovered T4 shader samples ambient RGB in the upper half and
           // directional RGB in the lower half; their alpha channels encode XY.
           vec4 a=texture2D(lightMap,vec2(vLightMapUv.x,vLightMapUv.y*.5));
           vec4 b=texture2D(lightMap,vec2(vLightMapUv.x,vLightMapUv.y*.5+.5));
           vec2 d=vec2(a.a*4.08-2.08,b.a*4.064516-2.064516);
-          vec2 n=vec2(0.);if(wawHasNormal){vec4 t=texture2D(wawNormal,vMapUv);n=vec2(t.a*4.08-2.08,t.g*4.064516-2.064516);}
+          vec2 n=vec2(0.);if(wawHasNormal){vec4 t=${normalSample};n=vec2(t.a*4.08-2.08,t.g*4.064516-2.064516);}
           float nf=.6*exp2(-dot(n,n))+.4,df=.6*exp2(-dot(d,d))+.4;
           vec3 baked=a.rgb*nf+b.rgb*clamp((dot(d,n)+1.)*df*nf,0.,1.);
+          vec4 l0=texelFetch(wawLights,ivec2(0,wawLightIndex),0),l1=texelFetch(wawLights,ivec2(1,wawLightIndex),0),l2=texelFetch(wawLights,ivec2(2,wawLightIndex),0),l3=texelFetch(wawLights,ivec2(3,wawLightIndex),0);
+          vec3 wawLightColor=l0.rgb,wawLightDir=l1.xyz,wawLightOrigin=l2.xyz;float wawLightRadius=l0.a;int wawLightType=int(l1.w+.5);vec2 wawCone=vec2(l2.w,l3.x);
           vec3 L=wawLightDir;float attenuation=1.;
           if(wawLightType>1){vec3 delta=wawLightOrigin-wawWorldPos;float dist=length(delta);L=delta/max(dist,.01);
             attenuation=max(0.,1.-dist/max(wawLightRadius,.01));
@@ -165,38 +181,86 @@ export async function loadMap(scene,progress) {
       }
       film(shader);
     };
-    mat.customProgramCacheKey=()=>[!!lm,!!info.emissive,!!normal,mat.vertexColors,mat.alphaTest>0].join('|');mats.set(key,mat);return key;
+    mat.customProgramCacheKey=()=>[!!lm,!!emissive,hasNormal,vertexColors,alpha,arrays?'array':''].join('|');
+    return mat;
   };
+  const material=(s)=>{
+    const key=[s.material,s.lightmap].join('|');if(mats.has(key))return key;
+    const {map,normal,info}=maps.get(s.material);
+    mats.set(key,buildMaterial({key,map,normal,emissive:info.emissive,lm:lightmaps[s.lightmap],vertexColors:!s.material.startsWith('*'),alpha:/foliage|chalk|puddle/.test(s.material)}));return key;
+  };
+  // Texture arrays: compressed textures of one role, format, size and mip count
+  // share a GPU array; each world vertex carries its layer. ?arrays=0 disables.
+  const useArrays=!/[?&]arrays=0\b/.test(location.search),arrayBuckets=new Map(),arrayTextures=[];
+  const arrayLayer=(texture,role)=>{
+    if(!useArrays||!texture?.isCompressedTexture||!texture.mipmaps?.length)return null;
+    const key=[role,texture.format,texture.image.width,texture.image.height,texture.mipmaps.length].join('x');
+    if(!arrayBuckets.has(key))arrayBuckets.set(key,{key,textures:[],layers:new Map(),texture:null});
+    const bucket=arrayBuckets.get(key);if(!bucket.layers.has(texture)){bucket.layers.set(texture,bucket.textures.length);bucket.textures.push(texture);}
+    return {bucket,layer:bucket.layers.get(texture)};
+  };
+  const arrayTexture=bucket=>{
+    if(bucket.texture)return bucket.texture;
+    const first=bucket.textures[0],depth=bucket.textures.length;
+    const mipmaps=first.mipmaps.map((level,i)=>{const size=level.data.length,data=new Uint8Array(size*depth);bucket.textures.forEach((t,layer)=>data.set(t.mipmaps[i].data,layer*size));return {data,width:level.width,height:level.height};});
+    const t=new THREE.CompressedArrayTexture(mipmaps,first.image.width,first.image.height,depth,first.format);
+    t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=first.colorSpace;t.minFilter=mipmaps.length>1?THREE.LinearMipmapLinearFilter:THREE.LinearFilter;t.magFilter=THREE.LinearFilter;t.generateMipmaps=false;t.needsUpdate=true;
+    bucket.texture=t;arrayTextures.push(t);return t;
+  };
+  const arrayMap=new THREE.DataTexture(new Uint8Array([255,255,255,255]),1,1);arrayMap.needsUpdate=true;
+  const arrayGroups=new Map();
   const surfaceToModel=new Map();
   for(let i=1;i<world.brushModels.length;i++) {
     const m=world.brushModels[i];for(let s=m.firstSurface;s<m.firstSurface+m.surfaceCount;s++)surfaceToModel.set(s,i);
   }
   const grouped=new Map(),baseMaterials=new Map();
+  // Compile-tool surfaces (shadow casters, shadow caulk, HDR portals, clips)
+  // are invisible in the original renderer; drawing them showed their editor
+  // placeholder textures as walls and added draw calls. Collision is separate.
+  const toolMaterial=/^wc\/(shadowcaster|caulk|hdrportal|nodraw|clip|trigger|hint|skip|portal)/i;
   world.surfaces.forEach((s,i)=>{
+    if(toolMaterial.test(s.material))return;
     const id=surfaceToModel.get(i)||0;
+    if(id===0){
+      const {map,normal,info}=maps.get(s.material),d=arrayLayer(map,'d'),n=normal?arrayLayer(normal,'n'):null;
+      if(d&&(!normal||n)){
+        const alpha=/foliage|chalk|puddle/.test(s.material),vertexColors=!s.material.startsWith('*'),key=[d.bucket.key,n?.bucket.key||'-',s.lightmap,!!info.emissive,alpha,vertexColors].join('|');
+        if(!arrayGroups.has(key))arrayGroups.set(key,{indices:[],lights:[],layers:[],normalLayers:[],meta:{d:d.bucket,n:n?.bucket||null,lm:lightmaps[s.lightmap],emissive:!!info.emissive,alpha,vertexColors}});
+        const g=arrayGroups.get(key),light=lightIndex(s);
+        for(let k=0;k<s.triangleCount*3;k++){g.indices.push(s.firstVertex+idx[s.baseIndex+k]);g.lights.push(light);g.layers.push(d.layer);g.normalLayers.push(n?n.layer:0);}
+        return;
+      }
+    }
     if(!grouped.has(id))grouped.set(id,new Map());const m=grouped.get(id);
     const base=material(s);let key=base;
     if(id===0){let min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let v=s.firstVertex;v<s.firstVertex+s.vertexCount;v++)for(let k=0;k<3;k++){min[k]=Math.min(min[k],positions[v*3+k]);max[k]=Math.max(max[k],positions[v*3+k]);}key+='~'+min.map((v,k)=>Math.floor((v+max[k])/1024)).join(',');}
-    baseMaterials.set(key,base);if(!m.has(key))m.set(key,[]);const a=m.get(key);
-    for(let k=0;k<s.triangleCount*3;k++)a.push(s.firstVertex+idx[s.baseIndex+k]);
+    baseMaterials.set(key,base);if(!m.has(key))m.set(key,{indices:[],lights:[]});const a=m.get(key),light=lightIndex(s);
+    for(let k=0;k<s.triangleCount*3;k++){a.indices.push(s.firstVertex+idx[s.baseIndex+k]);a.lights.push(light);}
   });
   const brushMeshes=new Map();
-  const compactGeometry=indices=>{
-    const remap=new Map(),unique=[],compact=[];
-    for(const id of indices){if(!remap.has(id)){remap.set(id,unique.length);unique.push(id);}compact.push(remap.get(id));}
+  const compactGeometry=(indices,lightsOf,layers=null,normalLayers=null)=>{
+    const remap=new Map(),unique=[],uniqueLights=[],uniqueLayers=[],uniqueNormalLayers=[],compact=[],V=world.vertexCount;
+    indices.forEach((id,k)=>{const light=lightsOf[k],layer=layers?layers[k]:0,nl=normalLayers?normalLayers[k]:0,slot=id+V*(light+256*(layer+512*nl));
+      if(!remap.has(slot)){remap.set(slot,unique.length);unique.push(id);uniqueLights.push(light);uniqueLayers.push(layer);uniqueNormalLayers.push(nl);}compact.push(remap.get(slot));});
     const geometry=new THREE.BufferGeometry();
     for(const [name,source,size]of [['position',positions,3],['uv',uv,2],['uv1',uv1,2],['color',colors,3]]){
       const values=new Float32Array(unique.length*size);unique.forEach((id,i)=>values.set(source.subarray(id*size,(id+1)*size),i*size));geometry.setAttribute(name,new THREE.BufferAttribute(values,size));
     }
+    geometry.setAttribute('wawLight',new THREE.BufferAttribute(new Float32Array(uniqueLights),1));
+    if(layers){geometry.setAttribute('wawLayer',new THREE.BufferAttribute(new Float32Array(uniqueLayers),1));geometry.setAttribute('wawNormalLayer',new THREE.BufferAttribute(new Float32Array(uniqueNormalLayers),1));}
     geometry.setIndex(compact);geometry.computeVertexNormals();geometry.computeBoundingSphere();return geometry;
   };
   let worldBatches=0;
+  for(const [key,g]of arrayGroups){
+    const m=g.meta,mat=buildMaterial({key:'array:'+key,map:arrayMap,normal:null,emissive:m.emissive,lm:m.lm,vertexColors:m.vertexColors,alpha:m.alpha,arrays:{diffuse:arrayTexture(m.d),normal:m.n?arrayTexture(m.n):null}});
+    const mesh=new THREE.Mesh(compactGeometry(g.indices,g.lights,g.layers,g.normalLayers),mat);mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);worldBatches++;
+  }
   for(const [id,groups]of grouped) {
-    if(id===0){for(const [key,indices]of groups){const mesh=new THREE.Mesh(compactGeometry(indices),mats.get(baseMaterials.get(key)));mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);worldBatches++;}}
+    if(id===0){for(const [key,group]of groups){const mesh=new THREE.Mesh(compactGeometry(group.indices,group.lights),mats.get(baseMaterials.get(key)));mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);worldBatches++;}}
     else{
-      const indices=[],materials=[],ranges=[];
-      for(const [key,values]of groups){ranges.push([indices.length,values.length,materials.length]);indices.push(...values);materials.push(mats.get(baseMaterials.get(key)));}
-      const geometry=compactGeometry(indices);for(const range of ranges)geometry.addGroup(...range);
+      const indices=[],lightsOf=[],materials=[],ranges=[];
+      for(const [key,group]of groups){ranges.push([indices.length,group.indices.length,materials.length]);indices.push(...group.indices);lightsOf.push(...group.lights);materials.push(mats.get(baseMaterials.get(key)));}
+      const geometry=compactGeometry(indices,lightsOf);for(const range of ranges)geometry.addGroup(...range);
       const mesh=new THREE.Mesh(geometry,materials);mesh.matrixAutoUpdate=false;brushMeshes.set(id,mesh);
     }
   }
@@ -257,7 +321,16 @@ export async function loadMap(scene,progress) {
     }
   };
   return {world,brushMeshes,illumination,worldBatches,staticBatches:batchCount,staticPlacements:world.staticModels.length,lightmapCount:lightmaps.length,textures:()=>textures.size,
-    updateVisibility,uploadTextures:renderer=>Promise.all([...textures.values()].map(async promise=>renderer.initTexture(await promise)))};
+    // Lightmaps and the light table are decoded here rather than through the
+    // texture cache; upload them before play too, or each one uploads (a
+    // 20-70 ms hitch) the first time its area comes into view.
+    updateVisibility,uploadTextures:async renderer=>{
+      // Textures copied into an array upload as the array; any other user of
+      // them uploads in main.js's full-scene warm render.
+      const inArrays=new Set([...arrayBuckets.values()].flatMap(b=>b.texture?b.textures:[]));
+      await Promise.all([...textures.values()].map(async promise=>{const t=await promise;if(!inArrays.has(t))renderer.initTexture(t);}));
+      for(const lm of lightmaps){renderer.initTexture(lm.primary);renderer.initTexture(lm.secondary);}renderer.initTexture(lightTexture);
+      for(const t of arrayTextures)renderer.initTexture(t);}};
 }
 
 export async function originalAnimation(name,root,shared=false) {
