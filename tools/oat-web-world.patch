@@ -25,7 +25,7 @@ diff --git a/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.cpp b/src/ObjWriti
 new file mode 100644
 --- /dev/null
 +++ b/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.cpp
-@@ -0,0 +1,301 @@
+@@ -0,0 +1,342 @@
 +// Local browser export extension for OpenAssetTools. GPL-3.0, like OAT.
 +#include "WebWorldDumperT4.h"
 +#include <filesystem>
@@ -316,6 +316,7 @@ new file mode 100644
 +            manifest["staticModels"].push_back({
 +                {"model", instance.model->name}, {"origin", instance.placement.origin},
 +                {"axis", instance.placement.axis}, {"scale", instance.placement.scale},
++                {"cullDist", instance.cullDist},
 +                {"groundLighting", world->dpvs.smodelInsts[i].groundLighting.array}
 +            });
 +        }
@@ -323,6 +324,46 @@ new file mode 100644
 +        for (int i = 0; i < world->modelCount; ++i) {
 +            const auto& m = world->models[i];
 +            manifest["brushModels"].push_back({{"firstSurface", m.startSurfIndex}, {"surfaceCount", m.surfaceCount}, {"bounds", m.bounds}});
++        }
++        // DPVS: the engine draws only cells seen through portals from the view's
++        // cell. Cells list their surfaces (exported indices) and static models
++        // (exported indices); planes/nodes locate the cell holding a point.
++        {
++            std::vector<int> smodelOut(world->dpvs.smodelCount, -1);
++            int nextModel = 0;
++            for (unsigned int i = 0; i < world->dpvs.smodelCount; ++i)
++                if (world->dpvs.smodelDrawInsts[i].model && world->dpvs.smodelDrawInsts[i].model->name) smodelOut[i] = nextModel++;
++            json cells = json::array();
++            for (int c = 0; c < world->dpvsPlanes.cellCount; ++c) {
++                const auto& cell = world->cells[c];
++                std::set<int> surfaces, smodels;
++                for (int t = 0; t < cell.aabbTreeCount; ++t) {
++                    const auto& tree = cell.aabbTree[t];
++                    for (int k = 0; k < tree.surfaceCount; ++k) surfaces.insert(world->dpvs.sortedSurfIndex[tree.startSurfIndex + k]);
++                    for (int k = 0; k < tree.smodelIndexCount; ++k) {
++                        const int m = tree.smodelIndexes[k];
++                        if (m >= 0 && m < static_cast<int>(smodelOut.size()) && smodelOut[m] >= 0) smodels.insert(smodelOut[m]);
++                    }
++                }
++                json portals = json::array();
++                for (int k = 0; k < cell.portalCount; ++k) {
++                    const auto& portal = cell.portals[k];
++                    json vertices = json::array();
++                    for (int v = 0; v < static_cast<unsigned char>(portal.vertexCount); ++v)
++                        vertices.push_back({portal.vertices[v].v[0], portal.vertices[v].v[1], portal.vertices[v].v[2]});
++                    portals.push_back({{"cell", portal.cell ? static_cast<int>(portal.cell - world->cells) : -1},
++                        {"plane", {portal.plane.coeffs[0], portal.plane.coeffs[1], portal.plane.coeffs[2], portal.plane.coeffs[3]}}, {"vertices", vertices}});
++                }
++                cells.push_back({{"mins", cell.mins}, {"maxs", cell.maxs}, {"surfaces", surfaces}, {"smodels", smodels}, {"portals", portals}});
++            }
++            json planes = json::array(), nodes = json::array();
++            for (int i = 0; i < world->planeCount; ++i) {
++                const auto& plane = world->dpvsPlanes.planes[i];
++                const float* normal = reinterpret_cast<const float*>(&plane.normal);
++                planes.push_back({normal[0], normal[1], normal[2], plane.dist});
++            }
++            for (int i = 0; i < world->nodeCount; ++i) nodes.push_back(world->dpvsPlanes.nodes[i]);
++            manifest["dpvs"] = {{"cellCount", world->dpvsPlanes.cellCount}, {"cells", cells}, {"planes", planes}, {"nodes", nodes}};
 +        }
 +        *manifestFile << manifest.dump();
 +    }

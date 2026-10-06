@@ -52,7 +52,7 @@ const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
 let deathFxTime=0,frameMsTotal=0;
-const loops=new Map();let papView=null,shake=null;
+const loops=new Map();let papView=null,shake=null;const cellObjects=[];let cellMask=null;
 const pauseKeys=new PauseKeys();
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
@@ -209,7 +209,13 @@ async function dynamicAssets(entities) {
     if(!object)continue;
     const group=new THREE.Group();group.position.fromArray(nodePos(entity));
     if(entity.classname==='script_model')shadeModel(object,map.illumination(nodePos(entity)));
-    const angles=(entity.angles||'0 0 0').split(/\s+/).map(x=>Number(x)*Math.PI/180);group.rotation.set(angles[2],-angles[0],angles[1],'ZYX');group.add(object);scene.add(group);
+    const angles=(entity.angles||'0 0 0').split(/\s+/).map(x=>Number(x)*Math.PI/180);group.rotation.set(angles[2],-angles[0],angles[1],'ZYX');group.add(object);
+    // A holder carries portal culling, separate from the game's own show/hide
+    // of the entity (doors, boards, box lids): visible if a cell it touches is.
+    const holder=new THREE.Group();holder.add(group);scene.add(holder);holder.updateMatrixWorld(true);
+    const box=new THREE.Box3().setFromObject(group),cells=new Set();
+    if(!box.isEmpty()&&map.cellCount)for(let i=0;i<9;i++){const p=i<8?[i&1?box.max.x:box.min.x,i&2?box.max.y:box.min.y,i&4?box.max.z:box.min.z]:box.getCenter(new THREE.Vector3()).toArray();const c=map.cellFor(p);if(c>=0)cells.add(c);}
+    if(cells.size)cellObjects.push({holder,cells:[...cells]});
     map.bullets.addRoot(group,{penetrable:boardTargets.has(entity.targetname)});
     if(entity.targetname){if(!dynamic.has(entity.targetname))dynamic.set(entity.targetname,[]);dynamic.get(entity.targetname).push({object:group,entity});}
   }
@@ -272,7 +278,9 @@ async function prepareBox(manifest){
   }
 }
 function updateBoxes(){
-  for(const [target,v]of boxVisuals)updateBoxView(v,game.boxes.get(target),game.time,presentation.box,effects);
+  // Each box location keeps every weapon model for the cycling animation;
+  // skip their transform updates while that location shows nothing.
+  for(const [target,v]of boxVisuals){updateBoxView(v,game.boxes.get(target),game.time,presentation.box,effects);v.weaponRoot.matrixWorldAutoUpdate=v.weaponRoot.visible;}
 }
 function preparePap(manifest){
   const trigger=manifest.entities.find(e=>e.targetname==='zombie_vending_upgrade');if(!trigger)return;
@@ -428,6 +436,13 @@ function updateHud() {
   $('powerups').textContent=Object.keys(game.powerup).map(k=>k.replaceAll('_',' ')+' '+Math.ceil(game.powerup[k]-game.time)+'s').join(' · ');
   $('notice').style.opacity=performance.now()<noticeDue?'1':'0';
 }
+// Portal culling for map entities (when the visible cells change) and for
+// zombies (each frame, from the cell their body is in).
+function applyCellCulling(){
+  const cellsNow=map?.visibleCells||null;
+  if(cellsNow!==cellMask){cellMask=cellsNow;for(const o of cellObjects){o.holder.visible=!cellsNow||o.cells.some(c=>cellsNow[c]);o.holder.matrixWorldAutoUpdate=o.holder.visible;}}
+  for(const v of visuals.values()){const p=v.enemy.position,c=cellsNow?map.cellFor([p[0],p[1],p[2]+40]):-1;v.root.visible=c<0||!!cellsNow[c];}
+}
 function frame(time) {
   const began=performance.now();
   const dt=Math.max(0,Math.min((time-frameTime)/1000,.1));frameTime=time;
@@ -458,7 +473,8 @@ function frame(time) {
     for(const v of visuals.values())actors.light(v);
   }
   damageFlash=Math.max(0,damageFlash-dt*.75);$('blood').style.opacity=String(damageFlash*.65+(game&&game.player.health<40 ? .25 : 0));
-  map?.updateVisibility(camera);renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
+  map?.updateVisibility(camera);applyCellCulling();
+  renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
   if(game&&state.mode==='playing'&&time>=hudDue){hud.draw(game,aimBlend,time<hitTime,camera.fov);hudDue=time+1000/60;}
   if(state.ready&&state.mode==='playing'){frameSamples.push({dt:dt*1000,cpu:performance.now()-began});if(frameSamples.length>600)frameSamples.shift();}
   // Frame counter: FPS and mean CPU frame time, refreshed twice a second.
@@ -469,7 +485,7 @@ function frame(time) {
   if(time>=domDue){updateHud();domDue=time+100;}
   requestAnimationFrame(frame);
 }
-window.wawPreview={state,camera,renderer,scene,get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
+window.wawPreview={state,camera,renderer,scene,applyCellCulling,get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
   grenadeView:grenadeView?.diagnostics(),grenades:game?.grenades.map(g=>({position:g.position,velocity:g.velocity,due:g.due,resting:g.resting,held:!!g.held})),pendingGrenade:game?.pendingGrenade,

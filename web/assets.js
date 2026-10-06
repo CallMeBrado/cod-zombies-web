@@ -233,6 +233,9 @@ export async function loadMap(scene,progress) {
     const m=world.brushModels[i];for(let s=m.firstSurface;s<m.firstSurface+m.surfaceCount;s++)surfaceToModel.set(s,i);
   }
   const grouped=new Map(),baseMaterials=new Map();
+  // DPVS cells (world.dpvs): each world surface lies in one cell.
+  const dpvs=world.dpvs?.cells?.length&&!/[?&]cells=0\b/.test(location.search)?world.dpvs:null,surfaceCell=new Int16Array(world.surfaces.length).fill(-1);
+  dpvs?.cells.forEach((cell,c)=>{for(const i of cell.surfaces)surfaceCell[i]=c;});
   // Compile-tool surfaces (shadow casters, shadow caulk, HDR portals, clips)
   // are invisible in the original renderer; drawing them showed their editor
   // placeholder textures as walls and added draw calls. Collision is separate.
@@ -244,17 +247,19 @@ export async function loadMap(scene,progress) {
       const {map,normal,info}=maps.get(s.material),d=arrayLayer(map,'d'),n=normal?arrayLayer(normal,'n'):null;
       if(d&&(!normal||n)){
         const alpha=/foliage|chalk|puddle/.test(s.material),vertexColors=!s.material.startsWith('*'),key=[d.bucket.key,n?.bucket.key||'-',s.lightmap,!!info.emissive,alpha,vertexColors].join('|');
-        if(!arrayGroups.has(key))arrayGroups.set(key,{indices:[],lights:[],layers:[],normalLayers:[],meta:{d:d.bucket,n:n?.bucket||null,lm:lightmaps[s.lightmap],emissive:!!info.emissive,alpha,vertexColors}});
+        if(!arrayGroups.has(key))arrayGroups.set(key,{indices:[],lights:[],layers:[],normalLayers:[],cells:[],meta:{d:d.bucket,n:n?.bucket||null,lm:lightmaps[s.lightmap],emissive:!!info.emissive,alpha,vertexColors}});
         const g=arrayGroups.get(key),light=lightIndex(s);
         for(let k=0;k<s.triangleCount*3;k++){g.indices.push(s.firstVertex+idx[s.baseIndex+k]);g.lights.push(light);g.layers.push(d.layer);g.normalLayers.push(n?n.layer:0);}
+        for(let k=0;k<s.triangleCount;k++)g.cells.push(surfaceCell[i]);
         return;
       }
     }
     if(!grouped.has(id))grouped.set(id,new Map());const m=grouped.get(id);
     const base=material(s);let key=base;
     if(id===0){let min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];for(let v=s.firstVertex;v<s.firstVertex+s.vertexCount;v++)for(let k=0;k<3;k++){min[k]=Math.min(min[k],positions[v*3+k]);max[k]=Math.max(max[k],positions[v*3+k]);}key+='~'+min.map((v,k)=>Math.floor((v+max[k])/1024)).join(',');}
-    baseMaterials.set(key,base);if(!m.has(key))m.set(key,{indices:[],lights:[]});const a=m.get(key),light=lightIndex(s);
+    baseMaterials.set(key,base);if(!m.has(key))m.set(key,{indices:[],lights:[],cells:[]});const a=m.get(key),light=lightIndex(s);
     for(let k=0;k<s.triangleCount*3;k++){a.indices.push(s.firstVertex+idx[s.baseIndex+k]);a.lights.push(light);}
+    for(let k=0;k<s.triangleCount;k++)a.cells.push(surfaceCell[i]);
   });
   const brushMeshes=new Map();
   const compactGeometry=(indices,lightsOf,layers=null,normalLayers=null)=>{
@@ -269,13 +274,29 @@ export async function loadMap(scene,progress) {
     if(layers){geometry.setAttribute('wawLayer',new THREE.BufferAttribute(new Float32Array(uniqueLayers),1));geometry.setAttribute('wawNormalLayer',new THREE.BufferAttribute(new Float32Array(uniqueNormalLayers),1));}
     geometry.setIndex(compact);geometry.computeVertexNormals();geometry.computeBoundingSphere();return geometry;
   };
-  let worldBatches=0;
+  let worldBatches=0;const cellMeshes=[];
+  // Reorder a batch's per-vertex arrays so triangles of one cell are adjacent.
+  const byCell=(group,fields)=>{
+    const order=group.cells.map((c,t)=>t).sort((a,b)=>group.cells[a]-group.cells[b]||a-b),out={},ranges=[];
+    for(const f of fields)if(group[f]){const src=group[f],dst=new Array(src.length);order.forEach((t,i)=>{dst[i*3]=src[t*3];dst[i*3+1]=src[t*3+1];dst[i*3+2]=src[t*3+2];});out[f]=dst;}
+    order.forEach((t,i)=>{const c=group.cells[t],last=ranges.at(-1);if(last&&last.cell===c)last.count+=3;else ranges.push({cell:c,start:i*3,count:3});});
+    return {...out,ranges};
+  };
+  // Bullet traces keep the complete geometry; the drawn copy shares its vertex
+  // buffers with a rewritable index of the visible cells only.
+  const cellCulled=(mesh,ranges)=>{
+    if(!dpvs)return mesh;const full=mesh.geometry,draw=new THREE.BufferGeometry();
+    for(const [name,attribute]of Object.entries(full.attributes))draw.setAttribute(name,attribute);
+    const source=Uint32Array.from(full.index.array),index=new THREE.BufferAttribute(new Uint32Array(source.length),1);index.setUsage(THREE.DynamicDrawUsage);index.array.set(source);
+    draw.setIndex(index);draw.boundingSphere=full.boundingSphere;draw.boundingBox=full.boundingBox;mesh.geometry=draw;cellMeshes.push({mesh,source,ranges,index});return mesh;
+  };
   for(const [key,g]of arrayGroups){
     const m=g.meta,mat=buildMaterial({key:'array:'+key,map:arrayMap,normal:null,emissive:m.emissive,lm:m.lm,vertexColors:m.vertexColors,alpha:m.alpha,arrays:{diffuse:arrayTexture(m.d),normal:m.n?arrayTexture(m.n):null}});
-    const mesh=new THREE.Mesh(compactGeometry(g.indices,g.lights,g.layers,g.normalLayers),mat);mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh,{layers:m.d.textures});worldBatches++;
+    const sorted=byCell(g,['indices','lights','layers','normalLayers']);
+    const mesh=new THREE.Mesh(compactGeometry(sorted.indices,sorted.lights,sorted.layers,sorted.normalLayers),mat);mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh,{layers:m.d.textures});cellCulled(mesh,sorted.ranges);worldBatches++;
   }
   for(const [id,groups]of grouped) {
-    if(id===0){for(const [key,group]of groups){const mesh=new THREE.Mesh(compactGeometry(group.indices,group.lights),mats.get(baseMaterials.get(key)));mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh);worldBatches++;}}
+    if(id===0){for(const [key,group]of groups){const sorted=byCell(group,['indices','lights']);const mesh=new THREE.Mesh(compactGeometry(sorted.indices,sorted.lights),mats.get(baseMaterials.get(key)));mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh);cellCulled(mesh,sorted.ranges);worldBatches++;}}
     else{
       const indices=[],lightsOf=[],materials=[],ranges=[];
       for(const [key,group]of groups){ranges.push([indices.length,group.indices.length,materials.length]);indices.push(...group.indices);lightsOf.push(...group.lights);materials.push(mats.get(baseMaterials.get(key)));}
@@ -317,30 +338,77 @@ export async function loadMap(scene,progress) {
       meshes.push({geometry,material:mesh.material,matrix:mesh.matrixWorld.clone()});
     });parts.set(name,meshes);
   }
+  const smodelCells=new Map();dpvs?.cells.forEach((cell,c)=>{for(const i of cell.smodels){if(!smodelCells.has(i))smodelCells.set(i,[]);smodelCells.get(i).push(c);}});
+  world.staticModels.forEach((inst,placement)=>{inst.placement=placement;});
   for(const inst of world.staticModels){
     const a=inst.axis,p=inst.origin,s=inst.scale,matrix=new THREE.Matrix4().set(a[0][0]*s,a[1][0]*s,a[2][0]*s,p[0],a[0][1]*s,a[1][1]*s,a[2][1]*s,p[1],a[0][2]*s,a[1][2]*s,a[2][2]*s,p[2],0,0,0,1);
     const key=inst.model;
-    if(!batches.has(key))batches.set(key,{name:inst.model,instances:[]});batches.get(key).instances.push({matrix,color:new THREE.Color(...illumination(p))});
+    if(!batches.has(key))batches.set(key,{name:inst.model,instances:[]});batches.get(key).instances.push({matrix,color:new THREE.Color(...illumination(p)),origin:new THREE.Vector3(...p),cull:inst.cullDist>0?inst.cullDist**2:Infinity,cells:smodelCells.get(inst.placement)||null});
   }
-  let batchCount=0;const cullBatches=[],frustum=new THREE.Frustum(),projection=new THREE.Matrix4();let lastView=null;
+  let batchCount=0;const cullBatches=[],frustum=new THREE.Frustum(),projection=new THREE.Matrix4(),viewOrigin=new THREE.Vector3();let lastView=null;
   for(const batch of batches.values())for(const part of parts.get(batch.name)){
     const mesh=new THREE.InstancedMesh(part.geometry,part.material,batch.instances.length);mesh.name='Static batch '+batch.name;mesh.matrixAutoUpdate=false;
     part.geometry.computeBoundingSphere();
-    const instances=batch.instances.map(inst=>{const matrix=inst.matrix.clone().multiply(part.matrix),sphere=part.geometry.boundingSphere.clone().applyMatrix4(matrix);sphere.radius+=32;return {matrix,color:inst.color,sphere};});
+    const instances=batch.instances.map(inst=>{const matrix=inst.matrix.clone().multiply(part.matrix),sphere=part.geometry.boundingSphere.clone().applyMatrix4(matrix);sphere.radius+=32;return {matrix,color:inst.color,sphere,origin:inst.origin,cull:inst.cull,cells:inst.cells};});
     bullets.addInstances(part.geometry,part.material,instances);
     instances.forEach((inst,i)=>{mesh.setMatrixAt(i,inst.matrix);mesh.setColorAt(i,inst.color);});
     mesh.frustumCulled=false;scene.add(mesh);batchCount++;cullBatches.push({mesh,instances,visible:null});
   }
+  // The DPVS BSP: interior nodes are (plane + cellCount + 1, right offset);
+  // a leaf is (cell + 1). The front side continues at the next pair.
+  const cellFor=o=>{
+    if(!dpvs)return -1;const nodes=dpvs.nodes,count=dpvs.cellCount;let at=0;
+    for(let guard=0;guard<4096;guard++){const v=nodes[at];if(v===undefined)return -1;if(v<count+1)return v-1;const p=dpvs.planes[v-count-1];at=p[0]*o[0]+p[1]*o[1]+p[2]*o[2]-p[3]>0?at+2:at+nodes[at+1];}
+    return -1;
+  };
+  const clip=[];
+  const portalRect=(portal,m)=>{
+    // Clip the portal to the near plane in clip space, then bound it in NDC.
+    const e=m.elements;let points=portal.vertices.map(v=>[e[0]*v[0]+e[4]*v[1]+e[8]*v[2]+e[12],e[1]*v[0]+e[5]*v[1]+e[9]*v[2]+e[13],e[3]*v[0]+e[7]*v[1]+e[11]*v[2]+e[15],e[2]*v[0]+e[6]*v[1]+e[10]*v[2]+e[14]]);
+    clip.length=0;for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length],da=a[2]+a[3]-1e-3,db=b[2]+b[3]-1e-3;
+      if(da>=0)clip.push(a);if(da>=0!==db>=0){const t=da/(da-db);clip.push(a.map((v,k)=>v+(b[k]-v)*t));}}
+    if(clip.length<3)return null;let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+    for(const q of clip){const w=Math.max(q[2],1e-6),x=q[0]/w,y=q[1]/w;x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);}
+    return [x0-.01,y0-.01,x1+.01,y1+.01];
+  };
+  let visibleCells=null,lastCells='';
+  const floodCells=(eye,m)=>{
+    const start=cellFor([eye.x,eye.y,eye.z]);if(start<0)return null;
+    const mask=new Uint8Array(dpvs.cellCount),rects=new Array(dpvs.cellCount),queue=[start];rects[start]=[-1,-1,1,1];mask[start]=1;
+    for(let steps=0;queue.length&&steps<4096;steps++){
+      const c=queue.pop(),r=rects[c];
+      for(const portal of dpvs.cells[c].portals){
+        const t=portal.cell,pl=portal.plane,side=pl[0]*eye.x+pl[1]*eye.y+pl[2]*eye.z+pl[3];if(t<0||side>.5)continue;
+        let pr=side>-1?r.slice():portalRect(portal,m);if(!pr)continue;
+        pr=[Math.max(pr[0],r[0]),Math.max(pr[1],r[1]),Math.min(pr[2],r[2]),Math.min(pr[3],r[3])];if(pr[0]>=pr[2]||pr[1]>=pr[3])continue;
+        const old=rects[t];if(old&&old[0]<=pr[0]&&old[1]<=pr[1]&&old[2]>=pr[2]&&old[3]>=pr[3])continue;
+        rects[t]=old?[Math.min(old[0],pr[0]),Math.min(old[1],pr[1]),Math.max(old[2],pr[2]),Math.max(old[3],pr[3])]:pr;mask[t]=1;queue.push(t);
+      }
+    }
+    return mask;
+  };
   const updateVisibility=camera=>{
     camera.updateMatrixWorld();projection.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);
     if(lastView&&projection.elements.every((v,i)=>v===lastView[i]))return;lastView=projection.elements.slice();frustum.setFromProjectionMatrix(projection);
-    for(const batch of cullBatches){const visible=[];batch.instances.forEach((inst,i)=>{if(frustum.intersectsSphere(inst.sphere))visible.push(i);});
+    // Each placement's original cullDist (GfxStaticModelDrawInst): the game
+    // stops drawing a prop beyond it, measured from the view to its origin.
+    const eye=camera.getWorldPosition(viewOrigin);
+    if(dpvs){
+      visibleCells=floodCells(eye,projection);const key=visibleCells?visibleCells.join(''):'all';
+      if(key!==lastCells){lastCells=key;
+        for(const w of cellMeshes){let count=0;const out=w.index.array;
+          for(const r of w.ranges)if(!visibleCells||r.cell<0||visibleCells[r.cell]){out.set(w.source.subarray(r.start,r.start+r.count),count);count+=r.count;}
+          w.mesh.geometry.setDrawRange(0,count);w.mesh.visible=count>0;w.index.clearUpdateRanges();w.index.addUpdateRange(0,count);w.index.needsUpdate=true;}
+      }
+    }
+    const cellVisible=cells=>!visibleCells||!cells||cells.some(c=>visibleCells[c]);
+    for(const batch of cullBatches){const visible=[];batch.instances.forEach((inst,i)=>{if(inst.origin.distanceToSquared(eye)<=inst.cull&&cellVisible(inst.cells)&&frustum.intersectsSphere(inst.sphere))visible.push(i);});
       if(batch.visible&&visible.length===batch.visible.length&&visible.every((v,i)=>v===batch.visible[i]))continue;
       visible.forEach((id,i)=>{const inst=batch.instances[id];batch.mesh.setMatrixAt(i,inst.matrix);batch.mesh.setColorAt(i,inst.color);});
       batch.mesh.count=visible.length;batch.mesh.visible=visible.length>0;batch.mesh.instanceMatrix.needsUpdate=true;batch.mesh.instanceColor.needsUpdate=true;batch.visible=visible;
     }
   };
-  return {world,bullets,brushMeshes,illumination,worldBatches,staticBatches:batchCount,staticPlacements:world.staticModels.length,lightmapCount:lightmaps.length,textures:()=>textures.size,
+  return {world,bullets,brushMeshes,illumination,worldBatches,cellFor,get visibleCells(){return visibleCells;},cellCount:dpvs?.cellCount||0,staticBatches:batchCount,staticPlacements:world.staticModels.length,lightmapCount:lightmaps.length,textures:()=>textures.size,
     // Lightmaps and the light table are decoded here rather than through the
     // texture cache; upload them before play too, or each one uploads (a
     // 20-70 ms hitch) the first time its area comes into view.

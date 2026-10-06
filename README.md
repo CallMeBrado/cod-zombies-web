@@ -82,7 +82,8 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - FPS counter.
 - **Launching a map:** selecting a map opens its lobby without downloading the game pack. START GAME plays the installed game's original loading movie and soundtrack while downloading assets. The progress bar measures downloaded bytes, then completed preparation stages. Once the map is ready, SKIP INTRO starts immediately; otherwise it waits for the movie to end. Der Riese's original loading clip is a silent still frame and remains on screen while the map loads. Saved-game loading uses the same flow across both games. `npm run prepare:launch` converts the original movies on E:; the normal launcher also prepares them when necessary.
 - **Save game:** three named server slots per map, shared by everyone who has access to the site, with no extra sign-in. Pause → SAVE GAME, enter a name, then choose a slot. Resume from LOAD GAME on any browser or device. Saves keep live zombies, round progress, drops, timers and map state, with thumbnail and statistics. Files live under `local-data/saves/` on E: and persist across server restarts; existing browser saves import into empty slots once. A changed slot rejects stale writes from another device; overwrites and deletions retain a recovery backup.
-- **Testing mod menu:** choose MOD MENU from the pause menu. It has god mode, unlimited points, ammo and grenades, a weapon selector and a round selector.
+- **Testing mod menu:** choose MOD MENU from the pause menu. It has god mode, unlimited points, ammo and grenades, noclip (fly through walls: look to steer, hold Jump to rise, Sprint for speed), a weapon selector and a round selector.
+- **Rendering performance:** the original engine's cell-and-portal visibility (DPVS) is exported with each map. Each frame starts in the view's cell and flood-fills through the portals it can see, so only those cells' world surfaces, static props and map entities are drawn. Static props also use their original cull distances. Add `?cells=0` to the URL to compare against drawing everything.
 - **Network play:** other devices on your local network can connect. Each browser runs its own solo game.
 
 ### Working: Der Riese
@@ -233,7 +234,7 @@ Every binding can be changed under **Esc → Options → Controls**.
 | Switch weapon | Q or mouse wheel |
 | Use, buy, rebuild, pick up a grenade | E (hold E at a window to rebuild) |
 | Pause | Esc |
-| Testing mod menu | Hold Aim, then press Knife |
+| Testing mod menu | Pause, then choose MOD MENU |
 
 If the browser releases the mouse (after Esc or switching windows), click the game to capture it again.
 

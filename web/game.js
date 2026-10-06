@@ -132,9 +132,20 @@ export class SoloGame {
     if(!visible)return index;
     // Test the nearest candidates first. Testing each successive record during
     // source-order scanning used to perform many expensive, distant sweeps.
-    for(const i of this.nodeOrder.slice().sort((a,b)=>scores[a]-scores[b]))if(Number.isFinite(scores[i])&&this.walkableLink(position,this.nodes[i].origin,true))return i;
+    // A position no node can walk to (inside geometry, off the map) must not
+    // sweep the whole graph: stop after 32 physics tests. Links longer than
+    // 1024 or rising more than 256 units are rejected without a sweep.
+    let tested=0;
+    for(const i of this.nodeOrder.slice().sort((a,b)=>scores[a]-scores[b])){
+      if(!Number.isFinite(scores[i]))break;const q=this.nodes[i].origin;
+      if(Math.hypot(q[0]-position[0],q[1]-position[1])>1024||Math.abs(q[2]-position[2])>256)continue;
+      if(this.walkableLink(position,q,true))return i;if(++tested>=32)break;
+    }
     return -1;
   }
+  // The node zombies chase toward. A noclipping player is usually off the
+  // walkable graph, so they head for the nearest node instead of searching.
+  playerNode(position){return this.noclipping?this.nearest(position,false,true):this.nearest(position,true,true);}
   walkableLink(p,q,navigation=false){
     const start=[p[0],p[1],p[2]+35.1],end=[q[0],q[1],q[2]+35.1],half=[14,14,34.9];
     const clear=this.collision.trace(start,end,half,1|0x10000,navigation).fraction>=.98;
@@ -160,7 +171,7 @@ export class SoloGame {
   }
   path(start,end,inside=false) {
     const a=this.nearest(start,true);
-    if(inside&&(this.time>=this.targetNodeDue||this.targetNode<0)){this.targetNode=this.nearest(end,true,true);this.targetNodeDue=this.time+.15;}
+    if(inside&&this.time>=this.targetNodeDue){this.targetNode=this.playerNode(end);this.targetNodeDue=this.time+.15;}
     const b=inside?this.targetNode:this.nearest(end,true);if(a<0||b<0)return [];
     const key=[a,b,inside,[...this.opened].sort().join(',')].join('|'),cached=this.pathCache.get(key);
     if(cached)return [...cached.map(p=>p.slice()),end.slice()];
@@ -193,7 +204,7 @@ export class SoloGame {
   spawnCandidates(){
     // Prefer reachable entries near the player. Path length, rather than a
     // straight line through a ceiling/locked passage, distinguishes floors.
-    if(this.time>=this.targetNodeDue||this.targetNode<0){this.targetNode=this.nearest(this.player.position,true,true);this.targetNodeDue=this.time+.15;}
+    if(this.time>=this.targetNodeDue){this.targetNode=this.playerNode(this.player.position);this.targetNodeDue=this.time+.15;}
     if(!this.spawnDistanceCache||this.spawnDistanceCache.node!==this.targetNode)this.spawnDistanceCache={node:this.targetNode,costs:this.spawnDistances(this.targetNode)};
     const candidates=[],costs=this.spawnDistanceCache.costs;
     for(const window of this.availableWindows()){
@@ -633,16 +644,29 @@ export class SoloGame {
     const p=this.player,forward=[Math.cos(this.yaw),Math.sin(this.yaw)],right=[Math.sin(this.yaw),-Math.cos(this.yaw)];
     if(this.sprinting&&input.fire)this.fire();
     let dx=forward[0]*(input.forward||0)+right[0]*(input.side||0),dy=forward[1]*(input.forward||0)+right[1]*(input.side||0);
-    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&p.grounded&&!this.gesture&&!this.switching;
+    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&(p.grounded||this.time-(this.groundedAt??-Infinity)<.15)&&!this.gesture&&!this.switching;
     const movementScale=Number.isFinite(input.movementScale)?Math.max(0,Math.min(1,input.movementScale)):1;
     const speed=(this.sprinting?285:190)*this.weapon.definition.moveSpeedScale*movementScale;
     this.moving=len>0;this.spreadBloom=Math.max(0,this.spreadBloom-dt*(this.weapon.definition.hipSpreadDecayRate||4));
     if(len){dx=dx/len*speed*dt;dy=dy/len*speed*dt;}
+    this.noclipping=!!this.movePlayerOverride?.(p,input,dt);
+    if(!this.noclipping){
     if(input.jump&&p.grounded){p.velocityZ=270;p.grounded=false;}
-    p.velocityZ-=800*dt;
-    const result=this.collision.step(p.position,[dx,dy,p.velocityZ*dt]);p.position=result.position;p.grounded=result.grounded;
-    if(p.grounded)p.velocityZ=0;
-    if(p.position[2]<-600)this.damagePlayer(100);
+    if(p.grounded){
+      // On the ground (PM_GroundMove): move along the floor, then settle onto
+      // it. Gravity is not applied, so slopes neither slide a standing player
+      // nor lift them off for a tick (which cancelled sprint on every ramp).
+      const moved=this.collision.step(p.position,[dx,dy,0]),floor=this.groundBelow(moved.position);
+      p.position=floor||moved.position;p.grounded=!!floor;p.velocityZ=0;
+    }else{
+      p.velocityZ-=800*dt;
+      const result=this.collision.step(p.position,[dx,dy,p.velocityZ*dt]);p.position=result.position;p.grounded=result.grounded;
+      if(p.grounded)p.velocityZ=0;
+    }
+    // A brief lift (a step lip, a seam) keeps a sprint going; a real fall ends it.
+    if(p.grounded)this.groundedAt=this.time;
+    }
+    if(p.position[2]<-600&&!this.noclipping)this.damagePlayer(100);
     if(this.time-this.lastDamage>3)p.health=Math.min(this.mapRules?.maxHealth||100,p.health+30*dt);
     for(const enemy of this.enemies)this.tickEnemy(enemy,dt);
     this.separateZombies(dt);
@@ -658,6 +682,15 @@ export class SoloGame {
     for(const key of Object.keys(this.powerup))if(this.powerup[key]<=this.time)delete this.powerup[key];
   }
   aim(yaw,pitch){this.yaw=yaw;this.pitch=pitch;}
+  // Walkable floor within a step (18 units) below the feet, or null when the
+  // player walked off an edge and should fall.
+  groundBelow(feet){
+    const probe=from=>{const t=this.collision.trace(from,[from[0],from[1],from[2]-18],[14,14,35]);return {t,floor:!t.allSolid&&t.fraction<1&&t.normal[2]>.65?[t.end[0],t.end[1],t.end[2]-35]:null};};
+    const center=[feet[0],feet[1],feet[2]+35],first=probe(center);if(first.floor||first.t.fraction>=1||first.t.allSolid)return first.floor;
+    // Touching a wall or step edge stops the probe at once; retry a quarter
+    // unit away from that surface so it reaches the floor beneath.
+    const n=first.t.normal,length=Math.hypot(n[0],n[1])||1;return probe([center[0]+n[0]/length*.25,center[1]+n[1]/length*.25,center[2]]).floor;
+  }
   rayHits(range=16000,yaw=this.yaw,pitch=this.pitch) {
     const origin=[this.player.position[0],this.player.position[1],this.player.position[2]+60];
     const dir=[Math.cos(yaw)*Math.cos(pitch),Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch)];

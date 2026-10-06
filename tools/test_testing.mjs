@@ -12,7 +12,7 @@ assert.deepEqual([1,2,3,4,5,9,10,15,20,30].map(factory),[5,10,16,21,27,29,33,44,
 for(const [id,zone,folder]of [['nacht','nazi_zombie_prototype','gameplay'],['der-riese','nazi_zombie_factory','gameplay/der-riese']]){
   const manifest=read(folder+'/manifest.json'),removed=[];
   const g=new TestingGame(manifest,new CollisionWorld(read(id+'/web-world/'+zone+'.collision.json'),manifest.entities),read(id+'/web-world/'+zone+'.paths.json'),{removeEnemy:e=>removed.push(e.id)});
-  assert.deepEqual(g.mods,{god:false,points:false,ammo:false,grenades:false});
+  assert.deepEqual(g.mods,{god:false,points:false,ammo:false,grenades:false,noclip:false});
   assert(!g.setRound(20),'Round changes need an active session');
   g.start();g.damagePlayer(50);assert.equal(g.player.health,50);
   g.setMod('god',true);g.damagePlayer(1000);assert.equal(g.player.health,100);assert.notEqual(g.phase,'dead');
@@ -25,6 +25,15 @@ for(const [id,zone,folder]of [['nacht','nazi_zombie_prototype','gameplay'],['der
   g.weapon.clip=0;g.weapon.reserve=0;g.refillAmmo();assert.equal(g.weapon.clip,g.weapon.definition.clipSize);
   g.setMod('ammo',true);g.weapon.clip=0;g.weapon.reserve=0;g.update(1/120,{});assert.equal(g.weapon.clip,g.weapon.definition.clipSize);assert.equal(g.weapon.reserve,g.weapon.definition.maxAmmo);
   g.setMod('grenades',true);g.player.grenades=0;g.update(1/120,{});assert.equal(g.player.grenades,4);
+  // Noclip flies along the view through walls (straight through the map for
+  // 3 s), survives below the map, then falls normally once switched off.
+  {const start=g.player.position.slice();g.setMod('noclip',true);g.aim(0,0);
+   for(let i=0;i<360;i++)g.tick(1/120,{forward:1});assert(Math.abs(g.player.position[0]-start[0]-1200)<1,'Noclip ignores walls at 400 u/s');assert(Math.abs(g.player.position[2]-start[2])<1e-6,'Level flight keeps height');
+   g.aim(0,-Math.PI/2);for(let i=0;i<360;i++)g.tick(1/120,{forward:1,sprint:true});assert(g.player.position[2]<start[2]-2000);assert.notEqual(g.phase,'dead','Noclip below the map is safe');
+   g.player.position=start.map((v,k)=>k===2?v+40:v);g.setMod('noclip',false);assert(!g.player.grounded);
+   // A spot no node can walk to (inside the floor) is searched in bounded time.
+   {const t=performance.now();g.nearest([start[0],start[1],start[2]-40],true);assert(performance.now()-t<1000,'Unreachable positions must not sweep the whole graph');}
+   for(let i=0;i<240;i++)g.tick(1/120,{});assert(g.player.grounded,'Gravity returns after noclip');assert(Math.abs(g.player.position[2]-start[2])<2);g.aim(Math.PI,0);}
   g.enemies=[{id:432,dead:false},{id:433,dead:true}];g.windows[0].traverser=g.enemies[0];
   assert(g.setRound(20));assert.deepEqual(removed,[432,433]);assert.equal(g.enemies.length,0);assert.equal(g.windows[0].traverser,null);assert.equal(g.round,20);assert.equal(g.phase,'round');assert.equal(g.remaining,roundCount(20,g.vars.zombie_max_ai,g.vars.zombie_ai_per_player,g.mapRules?.soloAiFactor??0));assert.equal(g.remaining,id==='der-riese'?60:24);
   let health=g.vars.zombie_health_start;for(let r=1;r<=20;r++)health=nextHealth(health,r,g.vars);assert.equal(g.zombieHealth,health);
