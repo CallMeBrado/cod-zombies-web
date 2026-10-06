@@ -60,6 +60,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Zombies keep their spacing instead of stacking into one model.
 - **Weapons:**
   - Original viewmodels, iron sights, recoil, reloads, sprint poses and knife.
+  - Short knife lunges select a nearby living zombie in front, use native charge timing and stabbing clips, and gently center aim. Movement respects native player hulls, stairs, walls and window clips; close attacks keep the normal swipe. Melee hits share the blood effects.
   - Wall buys, and the mystery box with weapon cycling and a manual grab.
   - Gunfire uses the rendered map and prop triangles, so openings and transparent cutouts admit shots. Rebuildable window boards can be shot through; solid cover still blocks bullets.
   - Bullets can hit multiple living zombies along their path, using the original weapon penetration tier to approximate flesh penetration. Solid cover still stops the path.

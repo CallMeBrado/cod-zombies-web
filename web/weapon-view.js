@@ -67,7 +67,7 @@ export class WeaponView {
   }
   reload({empty,duration}){this.rechamberAt=0;this.play(empty?this.weapon.definition.reloadEmptyAnim:this.weapon.definition.reloadAnim,duration);}
   offhand(){this.rechamberAt=0;this.flashTime=0;this.play(this.weapon.clip?this.weapon.definition.idleAnim:this.weapon.definition.emptyIdleAnim,0,true);}
-  melee({duration}={}){this.rechamberAt=0;this.meleeRemaining=duration||this.weapon.definition.meleeTime||.5;this.knife.visible=true;this.play(this.weapon.definition.meleeAnim,this.meleeRemaining);}
+  melee({duration,charge=false}={}){const d=this.weapon.definition;this.rechamberAt=0;this.sprintBlend=0;this.meleeRemaining=duration||d.meleeTime||.5;this.knife.visible=true;this.play(charge&&this.clips.has(d.meleeChargeAnim)?d.meleeChargeAnim:d.meleeAnim,this.meleeRemaining);}
   update(dt,{ads,moving,sprinting,time,reloading,offhand=0}) {
     if(!this.root)return;
     this.actionElapsed+=dt;

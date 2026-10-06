@@ -17,6 +17,7 @@ import {navigationStamp} from './navigation_stamp.mjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url))),data=path.join(root,'local-data');
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_launch_media.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Loading movie preparation failed.')));});
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_gore.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Native gore preparation failed.')));});
+await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_melee.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Native knife preparation failed.')));});
 const read=async relative=>JSON.parse(await readFile(path.join(data,relative),'utf8'));
 const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=chosen.assetZones||[...new Set([chosen.zone,'common','nacht'])],blackOps=chosen.game==='black-ops';
 const manifest=await read(chosen.data+'/manifest.json'),presentation=await read(chosen.data+'/presentation.json'),world=await read(chosen.zone+'/web-world/'+chosen.asset+'.json');

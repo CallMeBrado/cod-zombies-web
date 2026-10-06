@@ -2,6 +2,7 @@ import { roundCount, nextHealth, spawnDelay } from './rules.js';
 import { SCORE_POPUP_SECONDS } from './score-hud.js';
 import {FactoryRules,POWER_TARGETS} from './map-rules.js';
 import {hitDamage,fleshPenetration,pelletAngles} from './ballistics.js';
+import {chooseKnifeLunge,moveKnifeLunge,knifeHitValid,meleeValue} from './knife-lunge.js';
 export const PHYSICS_STEP=1/120;
 // round_spawning() waits while get_enemy_count() > 31.
 const MAX_ALIVE=32;
@@ -589,6 +590,7 @@ export class SoloGame {
     dt=Math.min(dt,.05);this.player.previousPosition.splice(0,3,...this.player.position);
     for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
     this.time+=dt;this.elapsed+=dt;this.expireScorePopups();this.updateBoxes();this.mapRules?.tick();
+    if(moveKnifeLunge(this,dt,input))input={...input,forward:0,side:0,sprint:false,jump:false};
     if(this.pendingMelee&&this.time>=this.pendingMelee.due){this.resolveMelee();this.pendingMelee=null;}
     this.updateGesture();this.updateSwitch();
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
@@ -692,16 +694,21 @@ export class SoloGame {
     }
   }
   melee() {
-    if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.meleeDue)return;
-    const d=this.weapon.definition;this.meleeDue=this.time+(d.meleeTime||.5);this.reloadEnd=0;this.pendingFire=false;
-    this.pendingMelee={due:this.time+(d.meleeDelay||.05),damage:d.meleeDamage||150};
-    this.emit('melee',{duration:d.meleeTime||.5});this.emit('sound',{alias:d.meleeSwipeSoundPlayer});
+    if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.mapRules?.reviveDue||this.time<this.meleeDue)return false;
+    const d=this.weapon.definition,lunge=chooseKnifeLunge(this),charge=!!lunge;
+    const duration=meleeValue(charge?d.meleeChargeTime:d.meleeTime,charge?1:.5),delay=meleeValue(charge?d.meleeChargeDelay:d.meleeDelay,charge?.15:.05);
+    this.meleeDue=this.time+Math.max(duration,delay);this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;
+    this.pendingMelee={due:this.time+delay,damage:d.meleeDamage||150,lunge,target:lunge?.target||null,cancelled:false};
+    this.emit('melee',{duration,charge});this.emit('sound',{alias:d.meleeSwipeSoundPlayer});return true;
   }
   resolveMelee() {
-    const origin=this.player.position;
-    const targets=this.enemies.filter(e=>!e.dead&&distance(e.position,origin)<95&&Math.cos(Math.atan2(e.position[1]-origin[1],e.position[0]-origin[0])-this.yaw)>.55);
+    const pending=this.pendingMelee;if(!pending||pending.cancelled||this.gesture||this.switching||this.pendingGrenade||this.reloadEnd||this.mapRules?.reviveDue)return;
+    const origin=this.player.position,targets=(pending.target?[pending.target]:this.enemies).filter(e=>knifeHitValid(this,e));
     const enemy=targets.sort((a,b)=>distance(a.position,origin)-distance(b.position,origin))[0];
-    if(enemy&&this.collision.trace([origin[0],origin[1],origin[2]+40],[enemy.position[0],enemy.position[1],enemy.position[2]+40],[0,0,0],1).fraction>.95){this.hitEnemy(enemy,this.pendingMelee.damage,false,true);this.emit('hit',false);this.emit('sound',{alias:'melee_hit'});}
+    if(enemy){
+      this.hitEnemy(enemy,pending.damage,false,true);this.emit('hit',false);this.emit('sound',{alias:'melee_hit'});
+      this.emit('meleeImpact',{enemy,position:[enemy.position[0],enemy.position[1],enemy.position[2]+45],direction:enemy.position.map((x,i)=>x-origin[i])});
+    }
   }
   autoReload() {
     // Use simulation time so the last shot finishes before the empty reload,

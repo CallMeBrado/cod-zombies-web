@@ -10,10 +10,12 @@ export async function navigationStamp(root,chosen,manifest){
   for(const type of ['collision','paths'])hash.update(await readFile(path.join(data,chosen.zone,'web-world',chosen.asset+'.'+type+'.json')));
   hash.update(JSON.stringify({entities:manifest.entities,map:manifest.map,variables:manifest.variables}));
   let game=await readFile(path.join(root,'web/game.js'),'utf8');
-  for(const name of ['rayHits','rayHit','fire','autoReload'])if(SoloGame.prototype[name])game=game.replace(SoloGame.prototype[name].toString(),'');
+  for(const name of ['rayHits','rayHit','fire','autoReload','melee','resolveMelee'])if(SoloGame.prototype[name])game=game.replace(SoloGame.prototype[name].toString(),'');
   game=game.replace(/^    this\.autoReload\(\);\r?\n/m,'');
   game=game.replace(/^    enemy\.deathHeadshot=!!head&&!melee;\r?\n/m,'');
   game=game.replace(/^import .*from '\.\/ballistics\.js';\r?\n/m,'');
+  game=game.replace(/^import .*from '\.\/knife-lunge\.js';\r?\n/m,'');
+  game=game.replace(/^    if\(moveKnifeLunge\(this,dt,input\)\)input=\{\.\.\.input,forward:0,side:0,sprint:false,jump:false\};\r?\n/m,'');
   hash.update(game.split(/\r?\n/).filter(line=>line.trim()).join('\n'));
   for(const name of ['map-rules.js','collision.js','native-triangles.js'])hash.update(await readFile(path.join(root,'web',name)));
   if(chosen.game==='black-ops'){

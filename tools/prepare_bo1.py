@@ -100,7 +100,8 @@ for name, w in weapons.items():
     if name.startswith(('ray_gun','thundergun')): w['startAmmo'] += w['clipSize']
     else: w['startAmmo'] = (w['startAmmo']+1)*w['clipSize']; w['maxAmmo'] *= w['clipSize']
     w['handsModel'] = 'viewmodel_usa_pow_arms'
-    w['knifeModel'] = knife['gunModel']; w['meleeAnim'] = knife['meleeAnim']; w['meleeDamage'] = 150
+    w['knifeModel'] = knife['gunModel']
+    for key in ['meleeAnim','meleeChargeAnim','meleeDamage','meleeDelay','meleeChargeDelay','meleeTime','meleeChargeTime','meleeChargeRange']: w[key] = knife[key]
     w['meleeDelay'] = knife['meleeDelay']; w['meleeSwipeSoundPlayer'] = 'wpn_knife_pull_plr'
     upgraded=native_weapons.get(name,('',0))[0]
     if upgraded in weapons: w['upgrade'] = upgraded
