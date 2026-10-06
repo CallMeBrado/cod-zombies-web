@@ -59,7 +59,9 @@ export class PlayerBody {
     if(this.rig.gun){const materials=new Set();this.rig.gun.traverse(mesh=>{if(mesh.isMesh)for(const mat of [mesh.material].flat())materials.add(mat);});this.rig.gun.removeFromParent();for(const mat of materials)mat.dispose();}this.rig.gun=gun;gun.visible=this.thirdPerson;this.root.add(gun);shadeModel(gun,[.6,.6,.6]);
   }
   update(game,playing){
-    if(!this.ready)return;this.root.visible=!!playing&&game.player.health>0;if(!this.root.visible)return;
+    // Like the original, the local player never sees their own body in first
+    // person; it is drawn only in the third-person view (and for other players).
+    if(!this.ready)return;this.root.visible=this.thirdPerson&&!!playing&&game.player.health>0;if(!this.root.visible)return;
     const time=game.time-1/120+game.accumulator,presentation=divePresentation(game,time);posePlayerBody(this.rig,game,presentation,game.renderPosition(game.player));
     if(game.time>=(this.lightDue||0)){this.lightDue=game.time+.25;const color=this.illumination(game.player.position);for(const object of [this.rig.object,this.head,this.rig.gun])object?.traverse(mesh=>{if(mesh.isMesh)for(const material of [mesh.material].flat())if(!material.userData.fixedLight)material.color.setRGB(...color);});}
   }

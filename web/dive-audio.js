@@ -24,7 +24,7 @@ export class DiveAudio {
     }else if(event.type==='collision'){
       this.counts.collision++;this.play('fly_dtp_collide_plr',c.collisionMix??.65,event,local);
     }else if(event.type==='slideStart'||event.type==='slideUpdate'){
-      const alias=this.alias('fly_dtp_slide_loop_plr',surface),volume=(c.slideMix??.4)*Math.min(1,(event.speedMps||0)/Math.max(.1,(c.launchSpeedMps||6.5)*(c.touchdownRetention??.7)));let loop=this.loops.get(key);
+      const alias=this.alias('fly_dtp_slide_loop_plr',surface),volume=(c.slideMix??.4)*Math.min(1,(event.speed||0)/Math.max(1,event.launchSpeed||285));let loop=this.loops.get(key);
       if(loop?.alias!==alias){loop?.record?.stop(.04);const record=this.audio.play(alias,volume,{loop:true,...(!local?{position:event.position,near:80,far:1400}:{})});loop={alias,record};this.loops.set(key,loop);}
       loop?.record?.setVolume?.(volume);
     }else if(event.type==='slideStop'||event.type==='movementReady'||event.type==='cancel'){

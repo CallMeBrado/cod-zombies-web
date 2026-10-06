@@ -36,7 +36,7 @@ for(const map of [...MAPS,...BO1_MAPS]){
     let end;
     for(const hz of [30,60,120,240]){
       reset();run(.4,hz,{forward:1,sprint:true});assert(g.sprinting);assert(g.changeStance('prone'));assert(g.dive);assert.equal(g.player.stance,'prone');assert(!g.fire());assert(!g.melee());assert(!g.throwGrenade());assert(!g.canSave());assert.equal(events[0].phase,'in');
-      let apex=0;for(let i=0;i<2*hz;i++){g.update(1/hz,{forward:1,sprint:true,fire:true});apex=Math.max(apex,g.player.position[2]);}assert(Math.abs(apex*.0254-.45)<.01);assert.equal(g.dive,null);assert(g.player.grounded);assert.equal(g.player.stance,'prone','Holding sprint through the dive does not stand back up');assert.deepEqual(events.map(e=>e.phase),['in','loop','out']);assert.equal(g.shots,0,'Dive cannot shoot or buffer a shot');
+      let apex=0;for(let i=0;i<2*hz;i++){g.update(1/hz,{forward:1,sprint:true,fire:true});apex=Math.max(apex,g.player.position[2]);}assert(Math.abs(apex-39)<1e-6,'Native 39-unit dive apex');assert.equal(g.dive,null);assert(g.player.grounded);assert.equal(g.player.stance,'prone','Holding sprint through the dive does not stand back up');assert.deepEqual(events.map(e=>e.phase),['in','loop','out']);assert.equal(g.shots,0,'Dive cannot shoot or buffer a shot');
       if(end)close(g.player.position[0],end);else end=g.player.position[0];results.push({map:map.id,hz,diveEnd:Math.round(end*100)/100});
     }
     reset([box([200,-100,0],[215,100,400])]);run(.4,120,{forward:1,sprint:true});g.changeStance('prone');run(2);assert(g.player.position[0]<186,'Dive cannot clip through walls');assert(g.player.grounded);assert.equal(g.dive,null);
