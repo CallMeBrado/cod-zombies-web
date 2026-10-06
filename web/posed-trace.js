@@ -38,7 +38,7 @@ function prepareBoneBounds(mesh,nodes){
 // Final hit tests still intersect the exact animated model triangles.
 export class PosedTrace {
   constructor(root){
-    this.meshes=[];root.traverse(mesh=>{if(!mesh.isMesh)return;const nodes=topology(mesh.geometry);prepareBoneBounds(mesh,nodes);this.meshes.push({mesh,nodes,vertices:new Float32Array(mesh.geometry.attributes.position.count*3),stamps:new Uint32Array(mesh.geometry.attributes.position.count),bounds:new Float64Array(nodes.length*6)});});
+    this.meshes=[];root.traverse(mesh=>{if(!mesh.isMesh||mesh.userData.goreOnly)return;const nodes=topology(mesh.geometry);prepareBoneBounds(mesh,nodes);this.meshes.push({mesh,nodes,vertices:new Float32Array(mesh.geometry.attributes.position.count*3),stamps:new Uint32Array(mesh.geometry.attributes.position.count),bounds:new Float64Array(nodes.length*6)});});
     this.tick=-1;this.generation=0;this.inverse=new THREE.Matrix4();this.boneMatrix=new THREE.Matrix4();this.box=new THREE.Box3();this.ray=new THREE.Ray();this.v=new THREE.Vector3();this.a=new THREE.Vector3();this.b=new THREE.Vector3();this.c=new THREE.Vector3();this.point=new THREE.Vector3();this.stack=[];
   }
   refit(tick){

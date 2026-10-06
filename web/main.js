@@ -10,6 +10,7 @@ import {OriginalEffects} from './effects.js';
 import {createPickupView,updatePickupView,createBoxView,updateBoxView} from './presentation-view.js';
 import {MouseControls} from './mouse-controls.js';
 import {CombatEffects} from './combat-effects.js';
+import {BloodEffects} from './gore.js';
 import {GameSettings,GameInput,bindingName} from './settings.js';
 import {PauseMenu} from './pause-menu.js';
 import {GrenadeView} from './grenade-view.js';
@@ -39,7 +40,7 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixe
 renderer.info.autoReset=false;renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*settings.value.renderScale/100);
 const viewScene=new THREE.Scene();
 const viewCamera=new THREE.PerspectiveCamera(worldFov(65),innerWidth/innerHeight,.1,300);
-const hud=new (blackOps?BlackOpsHud:OriginalHud)($('hud-art')),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene);
+const hud=new (blackOps?BlackOpsHud:OriginalHud)($('hud-art')),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene),blood=new BloodEffects(scene);
 const visuals=new Map(),dynamic=new Map(),dropVisuals=new Map();
 const state={ready:false,mode:'menu',inputMode:'idle',yaw:Math.PI,pitch:0,loading:'idle',fps:0,error:null};
 const launch=new LaunchScreen(mapChoice,()=>settings.value.volume);
@@ -206,7 +207,7 @@ function resetVisuals() {
   for(const v of dropVisuals.values()){effects.dispose(v.glow);scene.remove(v.root);}dropVisuals.clear();
   for(const b of boxVisuals.values()){b.weaponRoot.visible=false;b.glow.visible=false;b.lid.object.quaternion.copy(b.closed);}
   for(const burst of bursts)effects.dispose(burst.root);bursts.length=0;
-  combatEffects.reset();
+  combatEffects.reset();blood.reset();
   deathFxTime=0;
   grenadeView?.reset();
   state.yaw=game?.data.map?Number(game.entities.find(e=>e.targetname==='initial_spawn_points').angles.split(' ')[1])*Math.PI/180:Math.PI;state.pitch=0;factoryVisuals();kickPitch=0;kickYaw=0;damageFlash=0;controls.reset();aimBlend=0;mouse.reset();lastLight=-1;cameraPose();
@@ -233,8 +234,9 @@ function shot(ray) {
   kickPitch+=THREE.MathUtils.degToRad(range(d[prefix+'ViewKickPitchMin'],d[prefix+'ViewKickPitchMax'])*.028);
   kickYaw+=THREE.MathUtils.degToRad(range(d[prefix+'ViewKickYawMin'],d[prefix+'ViewKickYawMax'])*.015);
   weaponView.shot(aimBlend);
+  const bloodied=new Set();
   for(const r of ray.rays||[ray]){
-    if(r.hits?.length){for(const hit of r.hits)if(hit.damage>0)combatEffects.impact({...r,hit,wall:false,end:r.origin.map((v,i)=>v+r.dir[i]*hit.distance)},game.time);continue;}
+    if(r.hits?.length){for(const hit of r.hits)if(hit.applied&&!bloodied.has(hit.enemy)){bloodied.add(hit.enemy);blood.burst(r.origin.map((v,i)=>v+r.dir[i]*hit.distance),r.dir,game.time);}continue;}
     if(!r.hit&&!r.wall)continue;
     combatEffects.impact(r,game.time);
   }
@@ -316,7 +318,7 @@ async function init() {
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
-  await Promise.all([hud.load(),effects.prepare(),actors.prepare(),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
+  await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
     ...Object.entries(presentation.powerups).map(async([type,name])=>{const object=cloneModel(await model(name));shadeModel(object,[.9,.9,.9]);dropTemplates.set(type,object);})]);
   await prepared(3,'Preparing mystery box and grenade effects…');
   await prepareBox(manifest);preparePap(manifest);
@@ -325,7 +327,7 @@ async function init() {
   game=new (blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     bindingName:keyName,
     message:notice,spawn:spawnVisual,
-    kill:e=>actors.kill(e,e.position.map((v,i)=>v-game.player.position[i])),removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
+    kill:e=>{const direction=e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
     traceShot:(origin,dir,range)=>map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),damage:()=>{damageFlash=1;},death,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
@@ -337,7 +339,7 @@ async function init() {
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
-  actors.collision=game.collision;factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps)game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);await audio.preload();resetVisuals();cameraPose();
+  actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps)game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);await audio.preload();resetVisuals();cameraPose();
   await prepared(5,'Compiling graphics…');
   const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(actors.warmObject(),...dropTemplates.values());
   const warmFx=effects.create('misc/fx_zombie_powerup_on',0);warmScene.add(warmFx);
@@ -347,7 +349,7 @@ async function init() {
   warmScene.remove(actors.warmObject());effects.dispose(warmFx);await prepared(6,'Uploading textures and character rigs…');await map.uploadTextures(renderer);
   // Shader compilation alone does not allocate skinning textures or geometry
   // buffers. Draw every prepared rig offscreen before the first spawn/switch.
-  const gpuWarmScene=new THREE.Scene(),rigs=[...actors.pool.map(v=>v.root),...weaponView.rigs.values(),grenadeView.root,...combatEffects.grenades.map(v=>v.mesh),...combatEffects.explosions.map(v=>v.root)].map(v=>v.root||v),restore=[];
+  const gpuWarmScene=new THREE.Scene(),rigs=[...actors.pool.map(v=>v.root),...weaponView.rigs.values(),grenadeView.root,...combatEffects.grenades.map(v=>v.mesh),...combatEffects.explosions.map(v=>v.root),...blood.warmObjects()].map(v=>v.root||v),restore=[];
   for(const root of rigs){restore.push({root,parent:root.parent,visible:root.visible});root.visible=true;gpuWarmScene.add(root);root.traverse(n=>{if(n.isMesh){restore.push({mesh:n,culled:n.frustumCulled});n.frustumCulled=false;}});}
   const warmTarget=new THREE.WebGLRenderTarget(64,64);
   await renderer.compileAsync(gpuWarmScene,viewCamera);renderer.setRenderTarget(warmTarget);renderer.render(gpuWarmScene,viewCamera);renderer.setRenderTarget(null);warmTarget.dispose();
@@ -428,7 +430,7 @@ function frame(time) {
   if(game&&state.ready){factoryVisuals();updateBoxes();updatePap();updateAudio();}
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];if(game.time>=b.due){effects.dispose(b.root);bursts.splice(i,1);}else effects.update(b.root,game.time);}
   if(game?.phase==='dead')deathFxTime+=dt;
-  if(game)combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));
+  if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}
   const showWeapon=state.mode==='playing'||pauseMenu.context==='pause',offhand=grenadeView&&game?grenadeView.update(game.time,showWeapon):0;
   if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,time:game.time,reloading:!!game.reloadEnd,offhand});}
   if(game&&game.time>lastLight+.3){lastLight=game.time;
@@ -448,7 +450,7 @@ function frame(time) {
   requestAnimationFrame(frame);
 }
 window.wawPreview={state,camera,renderer,scene,get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:controls.aiming},originalExecutableRunning:false,originalGscInterpreter:false,
-  textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
+  textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
   grenadeView:grenadeView?.diagnostics(),grenades:game?.grenades.map(g=>({position:g.position,velocity:g.velocity,due:g.due,resting:g.resting,held:!!g.held})),pendingGrenade:game?.pendingGrenade,
   performance:{drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,staticBatches:map?.staticBatches,staticPlacements:map?.staticPlacements,

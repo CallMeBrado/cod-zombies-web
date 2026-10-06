@@ -36,12 +36,12 @@ export class SkeletonRagdoll {
     }).filter(Boolean).sort((a,b)=>depth(a.bone)-depth(b.bone));
     this.byName=new Map(this.nodes.map(n=>[n.name,n]));const byBone=new Map(this.nodes.map(n=>[n.bone,n]));
     for(const n of this.nodes){let parent=n.bone.parent;while(parent&&!byBone.has(parent))parent=parent.parent;
-      n.parent=byBone.get(parent);n.aim=this.byName.get(n.aimName)||n.parent;n.side=this.byName.get(n.sideName);
+      n.parent=byBone.get(parent);n.aim=this.byName.get(n.aimName)||n.parent;n.baseAim=n.aim;n.side=this.byName.get(n.sideName);
     }
     this.ready=this.byName.has('j_mainroot')&&this.byName.has('j_head');
     this.constraints=[];this.delta=new THREE.Vector3();this.primary=new THREE.Vector3();this.secondary=new THREE.Vector3();this.x=new THREE.Vector3();this.y=new THREE.Vector3();this.z=new THREE.Vector3();
     this.frameMatrix=new THREE.Matrix4();this.parentInverse=new THREE.Matrix4();this.frameQuaternion=new THREE.Quaternion();this.worldQuaternion=new THREE.Quaternion();this.parentQuaternion=new THREE.Quaternion();
-    this.active=false;this.sleeping=false;this.sleepPoseApplied=false;this.accumulator=0;this.elapsed=0;this.quiet=0;
+    this.detachedBones=new Set();this.active=false;this.sleeping=false;this.sleepPoseApplied=false;this.accumulator=0;this.elapsed=0;this.quiet=0;
   }
   frame(primary,secondary,out){
     if(primary.lengthSq()<1e-8)return false;this.z.copy(primary).normalize();
@@ -53,8 +53,10 @@ export class SkeletonRagdoll {
     this.active=true;this.sleeping=false;this.sleepPoseApplied=false;this.accumulator=0;this.elapsed=0;this.quiet=0;this.constraints.length=0;this.root.updateWorldMatrix(true,true);
     for(const t of this.transforms){t.frozenPosition.copy(t.bone.position);t.frozenQuaternion.copy(t.bone.quaternion);}
     for(const n of this.nodes){n.bone.getWorldPosition(n.p);n.bone.getWorldQuaternion(n.initialQuaternion);}
+    for(const n of this.nodes)n.disabled=!!enemy.deathHeadshot&&['j_head','j_head_end'].includes(n.name);
+    for(const n of this.nodes)n.aim=n.baseAim?.disabled?n.parent:n.baseAim;
     const pairs=new Set(),add=(a,b,min=1,max=1,stiffness=1,length=null)=>{
-      a=this.byName.get(a);b=this.byName.get(b);if(!a||!b)return;
+      a=this.byName.get(a);b=this.byName.get(b);if(!a||!b||a.disabled||b.disabled)return;
       const key=[a.name,b.name].sort().join(':');if(pairs.has(key))return;pairs.add(key);
       const d=length??a.p.distanceTo(b.p);this.constraints.push({a,b,min:d*min,max:d*max,stiffness});
     };
@@ -96,8 +98,10 @@ export class SkeletonRagdoll {
     return true;
   }
   restoreFrozen(){for(const t of this.transforms){t.bone.position.copy(t.frozenPosition);t.bone.quaternion.copy(t.frozenQuaternion);}}
+  detachObject(root){root.traverse(bone=>{if(bone.isBone)this.detachedBones.add(bone);});}
   reset(){
     this.active=false;this.sleeping=false;this.sleepPoseApplied=false;this.accumulator=0;this.elapsed=0;this.quiet=0;this.constraints.length=0;
+    this.detachedBones.clear();for(const n of this.nodes){n.disabled=false;n.aim=n.baseAim;}
     for(const t of this.transforms){t.bone.position.copy(t.position);t.bone.quaternion.copy(t.quaternion);}
   }
   contact(n,collision){
@@ -118,19 +122,20 @@ export class SkeletonRagdoll {
   }
   step(collision){
     let contacts=0,speed=0;
-    for(const n of this.nodes){n.renderPrevious.copy(n.p);n.before.copy(n.p);this.delta.subVectors(n.p,n.previous).multiplyScalar(.994);n.previous.copy(n.p);n.p.add(this.delta);n.p.z-=GRAVITY*STEP*STEP;}
+    for(const n of this.nodes){if(n.disabled)continue;n.renderPrevious.copy(n.p);n.before.copy(n.p);this.delta.subVectors(n.p,n.previous).multiplyScalar(.994);n.previous.copy(n.p);n.p.add(this.delta);n.p.z-=GRAVITY*STEP*STEP;}
     for(let pass=0;pass<6;pass++)for(const c of this.constraints){
       const dx=c.b.p.x-c.a.p.x,dy=c.b.p.y-c.a.p.y,dz=c.b.p.z-c.a.p.z,d=Math.hypot(dx,dy,dz);if(d<1e-8||d>=c.min&&d<=c.max)continue;
       const target=d<c.min?c.min:c.max,correction=(d-target)/d*c.stiffness/(c.a.inverseMass+c.b.inverseMass),a=correction*c.a.inverseMass,b=correction*c.b.inverseMass;
       c.a.p.x+=dx*a;c.a.p.y+=dy*a;c.a.p.z+=dz*a;c.b.p.x-=dx*b;c.b.p.y-=dy*b;c.b.p.z-=dz*b;
     }
-    for(const n of this.nodes){if(this.contact(n,collision))contacts++;speed=Math.max(speed,n.p.distanceToSquared(n.before)/(STEP*STEP));}
+    for(const n of this.nodes){if(n.disabled)continue;if(this.contact(n,collision))contacts++;speed=Math.max(speed,n.p.distanceToSquared(n.before)/(STEP*STEP));}
     this.elapsed+=STEP;this.quiet=contacts>=3&&speed<144?this.quiet+STEP:0;
     if(this.quiet>.35||this.elapsed>=4)this.sleeping=true;
   }
   applyPose(alpha=1){
     for(const n of this.nodes)n.display.lerpVectors(n.renderPrevious,n.p,alpha);
     for(const n of this.nodes){
+      if(n.disabled)continue;
       this.worldQuaternion.copy(n.initialQuaternion);
       if(n.aim){this.primary.subVectors(n.aim.display,n.display);
         if(n.hasFrame&&this.frame(this.primary,this.secondary.subVectors(n.side.display,n.display),this.frameQuaternion))this.worldQuaternion.copy(this.frameQuaternion).multiply(n.basisInverse).multiply(n.initialQuaternion);
@@ -140,6 +145,7 @@ export class SkeletonRagdoll {
       n.bone.parent.getWorldQuaternion(this.parentQuaternion);n.bone.quaternion.copy(this.parentQuaternion).invert().multiply(this.worldQuaternion).normalize();n.bone.updateWorldMatrix(false,false);
     }
     for(const {bone,source}of this.followers){
+      if(this.detachedBones.has(bone))continue;
       bone.parent.updateWorldMatrix(true,false);this.parentInverse.copy(bone.parent.matrixWorld).invert();source.getWorldPosition(this.delta);bone.position.copy(this.delta).applyMatrix4(this.parentInverse);
       source.getWorldQuaternion(this.worldQuaternion);bone.parent.getWorldQuaternion(this.parentQuaternion);bone.quaternion.copy(this.parentQuaternion).invert().multiply(this.worldQuaternion).normalize();bone.updateWorldMatrix(false,false);
     }

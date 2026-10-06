@@ -669,7 +669,7 @@ export class SoloGame {
     });
     for(const ray of rays)for(const [index,hit]of ray.hits.entries()){
       const damage=hitDamage(d,hit.distance,hit.head,penetration.retention**index);hit.damage=damage;
-      if(damage<=0||hit.enemy.dead)continue;
+      hit.applied=damage>0&&!hit.enemy.dead;if(!hit.applied)continue;
       this.hits++;this.hitEnemy(hit.enemy,damage,hit.head,false);this.emit('hit',hit.head);
     }
     this.spreadBloom+=d.hipSpreadFireAdd||0;
@@ -682,6 +682,7 @@ export class SoloGame {
     const scalar=this.powerup.double_points?2:1;
     if(enemy.health>0){this.changePoints(Math.ceil(this.vars.zombie_score_damage/10)*10*scalar);return;}
     enemy.dead=true;enemy.deathTime=this.time;this.player.kills++;if(head)this.player.headshots++;
+    enemy.deathHeadshot=!!head&&!melee;
     const bonus=melee?this.vars.zombie_score_bonus_melee:head?this.vars.zombie_score_bonus_head:this.vars.zombie_score_bonus_torso;
     this.changePoints(Math.ceil((this.vars.zombie_score_kill+bonus)/10)*10*scalar);this.emit('kill',enemy);
     // Hunt starts only after the barrier traversal has finished inside the map.

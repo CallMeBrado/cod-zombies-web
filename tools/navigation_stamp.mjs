@@ -12,6 +12,7 @@ export async function navigationStamp(root,chosen,manifest){
   let game=await readFile(path.join(root,'web/game.js'),'utf8');
   for(const name of ['rayHits','rayHit','fire','autoReload'])if(SoloGame.prototype[name])game=game.replace(SoloGame.prototype[name].toString(),'');
   game=game.replace(/^    this\.autoReload\(\);\r?\n/m,'');
+  game=game.replace(/^    enemy\.deathHeadshot=!!head&&!melee;\r?\n/m,'');
   game=game.replace(/^import .*from '\.\/ballistics\.js';\r?\n/m,'');
   hash.update(game.split(/\r?\n/).filter(line=>line.trim()).join('\n'));
   for(const name of ['map-rules.js','collision.js','native-triangles.js'])hash.update(await readFile(path.join(root,'web',name)));
