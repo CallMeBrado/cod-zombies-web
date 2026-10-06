@@ -1,0 +1,10 @@
+# Normalize text to LF in the repository and working tree, whatever the editor saves.
+* text=auto eol=lf
+# Windows batch files need CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+# Applied to the OAT source tree byte for byte.
+*.patch -text
+# Binary assets.
+*.jpg binary
+*.png binary
