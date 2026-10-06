@@ -26,8 +26,13 @@ import {BlackOpsEngine} from './bo1-engine.js';
 import {BlackOpsHud} from './bo1-hud.js';
 import {ServerSaveStore} from './server-saves.js';
 import {LaunchScreen} from './launch-screen.js';
+import {PlayerVoice,CHARACTERS,CHARACTER_ARMS} from './player-voice.js';
 const mapChoice=selectedMap();
 const blackOps=mapChoice.game==='black-ops';
+// Black Ops solo plays a random one of the four characters (player_set_viewmodel);
+// ?character=0-3 picks one. A save keeps its character.
+const characterParam=new URLSearchParams(location.search).get('character');
+let character=blackOps?(/^[0-3]$/.test(characterParam||'')?Number(characterParam):Math.floor(Math.random()*4)):0,voice=null;
 
 const $=id=>document.getElementById(id);
 const canvas=$('viewport'),scene=new THREE.Scene();scene.background=new THREE.Color(0x10171c);scene.fog=new THREE.FogExp2(0x26313a,.00022);
@@ -126,6 +131,8 @@ function saveToast(detail){
   toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),3600);
 }
+// The lobby's player row names the character (Black Ops).
+function showCharacter(){if(!blackOps)return;const label=document.querySelector('.lobby-player-row span');if(label)label.textContent=CHARACTERS[character].toUpperCase();}
 async function loadSlot(map,slot){
   if(map===mapChoice.id)return startGame(slot);
   const mode=state.mode;await saves.refresh();if(state.mode!==mode)return;
@@ -148,6 +155,11 @@ async function startGame(slot=null){
     launchAudioContext??=new AudioContext();launchAudioContext.resume().catch(console.warn);
     let save;
     if(slot!==null){await saves.refresh();save=saves.get(mapChoice.id,slot);if(!save)throw new Error('This save slot is now empty.');}
+    if(blackOps&&/^[0-3]$/.test(String(save?.state.character))&&save.state.character!==character){
+      // The arms rigs are built for one character; reopen the save as its own.
+      if(state.ready){const url=new URL(location.href);url.searchParams.set('load',String(slot+1));url.searchParams.set('character',String(save.state.character));location.assign(url.href);return;}
+      character=save.state.character;showCharacter();
+    }
     if(!state.ready){gameLoading??=init();await gameLoading;}
     if(save){game.loadState(save.state);state.yaw=save.state.yaw;state.pitch=save.state.pitch;cameraPose();}
     else{game.newGame();resetVisuals();}
@@ -336,7 +348,8 @@ async function init() {
   const [manifest,collision,paths,recovered,navigation,powerNavigation,gateNavigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true),mapChoice.id==='der-riese'?get('/data/'+mapChoice.data+'/power-navigation.json',true).catch(()=>null):null,blackOps?null:get('/data/'+mapChoice.data+'/gate-navigation.json',true).catch(()=>null)]);presentation=recovered;
   map=await loadMap(scene,progress);await prepared(1,'Preparing original map objects…');await dynamicAssets(manifest.entities);
   await prepared(2,'Preparing original weapons and Zombies…');
-  audio=new OriginalAudio(manifest.sounds,launchAudioContext);audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
+  if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=CHARACTER_ARMS[character];
+  audio=new OriginalAudio(manifest.sounds,launchAudioContext);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
@@ -346,6 +359,7 @@ async function init() {
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
   await prepared(4,'Preparing map collision, navigation and audio…');
   game=new (blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
+    dialog:e=>voice?.speak(e).catch(console.warn),
     bindingName:keyName,controllerPrompts:()=>gamepads.active,
     message:notice,spawn:spawnVisual,
     kill:e=>{const direction=e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
@@ -360,6 +374,7 @@ async function init() {
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
+  if(blackOps)game.character=character;
   actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();
   await prepared(5,'Compiling graphics…');
   const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(actors.warmObject(),...dropTemplates.values());
@@ -485,7 +500,7 @@ function frame(time) {
   if(time>=domDue){updateHud();domDue=time+100;}
   requestAnimationFrame(frame);
 }
-window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
+window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
   grenadeView:grenadeView?.diagnostics(),grenades:game?.grenades.map(g=>({position:g.position,velocity:g.velocity,due:g.due,resting:g.resting,held:!!g.held})),pendingGrenade:game?.pendingGrenade,
@@ -500,7 +515,7 @@ async function bootLobby(){
   // Only menu artwork, fonts and the save catalogue are needed before Start.
   saves.prepare().then(()=>{$('resume-save').hidden=pauseMenu.context==='pause'||!saves.count();}).catch(error=>{state.savesError=error.message;});
   if(!blackOps){await hud.loadFont();await pauseMenu.prepare(hud);}
-  pauseMenu.setContext('start');lobby.ready();state.lobbyReady=true;
+  pauseMenu.setContext('start');lobby.ready();showCharacter();state.lobbyReady=true;
   const load=Number(new URLSearchParams(location.search).get('load'));
   $('message').textContent=load>=1&&load<=3?'Start Game to continue saved slot '+load+'.':'Choose your map, then Start Game. Assets load with the original loading movie.';
   $('stats').textContent=mapChoice.title+' · Ready to launch';$('play').disabled=false;

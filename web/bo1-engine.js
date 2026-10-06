@@ -1,7 +1,10 @@
 import {TestingGame} from './testing.js';
 import {FactoryRules,PERKS} from './map-rules.js';
+import {weaponVoxType,KILL_CHANCE} from './player-voice.js';
 
 const pos=e=>e.origin.split(/\s+/).map(Number);
+// no_money / door_deny / perk_deny force the variant for each situation.
+const DENIED={weapon:['general','no_money',0],ammo:['general','no_money',0],box:['general','no_money',2],door:['general','door_deny',0],debris:['general','door_deny',1],perk:['general','perk_deny',0],perk_owned:['general','perk_deny',1]};
 const distance=(a,b)=>Math.hypot(...a.map((v,i)=>v-b[i]));
 
 // T5's theater owns its progression, solo perks and teleporter lifecycle.
@@ -46,9 +49,11 @@ export class KinoRules extends FactoryRules {
     }
     if(tag==='zombie_vending'){
       const id=e.script_noteworthy,p=PERKS[id],quick=id==='specialty_quickrevive';
-      if(!p||this.perks.has(id)||(!this.power&&!quick)||g.gesture||quick&&this.revivesUsed>=3)return true;
-      if(!g.spendPoints(quick?500:p.cost))return true;
-      g.startGesture(id,()=>{this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;});g.emit('sound',{alias:p.sting});return true;
+      if(p&&this.perks.has(id)){g.voiceEvent('denied','perk_owned');return true;}
+      if(!p||(!this.power&&!quick)||g.gesture||quick&&this.revivesUsed>=3)return true;
+      if(!g.spendPoints(quick?500:p.cost)){g.voiceEvent('denied','perk');return true;}
+      // give_perk() threads perk_vox(), which waits 1.5 s after the drink.
+      g.startGesture(id,()=>{this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;g.laterDialog(1.5,'perk',id);});g.emit('sound',{alias:p.sting});return true;
     }
     if(tag==='trigger_teleport_pad_0'){
       if(!this.power||g.time<this.teleportCooldown||this.teleportDue)return true;
@@ -60,14 +65,16 @@ export class KinoRules extends FactoryRules {
     }
     if(tag==='zombie_vending_upgrade'){
       if(this.pap){if(this.pap.phase==='ready')this.takeUpgrade();return true;}
-      const w=g.weapon,upgraded=w.definition.upgrade;if(!upgraded||!this.power||g.gesture||!g.spendPoints(5000))return true;
+      const w=g.weapon,upgraded=w.definition.upgrade;if(!upgraded||!this.power||g.gesture)return true;
+      if(!g.spendPoints(5000)){g.voiceEvent('denied','perk');return true;}
+      g.dialog('weapon_pickup','upgrade_wait');
       const machine=g.entities.find(x=>x.targetname===e.target),origin=machine?pos(machine):pos(e);
       g.inventory.splice(g.slot,1);if(!g.inventory.length)g.inventory.push(g.makeWeapon(g.data.startWeapon));g.slot=0;
       this.pap={phase:'in',started:g.time,weapon:w.name,upgraded,at:pos(e),origin:[origin[0],origin[1],origin[2]+35],playerYaw:g.yaw*180/Math.PI,yaw:Number((machine?.angles||'0 0 0').split(' ')[1])+90};
       g.startGesture('knuckle_crack');g.emit('weapon',g.weapon);return true;
     }
-    if(e.zombie_weapon_upgrade==='frag_grenade_zm'){if(g.player.grenades<4&&g.spendPoints(250))g.player.grenades=4;return true;}
-    if(e.zombie_weapon_upgrade==='bowie_knife_zm'){if(g.spendPoints(3000)){for(const w of g.inventory)w.definition={...w.definition,meleeDamage:300};g.message('Bowie knife purchased');}return true;}
+    if(e.zombie_weapon_upgrade==='frag_grenade_zm'){if(g.player.grenades<4){if(g.spendPoints(250)){g.player.grenades=4;g.voiceEvent('weapon','frag_grenade_zm');}else g.voiceEvent('denied','weapon');}return true;}
+    if(e.zombie_weapon_upgrade==='bowie_knife_zm'){if(g.spendPoints(3000)){for(const w of g.inventory)w.definition={...w.definition,meleeDamage:300};g.message('Bowie knife purchased');g.dialog('weapon_pickup','bowie');}else g.dialog('general','no_money',1);return true;}
     if(e.zombie_weapon_upgrade==='claymore_zm'){g.message('Claymores are not available in this preview.');return true;}
     return false;
   }
@@ -88,6 +95,8 @@ export class KinoRules extends FactoryRules {
     if(this.reviveDue&&g.time>=this.reviveDue){this.reviveDue=0;g.player.health=100;g.lastDamage=g.time;g.emit('weapon',g.weapon);g.message('Revived · '+(3-this.revivesUsed)+' Quick Revives remaining');}
     this.updateUpgrade();
   }
+  // Taking the upgraded gun plays its pickup line (wpck_upgrade or favourite).
+  takeUpgrade(){const upgraded=this.pap?.upgraded;super.takeUpgrade();if(upgraded&&!this.pap)this.game.voiceEvent('weapon',upgraded);}
   saveState(){return {...super.saveState(),coreLinked:this.coreLinked,teleporterLinked:this.teleporterLinked,projectionUntil:this.projectionUntil,revivesUsed:this.revivesUsed,reviveDue:this.reviveDue};}
   loadState(s){super.loadState(s);for(const key of ['coreLinked','teleporterLinked','projectionUntil','revivesUsed','reviveDue'])this[key]=s[key]??0;}
   get announcer(){return {full_ammo:'zmb_vox_ann_maxammo',insta_kill:'zmb_vox_ann_instakill',double_points:'zmb_vox_ann_doublepoints',nuke:'zmb_vox_ann_nuke',carpenter:'zmb_vox_ann_carpenter'};}
@@ -107,6 +116,41 @@ export class BlackOpsEngine extends TestingGame {
   }
   newGame(){
     super.newGame();this.burstRemaining=0;this.player.position=this.settleFeet(this.spawn);this.player.previousPosition=this.player.position.slice();
+    this.character??=0;this.voiceJobs=[];this.killLineUntil=0;this.killStreak=null;this.ammoLowUntil=0;this.ammoOutUntil=0;this.ammoOutAt=0;this.ammoCheckDue=0;this.killMod=null;
+  }
+  // create_and_play_dialog(): the client resolves the character's alias and
+  // variant. Nothing but the going-down line is said while downed.
+  dialog(category,type,variant){if(this.mapRules.reviveDue&&type!=='revive_down')return;this.emit('dialog',{category,type,variant});}
+  laterDialog(delay,category,type,variant){this.voiceJobs.push({at:this.time+delay,category,type,variant});}
+  voiceEvent(event,detail){
+    if(event==='weapon')this.dialog('weapon_pickup',weaponVoxType(this.character,detail));
+    else if(event==='denied'&&DENIED[detail])this.dialog(...DENIED[detail]);
+  }
+  // play_level_start_vox_delayed(): a level-start line five seconds in.
+  start(){const fresh=this.phase==='ready';super.start();if(fresh)this.laterDialog(5,'general','intro');}
+  // player_zombie_kill_vox() / get_mod_type(): the kind of kill decides the
+  // line and its chance; a line blocks further kill lines for two seconds.
+  killVox(enemy,head,melee){
+    if(this.killMod==='nuke')return;
+    // player_killstreak_timer(): more than seven kills within five seconds.
+    if(!this.killStreak||this.time>this.killStreak.until)this.killStreak={until:this.time+5,count:0};
+    if(++this.killStreak.count>7){this.killStreak=null;this.dialog('kill','streak');}
+    if(enemy.hitPlayer)this.dialog('kill','damage');
+    const dist=distance(this.player.position,enemy.position),insta=!!this.powerup.insta_kill,weapon=this.weapon.name,splash=this.killMod==='splash',explosive=this.killMod==='explosive';
+    let death='default';
+    if(melee&&dist<64)death=insta?'melee_instakill':'melee';
+    else if(explosive)death=insta?'weapon_instakill':'explosive';
+    else if(weapon.startsWith('ray_gun')&&dist>400)death=insta?'weapon_instakill':'raygun';
+    else if(!melee&&!splash&&head&&dist>400&&!insta)death='headshot';
+    else if(dist<64&&!insta)death='closekill';
+    else if(!melee&&!splash)death=insta?'weapon_instakill':'bullet';
+    if((KILL_CHANCE[death]??1)>1+Math.floor(Math.random()*99)&&this.time>=this.killLineUntil){this.killLineUntil=this.time+2;this.dialog('kill',death);}
+  }
+  updateGrenades(dt){this.killMod='explosive';try{super.updateGrenades(dt);}finally{this.killMod=null;}}
+  pickup(drop){
+    this.killMod=drop.type==='nuke'?'nuke':null;try{super.pickup(drop);}finally{this.killMod=null;}
+    // powerup_vo(): 3 to 3.5 s after the grab.
+    this.laterDialog(3+Math.random()*.5,'powerup',drop.type);
   }
   settleFeet(at){
     // Native spawn markers float above the theater floor. Small fixed sweeps
@@ -127,6 +171,17 @@ export class BlackOpsEngine extends TestingGame {
   }
   tick(dt,input){
     super.tick(dt,this.mapRules.reviveDue?{}:input);if(this.mapRules.reviveDue)this.player.health=1;
+    if(['ready','dead'].includes(this.phase))return;
+    for(const job of this.voiceJobs.filter(j=>this.time>=j.at)){this.voiceJobs.splice(this.voiceJobs.indexOf(job),1);this.dialog(job.category,job.type,job.variant);}
+    // track_players_ammo_count(): every half second, the current gun's total
+    // ammo below five warns once per 20 s; empty for two seconds likewise.
+    if(this.time>=this.ammoCheckDue){
+      this.ammoCheckDue=this.time+.5;const w=this.weapon,total=w.clip+w.reserve;
+      if(this.gesture||this.mapRules.reviveDue||this.pendingGrenade){}
+      else if(total>0&&total<5){this.ammoOutAt=0;if(this.time>=this.ammoLowUntil){this.ammoLowUntil=this.time+20;this.dialog('general','ammo_low');}}
+      else if(total===0){if(!this.ammoOutAt)this.ammoOutAt=this.time+2;else if(this.time>=this.ammoOutAt){this.ammoOutAt=0;if(this.time>=this.ammoOutUntil){this.ammoOutUntil=this.time+20;this.dialog('general','ammo_out');}}}
+      else this.ammoOutAt=0;
+    }
     if(this.reloadEnd||this.pendingGrenade||this.gesture||this.switching||this.time<this.meleeDue)this.burstRemaining=0;
     if(this.burstRemaining&&this.time>=this.cooldown){if(this.nativeShot())this.burstRemaining--;else this.burstRemaining=0;}
   }
@@ -137,11 +192,12 @@ export class BlackOpsEngine extends TestingGame {
     this.remaining=Math.trunc(max*(r===1?.25:r===2?.3:r===3?.5:r===4?.7:r===5?.9:1));
   }
   damagePlayer(amount){
+    if(this.attackingEnemy)this.attackingEnemy.hitPlayer=true;
     if(this.mods?.god||this.mapRules.reviveDue)return;
     const r=this.mapRules;
     if(this.player.health<=amount&&r.perks.has('specialty_quickrevive')&&r.revivesUsed<3){
       r.revivesUsed++;r.perks.clear();r.reviveDue=this.time+8;this.player.health=1;this.lastDamage=this.time;
-      this.pendingFire=false;this.sprinting=false;this.message('Downed · Quick Revive');this.emit('damage',amount);return;
+      this.pendingFire=false;this.sprinting=false;this.message('Downed · Quick Revive');this.emit('damage',amount);this.dialog('general','revive_down');return;
     }
     super.damagePlayer(amount);
   }
@@ -152,24 +208,29 @@ export class BlackOpsEngine extends TestingGame {
       for(const enemy of this.enemies.filter(e=>!e.dead).sort((a,b)=>distance(this.player.position,a.position)-distance(this.player.position,b.position))){if(distance(this.player.position,enemy.position)>512)continue;
         const d=enemy.position.map((v,k)=>v-this.player.position[k]),yaw=Math.atan2(d[1],d[0]);if(Math.cos(yaw-this.yaw)<.86)continue;
         const ray=this.rayHit(600,yaw,Math.atan2(d[2]-25,Math.hypot(d[0],d[1])));
-        if(ray.hit?.enemy===enemy){super.hitEnemy(enemy,enemy.health,false,false);this.emit('hit',false);}
+        if(ray.hit?.enemy===enemy){super.hitEnemy(enemy,enemy.health,false,false);this.emit('hit',false);if(30>1+Math.floor(Math.random()*99))this.dialog('kill','thundergun');}
       }
     }return fired;
   }
   nativeShot(){this.firingNative=true;try{return super.fire();}finally{this.firingNative=false;}}
   canSave(){return !this.burstRemaining&&super.canSave();}
+  saveState(){return {...super.saveState(),character:this.character};}
+  loadState(s){const character=this.character;super.loadState(s);this.character=Number.isInteger(s.character)?s.character:character;}
   tickEnemy(enemy,dt){
     if(this.mapRules.projectionUntil||this.mapRules.reviveDue){if(!enemy.dead)enemy.age+=dt;return;}
-    super.tickEnemy(enemy,dt);
+    this.attackingEnemy=enemy;try{super.tickEnemy(enemy,dt);}finally{this.attackingEnemy=null;}
   }
   hitEnemy(enemy,damage,head=false,melee=false){
     if(this.firingNative&&this.weapon.name.startsWith('thundergun')&&!melee)return;
+    const alive=!enemy.dead;
     super.hitEnemy(enemy,damage,head,melee);
+    if(alive&&enemy.dead)this.killVox(enemy,head,melee);
     if(this.firingNative&&this.weapon.name.startsWith('ray_gun')&&!melee){
       const d=this.weapon.definition,at=enemy.position;
       for(const other of this.enemies){if(other===enemy||other.dead)continue;const range=distance(at,other.position);if(range>=d.explosionRadius)continue;
         const a=[at[0],at[1],at[2]+35],b=[other.position[0],other.position[1],other.position[2]+35];if(this.collision.trace(a,b,[0,0,0],1).fraction<.98)continue;
-        super.hitEnemy(other,d.explosionOuterDamage+(d.explosionInnerDamage-d.explosionOuterDamage)*(1-range/d.explosionRadius),false,false);
+        const living=!other.dead;super.hitEnemy(other,d.explosionOuterDamage+(d.explosionInnerDamage-d.explosionOuterDamage)*(1-range/d.explosionRadius),false,false);
+        if(living&&other.dead){this.killMod='splash';try{this.killVox(other,false,false);}finally{this.killMod=null;}}
       }
     }
   }

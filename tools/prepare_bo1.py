@@ -249,5 +249,8 @@ manifest = dict(format='bo1-kino-solo-v1',game='black-ops',startWeapon='m1911_zm
                          teleportReturn=point(next(e for e in entities if e.get('targetname')=='theater_teleport_player0'))),
                 provenance=dict(world='maps/zombie_theater.d3dbsp',rules='maps/zombie_theater.gsc',runtime='Black Ops browser reimplementation using locally installed T5 assets'))
 (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
+# Character voice lines are a separate, lazily decoded table (tools/prepare_voice.py).
+import prepare_voice
+prepare_voice.prepare_kino(OUTPUT/'manifest.json')
 (OUTPUT/'presentation.json').write_text(json.dumps(presentation,separators=(',',':')))
 print(json.dumps(dict(entities=len(entities),windows=len(goals),weapons=len(weapons),animations=len(animations),sounds=len(sounds),undecodedSounds=sum(v is None for v in cache.values()),hud=[p.name for p in hud.glob('*.png')]),indent=2))

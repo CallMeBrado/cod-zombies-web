@@ -72,12 +72,13 @@ if(chosen.id==='der-riese')await add(chosen.data+'/power-navigation.json');
 if(!blackOps)await add(chosen.data+'/gate-navigation.json');
 for(const effect of Object.values(presentation.effects))for(const element of effect.elements)for(const url of element.textures)await add(decodeURIComponent(url.slice('/data/'.length)));
 if(presentation.gore)for(const url of [presentation.gore.burst,presentation.gore.drops,...presentation.gore.decals])await add(decodeURIComponent(url.slice('/data/'.length)));
-for(const entry of Object.values(manifest.sounds).flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));
+for(const entry of [...Object.values(manifest.sounds),...Object.values(manifest.voice||{})].flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));
 const hudFolder=blackOps?chosen.data+'/hud':'gameplay/hud';for(const name of await readdir(path.join(data,hudFolder)))if(name.endsWith('.png'))await add(hudFolder+'/'+name);
 for(const name of await readdir(path.join(data,chosen.zone+'/web-world')))await add(chosen.zone+'/web-world/'+name);
 for(const material of Object.values(world.materials)){await texture(material.diffuse);await texture(material.normal);}
 for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(lightmap))if(!blackOps||type==='primary')await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
-const names=new Set([...(blackOps?['viewmodel_usa_pow_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
+// Kino's four characters each have their own viewmodel arms.
+const names=new Set([...(blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
   ...[manifest.grenade?.gunModel,manifest.grenade?.projectileModel,presentation.gore?.neckModel].filter(Boolean),
   ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel]),...Object.values(manifest.gestures||{}).map(g=>g.gunModel)]);
 for(const name of names)await model(name);

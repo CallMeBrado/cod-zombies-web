@@ -842,17 +842,17 @@ export class SoloGame {
       const name=e.zombie_weapon_upgrade,owned=this.inventory.find(w=>w.name===name);
       if(!this.data.weapons[name]){this.message('This weapon is not supported in this build yet.');return;}
       if(owned)cost=Number(e.script_ammo_clip||cost*.5);
-      if(!this.spendPoints(cost))return;
-      if(owned){owned.reserve=owned.definition.maxAmmo;this.message('Ammo replenished');}else{this.giveWeapon(name);this.message(this.weaponName(name)+' purchased');}
+      if(!this.spendPoints(cost)){this.voiceEvent?.('denied',owned?'ammo':'weapon');return;}
+      if(owned){owned.reserve=owned.definition.maxAmmo;this.message('Ammo replenished');}else{this.giveWeapon(name);this.message(this.weaponName(name)+' purchased');this.voiceEvent?.('weapon',name);}
     } else if(e.targetname==='treasure_chest_use') {
       const box=this.boxes.get(e.target),settings=this.presentation.box||{offerTime:12,closeTime:.5,cooldown:3};
-      if(box.phase==='offered'){this.giveWeapon(box.weapon);box.phase='closing';box.closedAt=this.time;box.due=this.time+settings.cooldown;box.timedOut=false;this.emit('sound',{alias:'lid_close'});return;}
+      if(box.phase==='offered'){this.giveWeapon(box.weapon);this.voiceEvent?.('weapon',box.weapon);box.phase='closing';box.closedAt=this.time;box.due=this.time+settings.cooldown;box.timedOut=false;this.emit('sound',{alias:'lid_close'});return;}
       if(box.phase!=='closed')return;
-      if(!this.spendPoints(cost))return;
+      if(!this.spendPoints(cost)){this.voiceEvent?.('denied','box');return;}
       box.names=(this.data.map?.boxWeapons||Object.keys(this.data.weapons)).filter(x=>!this.inventory.some(w=>w.name===x));box.phase='cycling';box.started=this.time;box.index=0;box.nextAt=this.time;box.weapon=null;
       this.emit('sound',{alias:'lid_open'});this.emit('sound',{alias:'music_box'});this.updateBoxes();
     } else {
-      if(!this.spendPoints(cost))return;
+      if(!this.spendPoints(cost)){this.voiceEvent?.('denied',e.targetname==='zombie_debris'?'debris':'door');return;}
       this.opened.add(e.target);this.collision.disabled.add(e.target);
       this.mapRules?.onOpen(e);
       if(e.target.includes('upstairs')){this.opened.add('upstairs_blocker');this.opened.add('upstairs_blocker2');this.collision.disabled.add('upstairs_blocker');this.collision.disabled.add('upstairs_blocker2');}

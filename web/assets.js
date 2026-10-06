@@ -552,6 +552,20 @@ export class OriginalAudio {
     record.stop=(fade=.05)=>{if(!this.sources.has(source))return;const now=this.context.currentTime;gain.gain.setValueAtTime(gain.gain.value,now);gain.gain.linearRampToValueAtTime(0,now+fade);try{node.stop(now+fade);}catch{release();}};
     return record;
   }
+  // Character voice lines are decoded when first spoken (a character has
+  // ~340), keeping the most recent few dozen decoded.
+  async playVoice(alias,entries){
+    const entry=entries?.[0];if(!entry||!this.context)return null;
+    this.voiceCache??=new Map();let buffer=this.voiceCache.get(entry.url);
+    if(!buffer){
+      try{buffer=await this.context.decodeAudioData(await get(entry.url));}catch(e){console.warn('Voice decode failed',alias,e.message);return null;}
+      this.voiceCache.set(entry.url,buffer);if(this.voiceCache.size>40)this.voiceCache.delete(this.voiceCache.keys().next().value);
+    }
+    this.sounds[alias]=entries;this.buffers.set(entry.url,buffer);
+    // The playing node holds the buffer; only the bounded cache keeps it after.
+    const record=this.play(alias,1);this.buffers.delete(entry.url);
+    return record;
+  }
   listen(position,forward){
     const l=this.context?.listener;if(!l)return;
     const [x,y,z]=position,[fx,fy,fz]=forward;
