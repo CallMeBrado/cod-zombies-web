@@ -22,6 +22,7 @@ import {LobbyPresence} from './lobby-presence.js';
 import {NetSession} from './net-session.js';
 import {Coop} from './coop.js';
 import {RemotePlayers} from './remote-players.js';
+import {StepSmoothing} from './step-smoothing.js';
 import {SaveSlots} from './save-slots.js';
 import {PERKS} from './map-rules.js';
 import {powerSwitchRotation} from './factory-view.js';
@@ -64,6 +65,8 @@ let game,audio,map,weaponView,grenadeView,actors,effects,presentation;
 let playerBody,diveAudio,diveThirdPerson=false;
 // Online co-op: the relay session, the co-op rules and the other players' bodies.
 let session=null,coop=null,remotePlayers=null,coopEnded=false,hiddenStep=performance.now();
+// The view glides over steps (stairs, ledges, low props) instead of popping.
+const stepView=new StepSmoothing();let stepOffset=0;
 const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts=[];
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
@@ -123,7 +126,7 @@ function cameraPose() {
   if(coop?.dead&&session){const id=[...coop.remotes.keys()].find(id=>{const s=session.sample(id);return s&&!s.dead;}),s=id&&session.sample(id);
     if(s){camera.up.set(0,0,1);camera.position.set(s.p[0],s.p[1],s.p[2]+(s.stance==='prone'||s.down?11:s.stance==='crouch'?40:60));camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(s.yaw)*Math.cos(s.pitch),Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch))));return;}}
   const p=game?game.renderPosition(game.player):[0,424,17],d=game?divePresentation(game,game.time-1/120+game.accumulator):null;
-  camera.up.set(0,0,1);camera.position.set(p[0],p[1],p[2]+(game?.viewHeight??60)+(d?.cameraOffsetUnits||0));
+  camera.up.set(0,0,1);camera.position.set(p[0],p[1],p[2]+(game?.viewHeight??60)+(d?.cameraOffsetUnits||0)+stepOffset);
   let yaw=state.yaw+kickYaw,pitch=THREE.MathUtils.clamp(state.pitch+kickPitch+(d?.cameraPitchRadians||0),-1.45,1.45);
   if(game?.dive||game?.diveRecovery){const turn=Math.atan2(Math.sin(yaw-d.yaw),Math.cos(yaw-d.yaw)),limit=d.config.lookYawLimitDegrees*Math.PI/180;yaw=d.yaw+THREE.MathUtils.clamp(turn,-limit,limit);pitch=THREE.MathUtils.clamp(pitch,-d.config.lookPitchLimitDegrees*Math.PI/180,d.config.lookPitchLimitDegrees*Math.PI/180);}
   if(diveThirdPerson&&game){camera.position.set(p[0]-Math.cos(d.yaw)*140,p[1]-Math.sin(d.yaw)*140,p[2]+70);camera.lookAt(p[0],p[1],p[2]+20);}
@@ -229,7 +232,7 @@ function setupCoop(match){
     onEvent:(from,msg)=>coop?.handle(from,msg),onSnapshot:(snap,now)=>coop?.receive(snap,now),
     onHostLost:()=>{if(coop&&!coop.over){notice('The host left the game.');coop.gameOver({});}}});
   coop=new Coop(game,session,{host,localId:shared.you,slot:me.slot??0,character:blackOps?character:null});coopEnded=false;
-  remotePlayers=new RemotePlayers(scene,{definitions:game.data.playerBodies||null,illumination:p=>map.illumination(p),weapons:game.data.weapons,audio});
+  remotePlayers=new RemotePlayers(scene,{definitions:game.data.playerBodies||null,illumination:p=>map.illumination(p),weapons:game.data.weapons,audio,animations:game.data.playerAnimations||[]});
   const spawn=coop.spawnPoint();game.player.position=spawn.slice();game.player.previousPosition=spawn.slice();const yaw=coop.spawnYaw();if(yaw!==null){state.yaw=yaw;cameraPose();}
   session.start();
 }
@@ -440,8 +443,8 @@ async function init() {
     diveEvent:e=>diveAudio?.handle(e),contactSurface:(p,n)=>contactSurfaceName(map.bullets.trace([p[0]+n[0]*4,p[1]+n[1]*4,p[2]+6],[0,0,-1],24)),
     bindingName:keyName,controllerPrompts:()=>gamepads.active,
     message:notice,spawn:spawnVisual,
-    kill:e=>{const direction=e.killDirection||e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
-    traceShot:(origin,dir,range)=>map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:()=>{damageFlash=1;},death,
+    kill:e=>{const direction=e.killDirection||e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{stepView.reset();stepOffset=0;resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
+    traceShot:(origin,dir,range)=>coop&&session?coop.blockShot(map.bullets.shot(origin,dir,range,traceEnemy),origin,dir,id=>session.sample(id)):map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:()=>{damageFlash=1;},death,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
     // Weapon switch: hold the old gun's putaway, then draw the new gun.
@@ -550,6 +553,7 @@ function frame(time) {
   let frameInput=playing?input():{};if(coop?.down)frameInput={...frameInput,sprint:false,jump:false};if(coop?.dead)frameInput={};
   if(playing||coop&&!coop.over&&!['ready','dead'].includes(game?.phase)&&['menu','playing'].includes(state.mode)){game.update(dt,aimHeld&&playing?{...frameInput,sprint:false}:frameInput);}
   if(coop){coop.update();coop.updateRevive(playing&&!!frameInput.use,dt);remotePlayers?.update(coop,session,dt,game.time);}
+  if(game)stepOffset=stepView.update(game.player,paused&&!coop?0:dt);
   hiddenStep=performance.now();
   if(gamepads.active&&game?.player.stance!=='stand')gamepads.sprinting=false;
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;

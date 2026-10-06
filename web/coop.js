@@ -12,7 +12,7 @@ const distance=(a,b)=>Math.hypot(...a.map((v,i)=>v-b[i]));
 const round1=v=>Math.round(v*10)/10;
 // Player colours of the co-op scoreboard (players 1-4).
 export const PLAYER_COLORS=['#ffffff','#78b4ff','#ffd24a','#7fdc6a'];
-export const BLEEDOUT_SECONDS=30,REVIVE_SECONDS=3,QUICK_REVIVE_SECONDS=1.5,REVIVE_RANGE=64;
+export const BLEEDOUT_SECONDS=30,REVIVE_SECONDS=3,QUICK_REVIVE_SECONDS=1.5,REVIVE_RANGE=64,PLAYER_RADIUS=15;
 // Host sounds every player hears: round, barriers, box, power-ups, power,
 // teleporter, PA and the theater/factory machinery.
 const WORLD_SOUNDS=new Set(['round_over','chalk','remove_boards','lid_open','lid_close','music_box','spawn_powerup','powerup_grabbed','carp_end','switch_flip','bridge_lower',
@@ -159,6 +159,7 @@ export class Coop {
     for(const [id,p]of this.session.players){const r=this.remote(id);Object.assign(r,{present:p.present,slot:p.slot,character:p.character,state:p.state});if(p.state)r.proxy.position=p.state.p;}
     for(const id of [...this.remotes.keys()])if(!this.session.players.has(id))this.remotes.delete(id);
     if(this.down){g.player.health=1;g.lastDamage=g.time;if(g.time>=this.down.bleedout)this.bleedOut();}
+    this.separate();
     if(this.guest)this.mirror();
     if(this.host&&!this.over){
       // A teammate standing on a power-up collects it for everyone.
@@ -166,6 +167,33 @@ export class Coop {
       // Game over once nobody is left standing.
       if(g.phase!=='ready'&&g.phase!=='dead'&&!this.candidatesAlive())this.endGame();
     }
+  }
+  // Teammates are solid to each other: this player is pushed out of any
+  // standing teammate (through the world collision, never into a wall).
+  separate(){
+    const g=this.game,p=g.player;if(this.dead||g.noclipping)return;
+    for(const r of this.remotes.values()){
+      const s=r.state;if(!r.present||!s||s.dead||s.down)continue;
+      const dx=p.position[0]-s.p[0],dy=p.position[1]-s.p[1],d=Math.hypot(dx,dy),overlap=PLAYER_RADIUS*2-d;
+      if(overlap<=0||Math.abs(p.position[2]-s.p[2])>60)continue;
+      const nx=d>.01?dx/d:Math.cos(this.slot),ny=d>.01?dy/d:Math.sin(this.slot);
+      p.position=g.collision.step(p.position,[nx*overlap,ny*overlap,0],g.playerHull).position;
+    }
+  }
+  // A teammate's body stops this player's shots (friendly fire does no
+  // damage): hits beyond them are dropped and the bullet ends there.
+  blockShot(ray,origin,dir,sample){
+    let nearest=Infinity;
+    for(const r of this.remotes.values()){
+      const s=r.present&&sample(r.id);if(!s||s.dead)continue;
+      const height=s.down||s.stance==='prone'?22:s.stance==='crouch'?50:70,lo=[s.p[0]-PLAYER_RADIUS,s.p[1]-PLAYER_RADIUS,s.p[2]],hi=[s.p[0]+PLAYER_RADIUS,s.p[1]+PLAYER_RADIUS,s.p[2]+height];
+      let near=0,far=Infinity,miss=false;
+      for(let k=0;k<3;k++){if(Math.abs(dir[k])<1e-9){if(origin[k]<lo[k]||origin[k]>hi[k]){miss=true;break;}continue;}const a=(lo[k]-origin[k])/dir[k],b=(hi[k]-origin[k])/dir[k];near=Math.max(near,Math.min(a,b));far=Math.min(far,Math.max(a,b));if(near>far){miss=true;break;}}
+      if(!miss&&near>1)nearest=Math.min(nearest,near);
+    }
+    const end=Math.hypot(...ray.end.map((v,i)=>v-origin[i]));if(nearest>=end)return ray;
+    const hits=(ray.hits||(ray.hit?[ray.hit]:[])).filter(h=>h.distance<nearest);
+    return {...ray,hits,hit:hits[0]||null,end:origin.map((v,i)=>v+dir[i]*nearest),wall:false,teammate:true};
   }
   candidatesAlive(){
     if(!this.down&&!this.dead)return true;
@@ -277,7 +305,8 @@ export class Coop {
   spawnPoint(){
     const g=this.game,markers=g.entities.filter(e=>e.targetname==='initial_spawn_points'),marker=markers[this.slot%Math.max(1,markers.length)];
     const at=marker?marker.origin.split(/\s+/).map(Number):g.spawn;
-    try{return g.settleFeet?g.settleFeet(at):g.collision.move(at,[0,0,-64]).position;}catch{return g.player.position.slice();}
+    if(g.settleFeet)try{return g.settleFeet(at);}catch{return g.player.position.slice();}
+    g.collision.playerMovement=true;try{return g.collision.move(at,[0,0,-64]).position;}finally{g.collision.playerMovement=false;}
   }
   spawnYaw(){const g=this.game,markers=g.entities.filter(e=>e.targetname==='initial_spawn_points'),marker=markers[this.slot%Math.max(1,markers.length)];return marker?Number((marker.angles||'0 0 0').split(/\s+/)[1])*Math.PI/180:null;}
   // The teammate this player can revive: downed, within reach.

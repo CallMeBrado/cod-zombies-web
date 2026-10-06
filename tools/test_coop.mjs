@@ -7,6 +7,7 @@ import {MAPS,BO1_MAPS} from '../web/maps.js';
 import {NetSession,Timeline} from '../web/net-session.js';
 import {Coop,BLEEDOUT_SECONDS} from '../web/coop.js';
 import {createLobbyApi} from './lobby-api.mjs';
+import {StepSmoothing} from '../web/step-smoothing.js';
 
 // Two real Kino games, a host and a guest, through the server's lobby relay.
 const read=async p=>JSON.parse(await readFile(new URL('../local-data/'+p,import.meta.url),'utf8'));
@@ -71,7 +72,22 @@ assert(!guest.coop.down,'Holding Use for 3 seconds revives');assert.equal(guest.
 // Everyone down: game over for both.
 host.coop.goDown();host.coop.to(guestJoin.you,{type:'damage',amount:500});await step(.6);
 assert.equal(host.g.phase,'dead');assert.equal(guest.g.phase,'dead');for(let i=0;i<50&&!(host.events.some(e=>e[0]==='death')&&guest.events.some(e=>e[0]==='death'));i++)await step(.05);assert(host.events.some(e=>e[0]==='death')&&guest.events.some(e=>e[0]==='death'),'Both see the game over');
+// Teammates are solid: the host is pushed out of the guest, and the guest's
+// body stops the host's bullets (no damage) before a zombie behind them.
+const solid=host.coop.remotes.get(guestJoin.you);solid.state={...solid.state,p:host.g.player.position.map((v,i)=>i===0?v+10:v),dead:false,down:false,stance:'stand'};solid.present=true;
+host.coop.separate();assert(Math.hypot(host.g.player.position[0]-solid.state.p[0],host.g.player.position[1]-solid.state.p[1])>=29.9,'Players cannot overlap');
+const eye=[host.g.player.position[0],host.g.player.position[1],host.g.player.position[2]+50],towards=[solid.state.p[0]-eye[0],solid.state.p[1]-eye[1],0],len=Math.hypot(...towards),dir=towards.map(v=>v/len);
+const shotRay=host.coop.blockShot({hit:{distance:400},hits:[{distance:400}],end:eye.map((v,i)=>v+dir[i]*500),wall:true},eye,dir,()=>solid.state);
+assert.equal(shotRay.hits.length,0,'A teammate stops the shot');assert(shotRay.teammate&&!shotRay.wall);assert(Math.hypot(...shotRay.end.map((v,i)=>v-eye[i]))<len,'The bullet ends at their body');
 // Interpolation keeps another clock's samples in order.
 const line=new Timeline();line.push(0,{p:[0,0,0],yaw:0},1000);line.push(100,{p:[10,0,0],yaw:1},1100);assert.deepEqual(line.sample(50,1100).p,[5,0,0]);
+// Steps: the view glides up a 12-unit step over 0.2 s instead of popping.
+const steps=new StepSmoothing(),feet={position:[0,0,0],grounded:true};steps.update(feet,1/60);feet.position=[0,0,12];
+assert(Math.abs(steps.update(feet,0)+12)<1e-9,'The view starts at the old height');for(let i=0;i<6;i++)steps.update(feet,1/60);assert(steps.offset<-5&&steps.offset>-12);for(let i=0;i<7;i++)steps.update(feet,1/60);assert.equal(steps.offset,0,'and has caught up after 0.2 s');
+feet.position=[0,0,200];steps.update(feet,1/60);assert.equal(steps.offset,0,'A fall or teleport is not smoothed');
+// Stairs (8-unit steps every 1/16 s, up or down) track within half a step.
+for(const rise of [8,-8]){const stairs=new StepSmoothing(),body={position:[0,0,0],grounded:true};stairs.update(body,1/120);let t=0,next=0,z=0,lag=0,n=0;
+  for(let i=0;i<240;i++){t+=1/120;if(t>=next){z+=rise;next+=1/16;}body.position=[0,0,z];const o=stairs.update(body,1/120);if(i>60){lag+=Math.abs(o);n++;}}
+  assert(lag/n<=4.5,'Stairs view lag '+(lag/n).toFixed(2));}
 for(const side of [host,guest])side.session.stop();server.close();
 console.log('Co-op passed:',JSON.stringify({players:2,zombies:hostLive.length,guestKillPaid:guest.g.player.kills,sharedDoor:door.target,sharedPower:true,revive:true,gameOver:true,bleedout:BLEEDOUT_SECONDS}));

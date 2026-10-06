@@ -257,5 +257,7 @@ import prepare_voice
 prepare_voice.prepare_kino(OUTPUT/'manifest.json')
 import prepare_dive
 prepare_dive.prepare()
+import prepare_player_animations
+prepare_player_animations.prepare()
 (OUTPUT/'presentation.json').write_text(json.dumps(presentation,separators=(',',':')))
 print(json.dumps(dict(entities=len(entities),windows=len(goals),weapons=len(weapons),animations=len(animations),sounds=len(sounds),undecodedSounds=sum(v is None for v in cache.values()),hud=[p.name for p in hud.glob('*.png')]),indent=2))

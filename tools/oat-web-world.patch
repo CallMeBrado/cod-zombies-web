@@ -426,9 +426,9 @@ index b9aaf92..6422a47 100644
      {
          const auto& parts = *asset.Asset();
 +#if defined(FEATURE_T4)
-+        // Browser project: export only the original clips used by the solo runtime.
++        // Browser project: export only the original clips the runtime uses (zombies, viewmodels, co-op player bodies).
 +        const std::string webName = asset.m_name;
-+        const bool webClip = webName.find("ai_zombie_") == 0 || webName.find("viewmodel_") == 0;
++        const bool webClip = webName.find("ai_zombie_") == 0 || webName.find("viewmodel_") == 0 || webName.find("pb_") == 0;
 +        if (!webClip) return;
 +#endif
  

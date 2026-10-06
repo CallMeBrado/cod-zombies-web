@@ -156,12 +156,17 @@ export class BlackOpsEngine extends TestingGame {
   }
   settleFeet(at){
     // Native spawn markers float above the theater floor. Small fixed sweeps
-    // avoid a long sweep touching an unrelated triangle's expanded edge.
-    let feet=at.slice();for(let i=0;i<128;i++){
-      const result=this.collision.move(feet,[0,0,-1]);
-      if(result.grounded&&Math.abs(result.position[2]-feet[2])<.01)return result.position;
-      feet=result.position;
-    }throw new Error('Kino spawn has no stable walkable floor.');
+    // avoid a long sweep touching an unrelated triangle's expanded edge. The
+    // player stands on the real floor, not on a tiny prop (collision.js).
+    const was=this.collision.playerMovement;this.collision.playerMovement=true;
+    try{
+      let feet=at.slice();for(let i=0;i<128;i++){
+        const result=this.collision.move(feet,[0,0,-1]);
+        if(result.grounded&&Math.abs(result.position[2]-feet[2])<.01)return result.position;
+        feet=result.position;
+      }
+    }finally{this.collision.playerMovement=was;}
+    throw new Error('Kino spawn has no stable walkable floor.');
   }
   prepareSpawnPaths(prepared){super.prepareSpawnPaths(prepared);this.targetNavigation=prepared?.targetNavigation?new Map(prepared.targetNavigation.links):null;}
   invalidateNavigation(targets){

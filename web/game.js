@@ -88,7 +88,7 @@ export class SoloGame {
   newGame() {
     for(const enemy of this.enemies)this.emit('removeEnemy',enemy);
     this.enemies=[];this.effects=[];this.collision.disabled.clear();this.opened=new Set();
-    const floor=this.collision.move(this.spawn,[0,0,-64]);
+    this.collision.playerMovement=true;const floor=this.collision.move(this.spawn,[0,0,-64]);this.collision.playerMovement=false;
     if(!floor.grounded)throw new Error('The original player spawn has no walkable collision floor.');
     this.player={position:floor.position,health:100,points:this.vars.zombie_score_start,kills:0,headshots:0,velocityZ:0,grounded:true,grenades:4};
     resetMovement(this);
@@ -653,6 +653,8 @@ export class SoloGame {
     for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
     this.time+=dt;this.elapsed+=dt;this.expireScorePopups();if(!this.mirror)this.updateBoxes();this.mapRules?.tick();
     input=movementInput(this,input,dt);
+    // The player's own movement passes through tiny props (collision.js).
+    this.collision.playerMovement=true;
     if(moveKnifeLunge(this,dt,input))input={...input,forward:0,side:0,sprint:false,jump:false};
     if(this.pendingMelee&&this.time>=this.pendingMelee.due){this.resolveMelee();this.pendingMelee=null;}
     this.updateGesture();this.updateSwitch();
@@ -697,7 +699,7 @@ export class SoloGame {
     if(p.grounded)this.groundedAt=this.time;
     }
     }
-    movementEnd(this,dt);
+    movementEnd(this,dt);this.collision.playerMovement=false;
     const p=this.player;
     if(p.position[2]<-600&&!this.noclipping)this.damagePlayer(100);
     if(this.time-this.lastDamage>3)p.health=Math.min(this.mapRules?.maxHealth||100,p.health+30*dt);

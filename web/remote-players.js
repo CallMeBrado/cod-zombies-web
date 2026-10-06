@@ -6,10 +6,10 @@ import {PLAYER_COLORS} from './coop.js';
 // their newest sample: their character body (Black Ops), stance, prone/down
 // and dive pose, their weapon, and their gunfire sound at their position.
 export class RemotePlayers {
-  constructor(scene,{definitions=null,illumination,weapons,audio}){Object.assign(this,{scene,definitions,illumination,weapons,audio});this.players=new Map();}
+  constructor(scene,{definitions=null,illumination,weapons,audio,animations=[]}){Object.assign(this,{scene,definitions,illumination,weapons,audio,animations});this.players=new Map();}
   async body(id,character,slot){
     if(this.definitions?.length){
-      const body=new PlayerBody(this.scene,this.illumination,this.definitions,character??slot%this.definitions.length);await body.prepare();body.setThirdPerson(true);return body;
+      const body=new PlayerBody(this.scene,this.illumination,this.definitions,character??slot%this.definitions.length);await body.prepare();body.setThirdPerson(true);await body.prepareRemote(this.animations);return body;
     }
     return new StandIn(this.scene,PLAYER_COLORS[slot%4]);
   }
@@ -19,11 +19,16 @@ export class RemotePlayers {
       if(!r.present){if(v){v.body?.dispose();this.players.delete(id);}continue;}
       if(!v){v={id,body:null,loading:this.body(id,r.character,r.slot??0).then(body=>{v.body=body;}).catch(console.error),weapon:null,shots:null};this.players.set(id,v);}
       const s=session.sample(id,100);v.state=s;if(!v.body||!s)continue;
-      if(s.weapon!==v.weapon&&this.weapons[s.weapon]){v.weapon=s.weapon;v.body.weapon?.({definition:this.weapons[s.weapon]});}
-      v.body.poseRemote(s,dt,time);
-      // Their gunfire, at their position.
-      if(v.shots!==null&&s.shots>v.shots&&this.audio){const d=this.weapons[s.weapon];const alias=d?.fireSound||d?.fireSoundPlayer;if(alias)this.audio.play(alias,1,{position:[s.p[0],s.p[1],s.p[2]+50],near:100,far:3000});}
-      v.shots=s.shots;
+      if(s.weapon!==v.weapon&&this.weapons[s.weapon]){v.weapon=s.weapon;v.body.remoteWeapon?.(this.weapons[s.weapon]);}
+      // Velocity from the drawn positions picks the directional clip.
+      const velocity=v.last&&dt>0?[(s.p[0]-v.last[0])/dt,(s.p[1]-v.last[1])/dt]:[0,0];v.last=s.p.slice();
+      v.velocity=v.velocity?v.velocity.map((x,i)=>x+(velocity[i]-x)*Math.min(1,dt*10)):velocity;
+      v.body.poseRemote(s,dt,time,v.velocity);
+      // Their gunfire: sound at their position, muzzle flash and recoil. The
+      // shot count comes from their newest state (the drawn one is blended).
+      const shots=session.players.get(id)?.state?.shots??s.shots;
+      if(v.shots!==null&&shots>v.shots){v.body.fire?.(time);const d=this.weapons[s.weapon],alias=d?.fireSound||d?.fireSoundPlayer;if(alias&&this.audio)for(let n=0;n<Math.min(3,shots-v.shots);n++)this.audio.play(alias,1,{position:[s.p[0],s.p[1],s.p[2]+50],near:100,far:3000});}
+      v.shots=shots;
     }
     for(const [id,v]of this.players)if(!coop.remotes.has(id)){v.body?.dispose();this.players.delete(id);}
   }

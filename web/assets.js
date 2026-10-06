@@ -101,7 +101,11 @@ export async function model(name) {
       await Promise.all([...materials].map(async material=>{
         const original=await nativeMaterial(material.name);
         const color=original?.textures?.find(t=>t.semantic==='colorMap');
-        if(!material.map&&color){material.map=await diffuse(color.image);material.color.setRGB(1,1,1);material.needsUpdate=true;}
+        // OAT can also take the first listed image (e.g. the dissolve
+        // shaders' mask01 color0Map) as the base color; use the colorMap.
+        const mapName=decodeURIComponent(material.map?.name||'').split('/').pop().replace(/\.dds$/i,'');
+        const misassigned=!!material.map&&!!color&&mapName!==color.image&&original.textures.some(t=>t.image===mapName&&t.semantic!=='colorMap');
+        if((!material.map||misassigned)&&color){material.map=await diffuse(color.image);material.color.setRGB(1,1,1);material.needsUpdate=true;}
         // GLB materials are all opaque. The T4 technique set carries the
         // blend: mc_l_sm_b* (glass, decals) alpha-blends and mc_l_sm_t*
         // alpha-tests at 128, so e.g. perk bottle glass shows the liquid.

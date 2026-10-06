@@ -4,6 +4,7 @@ import {nativeCollisionTriangle} from './native-triangles.js';
 const preparedWorlds=new WeakMap();
 // 128-unit grid cells keyed by number (no per-lookup string building).
 const cellKey=(x,y)=>(x+32768)*65536+(y+32768);
+export const TINY_PROP={height:12,size:64};
 export class CollisionWorld {
   constructor(data, entities) {
     const prepared=preparedWorlds.get(data);
@@ -38,16 +39,17 @@ export class CollisionWorld {
         const mins=[Infinity,Infinity,Infinity],maxs=[-Infinity,-Infinity,-Infinity],planes=[];
         for(let corner=0;corner<8;corner++){const p=[0,1,2].map(k=>corner&(1<<k)?surface.maxs[k]:surface.mins[k]);for(let k=0;k<3;k++){const value=model.origin[k]+columns.reduce((s,c,j)=>s+c[k]*p[j],0);mins[k]=Math.min(mins[k],value);maxs[k]=Math.max(maxs[k],value);}}
         for(let k=0;k<3;k++){const n=a[k],length=Math.hypot(...n),offset=n.reduce((s,v,j)=>s+v*model.origin[j],0);planes.push([...n.map(v=>v/length),(surface.maxs[k]+offset)/length],[...n.map(v=>-v/length),(-surface.mins[k]-offset)/length]);}
-        const start=this.triangles.length;
+        const start=this.triangles.length,brushStart=this.brushes.length;
         if(mesh){for(let i=0;i<surface.points.length;i++){
           const local=surface.points[i];if(!local)continue;
           const points=local.map(p=>[0,1,2].map(k=>model.origin[k]+columns.reduce((sum,c,j)=>sum+c[k]*p[j],0)));
           const n=surface.triangles[i][0],normal=[0,1,2].map(k=>a.reduce((sum,row,j)=>sum+row[k]*n[j],0));
           this.addTriangle(points,surface.contents,model.model,normal);
         }}else this.addHull({mins,maxs,planes,contents:surface.contents,model:model.model,target:null});
-        this.staticSurfaces.push({mins,maxs,contents:surface.contents,model:model.model,triangleStart:start,triangleCount:this.triangles.length-start});this.staticModelCount++;
+        this.staticSurfaces.push({mins,maxs,contents:surface.contents,model:model.model,triangleStart:start,triangleCount:this.triangles.length-start,brushStart,brushCount:this.brushes.length-brushStart});this.staticModelCount++;
       }
     }
+    this.markTinyProps();
     this.staticTriangleCount=this.triangles.length;
     const vertices=data.terrain?.vertices||[],indices=data.terrain?.indices||[];
     for(let at=0;at<indices.length;at+=3){
@@ -55,6 +57,22 @@ export class CollisionWorld {
     }
     this.disabled = new Set();
     preparedWorlds.set(data,{entities,brushes:this.brushes,cells:this.cells,staticModelCount:this.staticModelCount,staticSurfaces:this.staticSurfaces,staticTriangleCount:this.staticTriangleCount,triangles:this.triangles,triangleCells:this.triangleCells});
+  }
+  // Tiny standalone props (plugs, hose ends, rope clips: at most 12 units tall
+  // and 64 across, touching no other prop beside, above or below) never block
+  // the player's own movement; zombies still collide with them. A sandbag in
+  // a wall, row or pile touches others and stays solid.
+  markTinyProps(){
+    const small=s=>s.maxs[2]-s.mins[2]<=TINY_PROP.height&&s.maxs[0]-s.mins[0]<=TINY_PROP.size&&s.maxs[1]-s.mins[1]<=TINY_PROP.size;
+    const cells=new Map(),key=(x,y)=>x*100003+y;
+    this.staticSurfaces.forEach((s,i)=>{for(let x=Math.floor(s.mins[0]/64);x<=Math.floor(s.maxs[0]/64);x++)for(let y=Math.floor(s.mins[1]/64);y<=Math.floor(s.maxs[1]/64);y++){const k=key(x,y);if(!cells.has(k))cells.set(k,[]);cells.get(k).push(i);}});
+    this.staticSurfaces.forEach((s,i)=>{
+      if(!small(s))return;const near=new Set();
+      for(let x=Math.floor(s.mins[0]/64);x<=Math.floor(s.maxs[0]/64);x++)for(let y=Math.floor(s.mins[1]/64);y<=Math.floor(s.maxs[1]/64);y++)for(const j of cells.get(key(x,y))||[])near.add(j);
+      for(const j of near){if(j===i)continue;const o=this.staticSurfaces[j];
+        if(o.mins[0]<=s.maxs[0]+2&&o.maxs[0]>=s.mins[0]-2&&o.mins[1]<=s.maxs[1]+2&&o.maxs[1]>=s.mins[1]-2&&o.maxs[2]>=s.mins[2]-2&&o.mins[2]<s.maxs[2]+30)return;}
+      s.tiny=true;for(let k=s.triangleStart;k<s.triangleStart+s.triangleCount;k++)this.triangles[k].tiny=true;for(let k=s.brushStart;k<s.brushStart+s.brushCount;k++)this.brushes[k].tiny=true;
+    });
   }
   addTriangle(points,contents=1,model=null,nativeNormal=null){
     const edges=points.map((p,i)=>points[(i+1)%3].map((v,k)=>v-p[k])),u=edges[0],v=edges[1],normal=nativeNormal||[u[2]*v[1]-u[1]*v[2],u[0]*v[2]-u[2]*v[0],u[1]*v[0]-u[0]*v[1]],length=Math.hypot(...normal);
@@ -104,10 +122,10 @@ export class CollisionWorld {
       const limit=Math.abs(ex-x)+Math.abs(ey-y)+2;
       for(let step=0;step<limit;step++){for(let a=-rx;a<=rx;a++)for(let b=-ry;b<=ry;b++)visit(x+a,y+b);if(x===ex&&y===ey)break;if(tx<=ty){x+=sx;tx+=128/Math.abs(dx);}else{y+=sy;ty+=128/Math.abs(dy);}}
     }
-    let fraction=1,normal=[0,0,0],solid=false,allSolid=false;
+    let fraction=1,normal=[0,0,0],solid=false,allSolid=false;const skipTiny=this.playerMovement;
     const disabled=this.disabled,checkDisabled=disabled.size>0;
     for(let c=0;c<brushIds.length;c++) {
-      const b=this.brushes[brushIds[c]];if(!(b.contents&mask)||checkDisabled&&disabled.has(b.target))continue;
+      const b=this.brushes[brushIds[c]];if(!(b.contents&mask)||checkDisabled&&disabled.has(b.target)||skipTiny&&b.tiny)continue;
       const bm=b.mins,bM=b.maxs;if(bm[0]>high0||bm[1]>high1||bm[2]>high2||bM[0]<low0||bM[1]<low1||bM[2]<low2)continue;
       let enter=-1,leave=1,hit=null,outside=false,endOutside=false,reject=false,closest=null,closestDistance=-Infinity;
       const planes=b.planes;
@@ -146,7 +164,7 @@ export class CollisionWorld {
     }
     const d0=e0-s0,d1=e1-s1,d2=e2-s2;
     for(let c=0;c<triangleIds.length;c++){
-      const t=this.triangles[triangleIds[c]],n=t.normal;if(!(t.contents&mask)||ignoreWalkableTerrain&&!t.model&&n[2]>.65)continue;
+      const t=this.triangles[triangleIds[c]],n=t.normal;if(!(t.contents&mask)||ignoreWalkableTerrain&&!t.model&&n[2]>.65||skipTiny&&t.tiny)continue;
       const tm=t.mins,tM=t.maxs;if(tm[0]>high0||tm[1]>high1||tm[2]>high2||tM[0]<low0||tM[1]<low1||tM[2]<low2)continue;
       let velocity=0;velocity+=n[0]*d0;velocity+=n[1]*d1;velocity+=n[2]*d2;
       let support=0;support+=Math.abs(n[0])*h0;support+=Math.abs(n[1])*h1;support+=Math.abs(n[2])*h2;
@@ -178,6 +196,14 @@ export class CollisionWorld {
     }
     return {position:[pos[0],pos[1],pos[2]-half[2]],grounded};
   }
+  supported(feet,half){
+    let count=0;
+    for(const [x,y] of [[0,0],[1,1],[1,-1],[-1,1],[-1,-1]]){
+      const at=[feet[0]+x*(half[0]-1),feet[1]+y*(half[1]-1)],t=this.trace([at[0],at[1],feet[2]+2],[at[0],at[1],feet[2]-8],[0,0,0]);
+      if(t.fraction<1&&t.normal[2]>.65&&++count>=2)return true;
+    }
+    return false;
+  }
   walkableBeyond(top,delta,half){
     const length=Math.hypot(delta[0],delta[1]),reach=24,ahead=[top[0]+delta[0]/length*reach,top[1]+delta[1]/length*reach,top[2]];
     const forward=this.trace(top,ahead,half);if(forward.allSolid||forward.fraction<1)return false;
@@ -200,6 +226,11 @@ export class CollisionWorld {
     // Step probes remain vertical; sliding an 18-unit downward probe along a
     // tilted prop face used to kick the player sideways into nearby barriers.
     const down={position:[landing.end[0],landing.end[1],landing.end[2]-half[2]],grounded:landing.fraction<1&&landing.normal[2]>.65};
+    // The player steps only onto something that can hold them: at least two of
+    // five downward probes (centre and corners) must find floor at the landing
+    // height. Stair treads support the leading corners; the edge of a thin
+    // slat or plate (Kino's mainframe face) does not, so it is not a step.
+    if(this.playerMovement&&down.position[2]>feet[2]+1&&!this.supported(down.position,half))return direct;
     if(Math.hypot(down.position[0]-feet[0],down.position[1]-feet[1])>Math.hypot(direct.position[0]-feet[0],direct.position[1]-feet[1])+.1)return down;
     return direct;
   }
