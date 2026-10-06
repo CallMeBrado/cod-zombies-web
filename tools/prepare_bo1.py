@@ -182,6 +182,11 @@ remap = dict(mx_splash_screen='mus_zombie_splash_screen',mx_zombie_wave_1='mus_t
 aliases.update(remap.values());aliases.update(['evt_teleporter_activate_start','evt_teleporter_activate_finish','evt_teleporter','wpn_knife_pull_plr','zmb_perks_packa_upgrade'])
 aliases.update(['zmb_vox_ann_maxammo','zmb_vox_ann_instakill','zmb_vox_ann_doublepoints','zmb_vox_ann_nuke','zmb_vox_ann_carpenter','zmb_vox_ann_magicbox'])
 aliases.update(line.split()[-1] for w in gestures.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
+# T5 viewmodel clips name their sounds in notetracks ("sndnt#fly_colt45_mag_in"):
+# reload magazine out/in, bolts and gear rattle. reloadSound is left empty.
+for name in {v for w in [*weapons.values(),grenade,*gestures.values()] for k,v in w.items() if k.endswith('Anim') and isinstance(v,str) and v}:
+    p=find('web-anims/'+name+'.json')
+    if p: aliases.update(n['name'][6:] for n in json.loads(p.read_text()).get('notifies',[]) if n['name'].startswith('sndnt#'))
 aliases.update(p.stem for z in ['bo1-kino','bo1-common'] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'zmb_.*(jugg|speed|revive|doubletap|packa|perk|powerup)|mus_theatre|mus_perks',p.stem))
 sounds={};sound_output=OUTPUT/'sounds';sound_output.mkdir(exist_ok=True);cache={}
 def convert_audio(entry):

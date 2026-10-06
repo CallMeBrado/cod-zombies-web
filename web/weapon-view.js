@@ -51,7 +51,7 @@ export class WeaponView {
     this.rigs.set(weapon.name,{root,object,mixer,clips,adsAction:this.adsAction,flash:this.flash,knife});
   }
   play(name,duration=0,loop=false,hold=false) {
-    const clip=this.clips.get(name);if(!clip)return;
+    const clip=this.clips.get(name);if(!clip)return;this.sprintAnim=null;
     let action=this.actions.get(name);if(!action){action=this.mixer.clipAction(clip);this.actions.set(name,action);}
     if(this.current&&this.current!==action)this.current.fadeOut(.035);
     action.reset().setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);action.clampWhenFinished=!loop;
@@ -71,8 +71,17 @@ export class WeaponView {
   update(dt,{ads,moving,sprinting,time,reloading,offhand=0}) {
     if(!this.root)return;
     this.actionElapsed+=dt;
-    while(this.queue.length&&this.queue[0].due<=this.actionElapsed){const n=this.queue.shift(),alias=(this.weapon.definition.notetrackSoundMap||'').split('\n').find(l=>l.split(/\s+/)[0]===n.name)?.split(/\s+/)[1];if(alias)this.audio.play(alias);}
+    while(this.queue.length&&this.queue[0].due<=this.actionElapsed){const n=this.queue.shift(),alias=n.name.startsWith('sndnt#')?n.name.slice(6):(this.weapon.definition.notetrackSoundMap||'').split('\n').find(l=>l.split(/\s+/)[0]===n.name)?.split(/\s+/)[1];if(alias)this.audio.play(alias);}
     if(this.rechamberAt>0){this.rechamberAt-=dt;if(this.rechamberAt<=0)this.play(ads>.8?this.weapon.definition.adsRechamberAnim:this.weapon.definition.rechamberAnim,this.weapon.definition.rechamberTime);}
+    const d=this.weapon.definition,target=sprinting&&moving&&ads<.1&&!reloading&&!offhand&&this.meleeRemaining<=0?1:0;
+    // Black Ops weapons sprint with their own clips (in, loop, out; empty
+    // variants at zero ammo) instead of WaW's procedural sprint offsets.
+    if(d.sprintLoopAnim&&this.clips.has(d.sprintLoopAnim)){
+      const empty=!this.weapon.clip,clip=(full,emptyName)=>empty&&this.clips.has(emptyName)?emptyName:full;
+      if(target&&(!this.sprintAnim||this.sprintAnim==='out')){this.play(clip(d.sprintInAnim,d.sprintInEmptyAnim),d.sprintInTime||.3,false,true);this.sprintAnim='in';}
+      else if(target&&this.sprintAnim==='in'&&this.actionElapsed>=this.actionDue){this.play(clip(d.sprintLoopAnim,d.sprintLoopEmptyAnim),d.sprintLoopTime||0,true);this.sprintAnim='loop';}
+      else if(!target&&(this.sprintAnim==='in'||this.sprintAnim==='loop')){this.play(clip(d.sprintOutAnim,d.sprintOutEmptyAnim),d.sprintOutTime||.3);this.sprintAnim='out';}
+    }
     const idle=this.weapon.clip?this.weapon.definition.idleAnim:this.weapon.definition.emptyIdleAnim,name=this.current?.getClip().name;
     // Physics can refill the magazine just after the rendered reload clip ends.
     // A looping empty idle must then change back to the loaded idle pose.
@@ -80,7 +89,6 @@ export class WeaponView {
     this.meleeRemaining=Math.max(0,this.meleeRemaining-dt);this.knife.visible=this.meleeRemaining>0;
     if(this.adsAction){this.adsAction.time=this.adsAction.getClip().duration;this.adsAction.setEffectiveWeight(reloading||this.meleeRemaining>0?0:ads*(1-offhand));}
     this.mixer.update(dt);
-    const d=this.weapon.definition,target=sprinting&&moving&&ads<.1&&!reloading&&!offhand&&this.meleeRemaining<=0?1:0;
     this.sprintBlend=THREE.MathUtils.clamp(this.sprintBlend+(target?1:-1)*dt/(target?d.sprintInTime||.3:d.sprintOutTime||.3),0,1);
     const blend=this.sprintBlend*this.sprintBlend*(3-2*this.sprintBlend),phase=time*2*Math.PI/(d.sprintLoopTime||.65);
     const bob=moving?(1-ads*.85):0,h=.12*(1-blend)+blend*(d.sprintBobH||6)*.08,v=.12*(1-blend)+blend*(d.sprintBobV||8)*.08;

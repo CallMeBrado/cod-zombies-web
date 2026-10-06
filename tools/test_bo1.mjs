@@ -29,6 +29,20 @@ for(const alias of ['mx_splash_screen','chalk','round_over','wpn_colt45_fire_plr
   for(const entry of entries){const b=await readFile(new URL('../local-data/'+entry.url.slice(6),import.meta.url));assert.equal(b.toString('ascii',0,4),'RIFF');assert.equal(b.toString('ascii',8,12),'WAVE');}
   report.audio.push(alias);
 }
+// Viewmodel clips name their own sounds (sndnt#alias): every reload, bolt and
+// gear notetrack resolves to a converted sound, and each gun has sprint clips.
+const notetrackAliases=new Set();
+for(const w of Object.values(manifest.weapons)){
+  if(!w.sprintLoopAnim)continue;
+  for(const name of [w.reloadAnim,w.reloadEmptyAnim].filter(Boolean)){
+    let data=null;for(const zone of ['bo1-kino','bo1-common','bo1-base'])try{data=await read(zone+'/web-anims/'+name+'.json');break;}catch{}
+    if(data)for(const n of data.notifies||[])if(n.name.startsWith('sndnt#'))notetrackAliases.add(n.name.slice(6));
+  }
+}
+assert(notetrackAliases.size>20,'Reload clips carry sound notetracks');
+const unresolved=[...notetrackAliases].filter(a=>!manifest.sounds[a]);assert(unresolved.length<=notetrackAliases.size*.1,'Reload notetrack sounds missing: '+unresolved.join(', '));
+for(const alias of ['fly_colt45_mag_out','fly_colt45_mag_in','fly_gear_reload_plr'])assert(manifest.sounds[alias]?.length,'Missing reload sound: '+alias);
+assert.equal(manifest.weapons.m1911_zm.sprintLoopAnim,'viewmodel_colt1911_sw_sprint_loop');report.reloadNotetrackSounds=notetrackAliases.size-unresolved.length;
 assert(Object.keys(presentation.effects).length>=5);assert(presentation.actors.body.startsWith('c_ger_'));
 assert.equal(manifest.weapons.ray_gun_zm.maxAmmo,160);assert.equal(manifest.weapons.thundergun_zm.maxAmmo,12);
 assert.equal(manifest.entities.find(e=>e.zombie_weapon_upgrade==='m14_zm').zombie_cost,'500');assert.equal(manifest.entities.find(e=>e.zombie_weapon_upgrade==='mp40_zm').zombie_cost,'1000');
