@@ -1,0 +1,26 @@
+:root{--bo-accent:#d5ba64;font-family:'Arial Narrow',Arial,sans-serif}
+body[data-game=black-ops] #overlay{background:#07090abf;backdrop-filter:blur(2px);font-family:'Arial Narrow',Arial,sans-serif}
+body[data-game=black-ops][data-menu-context=start] #overlay{background:linear-gradient(90deg,#040607ed,#07090abb 50%,#050608b0),url('/data/gameplay/bo1-kino/hud/loadscreen_zombie_theater.png') center/cover no-repeat;backdrop-filter:none}
+body[data-game=black-ops] #overlay::before{background:linear-gradient(#080b0dee,#080b0d44);border-bottom:1px solid #9b916344}
+body[data-game=black-ops] #overlay::after{background:linear-gradient(transparent,#000c)}
+body[data-game=black-ops] #screen-title{left:calc(var(--unit)*52);right:auto;top:calc(var(--unit)*67);font:700 calc(var(--unit)*30)/1 Arial,sans-serif;letter-spacing:calc(var(--unit)*2);color:#ddd}
+body[data-game=black-ops]:not([data-menu-view=home]) #screen-title{top:calc(var(--unit)*26)}
+body[data-game=black-ops] #waw-brand{color:#eee}
+body[data-game=black-ops] #waw-brand strong{font-family:Impact,'Arial Narrow',sans-serif;font-size:calc(var(--unit)*28);letter-spacing:calc(var(--unit)*2)}
+body[data-game=black-ops] #waw-brand span{font-family:Arial,sans-serif;font-size:calc(var(--unit)*8);letter-spacing:calc(var(--unit)*1.5)}
+body[data-game=black-ops] #lobby-players{top:calc(var(--unit)*130);font:calc(var(--unit)*15)/1.4 Arial,sans-serif}
+body[data-game=black-ops] .lobby-player-row{background:linear-gradient(90deg,#aca38833,#1d202122);border-left:2px solid var(--bo-accent);color:#eee;padding:calc(var(--unit)*10)}
+body[data-game=black-ops] #overlay button,body[data-game=black-ops] #overlay .pause-actions a{font:700 calc(var(--unit)*17)/1.1 'Arial Narrow',Arial,sans-serif;letter-spacing:calc(var(--unit)*.7);height:calc(var(--unit)*28);text-align:left;padding:0 calc(var(--unit)*10);color:#a9abad;background:transparent;cursor:pointer}
+body[data-game=black-ops] #overlay button::before,body[data-game=black-ops] #overlay .pause-actions a::before{mask:none;display:none}
+body[data-game=black-ops] #overlay button:hover,body[data-game=black-ops] #overlay button:focus-visible,body[data-game=black-ops] #overlay .pause-actions a:hover{color:var(--bo-accent);background:linear-gradient(90deg,#ddd2,transparent);outline:none}
+body[data-game=black-ops] #overlay button:disabled{color:#65696b;cursor:default}
+body[data-game=black-ops] .map-info{top:calc(var(--unit)*130)}
+body[data-game=black-ops] .map-info h2{color:#ddd;letter-spacing:calc(var(--unit)*1);font-family:Arial,sans-serif}
+body[data-game=black-ops] .pause-actions{left:calc(var(--unit)*52);right:auto;top:calc(var(--unit)*150);width:calc(var(--unit)*240)}
+body[data-game=black-ops][data-menu-context=start] .pause-actions{top:calc(var(--unit)*285)}
+body[data-game=black-ops][data-menu-context=pause] .map-info{display:none}
+body[data-game=black-ops] .binding-row{font:calc(var(--unit)*14)/1.2 Arial,sans-serif}
+body[data-game=black-ops] .settings-content h2{font-family:Arial,sans-serif}
+body[data-game=black-ops] input{accent-color:var(--bo-accent)}
+body[data-game=black-ops] #overlay #menu-back{right:calc(var(--unit)*52);width:auto}
+body[data-game=black-ops] #menu-mods{border-color:#baac7755}

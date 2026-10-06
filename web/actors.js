@@ -6,7 +6,7 @@ import {PosedTrace} from './posed-trace.js';
 export class ZombieActors {
   constructor(scene,map,presentation){this.scene=scene;this.map=map;this.presentation=presentation;this.pool=[];this.active=new Map();}
   async prepare(){
-    const [bodyTemplate,headTemplate]=await Promise.all([model('char_ger_honorgd_body1_1'),model('char_ger_honorgd_zombiehead1_1')]);
+    const [bodyTemplate,headTemplate]=await Promise.all([model(this.presentation.actors?.body||'char_ger_honorgd_body1_1'),model(this.presentation.actors?.head||'char_ger_honorgd_zombiehead1_1')]);
     const body=cloneModel(bodyTemplate),head=cloneModel(headTemplate);
     head.traverse(n=>{if(n.isMesh)n.userData.zombieHead=true;});body.getObjectByName('j_spine4')?.add(head);shadeModel(body,[1,1,1]);
     const clips=new Map(await Promise.all(Object.keys(this.presentation.animations).map(async name=>[name,await originalAnimation(name,body,true)])));

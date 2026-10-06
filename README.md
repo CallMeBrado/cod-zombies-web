@@ -1,12 +1,14 @@
 # CoD Zombies Web
 
-A browser runtime for **Call of Duty: World at War Nazi Zombies**. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copy of the game and plays them in a desktop browser with [three.js](https://threejs.org/).
+A browser runtime for **Call of Duty Zombies**, with World at War and a Black Ops preview. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copies of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
 
-Two maps are playable solo: **Nacht der Untoten** and **Der Riese**.
+World at War has **Nacht der Untoten** and **Der Riese**. The Black Ops browser preview adds **Kino der Toten**, using the installed game's original T5 map and assets.
+
+The collection opens each game's own themed lobby: **World at War** at `/world-at-war/` and **Black Ops** at `/black-ops/`. **Black Ops II** remains **Coming soon**. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
 ![Nacht der Untoten in the browser](docs/images/nacht-gameplay.jpg)
 
-> **Unofficial fan project.** Not affiliated with or endorsed by Activision or Treyarch. No game assets are included in this repository. You need a legally owned copy of *Call of Duty: World at War*; the tools extract assets from your installation into a local, git-ignored folder.
+> **Unofficial fan project.** Not affiliated with or endorsed by Activision or Treyarch. No game assets are included in this repository. You need a legally owned copy of *Call of Duty: World at War* or *Call of Duty: Black Ops* for the maps you play; the tools extract assets from your installation into a local, git-ignored folder.
 
 ---
 
@@ -73,8 +75,8 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Mouse and aim sensitivity, invert, hold/toggle aim.
   - Volume, field of view, render scale, fullscreen.
   - FPS counter.
-- **Save game:** three save slots per map. A save keeps the whole session: live zombies, round progress, drops, timers and map state. Slot cards show a screenshot, the round, points, kills, weapons and perks.
-- **Testing mod menu:** hold Aim and press Knife. It has god mode, unlimited points, ammo and grenades, a weapon selector and a round selector.
+- **Save game:** three named server slots per map, shared by everyone who has access to the site, with no extra sign-in. Pause → SAVE GAME, enter a name, then choose a slot. Resume from LOAD GAME on any browser or device. Saves keep live zombies, round progress, drops, timers and map state, with thumbnail and statistics. Files live under `local-data/saves/` on E: and persist across server restarts; existing browser saves import into empty slots once. A changed slot rejects stale writes from another device; overwrites and deletions retain a recovery backup.
+- **Testing mod menu:** choose MOD MENU from the pause menu. It has god mode, unlimited points, ammo and grenades, a weapon selector and a round selector.
 - **Network play:** other devices on your local network can connect. Each browser runs its own solo game.
 
 ### Working: Der Riese
@@ -93,7 +95,24 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Plays the knuckle-crack animation while your gun rolls into the machine.
   - The upgraded gun comes back out with a ticking timer; leave it 15 seconds and it's gone.
 
-### In progress or not yet implemented
+### Black Ops: Kino der Toten preview
+
+The dedicated T5 runtime uses Kino's original theater geometry, packed HDR lighting, collision, navigation, weapon rigs, animation clips and decoded sound banks. It implements BO1 round counts, wall purchases, mystery box cycling, perks, three solo Quick Revives, power and the linked teleporter's 30-second projection-room visit and automatic return. Native firearms include burst fire and Pack-a-Punch variants. The preview also has pause/settings, the testing menu and shared named server saves.
+
+This is a browser reimplementation, not the original executable or complete BO1 engine. Hellhound rounds, Nova crawlers, traps, film reels, Mustang & Sally and full wonder-weapon projectile/effect fidelity are still pending. Ray Gun splash and the Thunder Gun cone currently use simplified combat behavior.
+
+To prepare BO1 from the installed game on E: after installing the existing OAT toolchain:
+
+```powershell
+python -B tools/extend_bo1_exporter.py
+& tools/build_exporter.ps1
+python -B tools/extract_bo1.py
+npm run prepare:bo1
+```
+
+Extraction, conversion, prepared packs and navigation remain under this project on E:. `npm run test:bo1` checks the native floor, ammo, rounds, interactions and sounds; `npm run test:saves` checks server persistence and sharing.
+
+### WaW: in progress or not yet implemented
 
 | Area | Status |
 |---|---|
@@ -106,9 +125,9 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
 | **Quick Revive** | Can't be bought solo, matching WaW, where it only speeds up reviving teammates. |
 | **Effects** | Lightning "trail" elements are drawn as camera-facing sprites rather than true ribbons. |
 | **Sound ranges** | The extracted sound definitions have no min/max distances, so hearing ranges are chosen per sound type. |
-| **Saves** | Stored per browser (`localStorage`). Can't save mid-drink, during Pack-a-Punch or with a grenade in hand. |
+| **Saves** | Can't save mid-drink, during Pack-a-Punch, with a grenade in hand or during a burst. Save after the action finishes. |
 | **Multiplayer** | Solo only. There's no co-op and no last stand: going down ends the game. |
-| **Other maps** | Verrückt, Shi No Numa and Black Ops maps (for example Kino der Toten) haven't been started. |
+| **Other maps** | Verrückt, Shi No Numa, additional Black Ops maps and Black Ops II haven't been started. |
 | **Setup automation** | Der Riese extraction isn't scripted yet; see [Setup](#setup). |
 
 ---
@@ -182,7 +201,7 @@ python -B tools\extract_game.py --game-dir "D:\Games\Call of Duty World at War"
 npm start
 ```
 
-Then open **http://127.0.0.1:8789**. On Windows you can double-click **`Play Zombies.cmd`** instead: it prepares the map packs, starts the server in the background and opens your browser.
+Then open **http://127.0.0.1:8789** and choose **World at War**. On Windows you can double-click **`Play Zombies.cmd`** instead: it prepares the map packs, starts the server in the background and opens your browser.
 
 The first load downloads and caches the map packs (roughly 100 MB for Nacht and 150 MB for Der Riese, compressed). After that, reloads take a couple of seconds.
 
@@ -227,7 +246,7 @@ If Windows Firewall is enabled, allow inbound TCP on that port for `node.exe` on
 
 ### Settings and saves
 
-Settings, key bindings and the save slots are stored in each browser's local storage. A save made in one browser won't appear in another.
+Settings and key bindings remain specific to each browser. Game saves are stored on the server under `local-data/saves/`, so the same named slots appear on other devices. Everyone who can access the site shares them; no additional sign-in is needed. Back up that folder to preserve the saves. The old browser saves are retained locally and imported into empty server slots once.
 
 ---
 

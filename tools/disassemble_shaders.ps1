@@ -1,3 +1,4 @@
+param([string]$Zone = 'nacht')
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $env:TEMP = Join-Path $taskRoot '.cache\temp'
@@ -22,6 +23,6 @@ public static class WaWShaderReader {
   }
 }
 '@
-foreach ($taskFile in Get-ChildItem -LiteralPath (Join-Path $taskRoot 'local-data\nacht\web-shaders') -Filter '*.cso') {
+foreach ($taskFile in Get-ChildItem -LiteralPath (Join-Path $taskRoot "local-data\$Zone\web-shaders") -Filter '*.cso') {
   [WaWShaderReader]::Read([IO.File]::ReadAllBytes($taskFile.FullName)) | Set-Content -LiteralPath ($taskFile.FullName + '.txt')
 }

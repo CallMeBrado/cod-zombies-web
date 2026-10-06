@@ -6,7 +6,8 @@ import {assetData,assetResponse} from './preload.js';
 import {BakedLightSamples} from './baked-light.js';
 import {selectedMap} from './maps.js';
 import {BulletTrace} from './bullet-trace.js';
-const mapChoice=selectedMap(),assetZones=[...new Set([mapChoice.zone,'common','nacht'])];
+import {decodeKinoLightmap} from './bo1-lighting.js';
+const mapChoice=selectedMap(),assetZones=mapChoice.assetZones||[...new Set([mapChoice.zone,'common','nacht'])];
 
 const dds=new DDSLoader(), textures=new Map(), models=new Map();
 export async function get(url,json=false) {
@@ -48,6 +49,16 @@ async function diffuse(name) {
   throw new Error('Original texture unavailable: '+name);
 }
 function film(shader) {
+  if(mapChoice.game==='black-ops'){
+    // Kino's own zombie_theater.vision saturation, contrast and tint values.
+    shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
+      float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
+      outgoingLight=mix(vec3(luma),outgoingLight,vec3(.6737,.7509,.6105));
+      outgoingLight=mix(vec3(.8843,.9473,1.0106),vec3(.9996,.9996,1.0101),smoothstep(.182469,.463125,luma))*outgoingLight;
+      outgoingLight=max(vec3(0.),(outgoingLight-.18)*1.0176+.18)*.5;
+      gl_FragColor.rgb=outgoingLight;
+      #include <tonemapping_fragment>`);return;
+  }
   // Recovered zombie.vision: 40% desaturation, cool shadows, light tint 2.
   shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
     float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
@@ -119,10 +130,16 @@ export async function loadMap(scene,progress) {
     for(let k=0;k<3;k++)colors[i*3+k]=view.getUint8(i*32+28+k)/255;
   }
   const lights=await get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.lights.json',true),lightmaps=[];
-  for(const lm of world.lightmaps) {
+  for(const [index,lm] of world.lightmaps.entries()) {
     const load=async name=>{const t=decode(await get('/data/'+mapChoice.zone+'/images/'+encodeURIComponent(name.replace(/^\*/, '_'))+'.dds'));
       t.colorSpace=THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;t.channel=1;return t;};
-    lightmaps.push({primary:await load(lm.primary),secondary:await load(lm.secondary)});
+    if(mapChoice.game==='black-ops'){
+      const native=world.nativeLightmaps[index],folder='/data/'+mapChoice.zone+'/web-world/';
+      const [a,b]=await Promise.all([get(folder+native.secondary.file),get(folder+native.secondaryB.file)]);
+      const secondary=new THREE.DataTexture(decodeKinoLightmap(a,b,native.secondary.width,native.secondary.height),native.secondary.width,native.secondary.height,THREE.RGBAFormat,THREE.FloatType);
+      secondary.colorSpace=THREE.NoColorSpace;secondary.minFilter=secondary.magFilter=THREE.LinearFilter;secondary.channel=1;secondary.needsUpdate=true;
+      lightmaps.push({primary:await load(lm.primary),secondary});
+    }else lightmaps.push({primary:await load(lm.primary),secondary:await load(lm.secondary)});
   }
   // Every primary light's parameters in one float texture (4 RGBA texels per
   // light), looked up per vertex. Per-light uniforms used to split each
@@ -154,14 +171,14 @@ export async function loadMap(scene,progress) {
       }
       if(lm&&!emissive){
         Object.assign(shader.uniforms,{wawPrimary:{value:lm.primary},wawNormal:{value:arrays?map:(normal||map)},wawHasNormal:{value:hasNormal},wawLights:{value:lightTexture}});
-        shader.vertexShader='attribute float wawLight; varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;\n'+shader.vertexShader;
+        shader.vertexShader='attribute float wawLight; varying vec2 wawSurfaceUv; varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;\n'+shader.vertexShader;
         shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
-          wawWorldPos=(modelMatrix*vec4(position,1.)).xyz;
+          wawSurfaceUv=uv;wawWorldPos=(modelMatrix*vec4(position,1.)).xyz;
           wawWorldNormal=normalize(mat3(modelMatrix)*normal);
           wawLightIndex=int(wawLight+.5);`);
-        shader.fragmentShader=`varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;
+        shader.fragmentShader=`varying vec2 wawSurfaceUv; varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;
           uniform sampler2D wawPrimary,wawNormal; uniform bool wawHasNormal; uniform highp sampler2D wawLights;\n`+shader.fragmentShader;
-        const normalSample=arrays?.normal?'texture(wawNormalArray,vec3(vMapUv,vWawNormalLayer))':'texture2D(wawNormal,vMapUv)';
+        const normalSample=arrays?.normal?'texture(wawNormalArray,vec3(wawSurfaceUv,vWawNormalLayer))':'texture2D(wawNormal,wawSurfaceUv)';
         shader.fragmentShader=shader.fragmentShader.replace('vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );',`
           // The recovered T4 shader samples ambient RGB in the upper half and
           // directional RGB in the lower half; their alpha channels encode XY.
@@ -277,7 +294,7 @@ export async function loadMap(scene,progress) {
     samples.push({p,uv:[uv1[i*2],uv1[i*2+1]],lm:lightmaps[s.lightmap]});
   }}
   const lighting=new BakedLightSamples(samples);
-  const texel=(t,u,v)=>{const {data,width,height}=t.image;const offset=(Math.min(height-1,Math.max(0,Math.floor(v*height)))*width+Math.min(width-1,Math.max(0,Math.floor(u*width))))*4;return Array.from(data.slice(offset,offset+4),x=>x/255);};
+  const texel=(t,u,v)=>{const {data,width,height}=t.image;const offset=(Math.min(height-1,Math.max(0,Math.floor(v*height)))*width+Math.min(width-1,Math.max(0,Math.floor(u*width))))*4;return Array.from(data.slice(offset,offset+4),x=>x/(t.type===THREE.FloatType?1:255));};
   const illumination=position=>{
     const best=lighting.nearest(position);
     if(!best)return [.08,.10,.13];const a=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5),b=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5+.5);
@@ -405,6 +422,11 @@ export class OriginalAudio {
   }
   startSession() {
     this.stopSession();
+    if(mapChoice.game==='black-ops'){
+      const startAt=this.context.currentTime+.1;this.play('mx_splash_screen',1,{when:startAt});
+      this.play('mx_zombie_wave_1',.35,{when:startAt+11.1,loop:true});
+      this.session={introStartsAt:startAt};return;
+    }
     // Nacht requests SPLASH_SCREEN after one second and WAVE_1 immediately
     // afterwards, but its musicWaitTillDone keeps the intro playing to completion.
     const startAt=this.context.currentTime+1;

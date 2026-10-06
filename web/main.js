@@ -13,19 +13,24 @@ import {CombatEffects} from './combat-effects.js';
 import {GameSettings,GameInput,bindingName} from './settings.js';
 import {PauseMenu} from './pause-menu.js';
 import {GrenadeView} from './grenade-view.js';
-import {selectedMap} from './maps.js';
+import {selectedMap,MAPS,BO1_MAPS} from './maps.js';
 import {ZombiesLobby} from './lobby.js';
-import {SaveStore,SaveSlots} from './save-slots.js';
+import {SaveSlots} from './save-slots.js';
 import {PERKS} from './map-rules.js';
 import {powerSwitchRotation} from './factory-view.js';
+import {PauseKeys} from './pause-keys.js';
+import {BlackOpsEngine} from './bo1-engine.js';
+import {BlackOpsHud} from './bo1-hud.js';
+import {ServerSaveStore} from './server-saves.js';
 const mapChoice=selectedMap();
+const blackOps=mapChoice.game==='black-ops';
 
 const $=id=>document.getElementById(id);
 const canvas=$('viewport'),scene=new THREE.Scene();scene.background=new THREE.Color(0x10171c);scene.fog=new THREE.FogExp2(0x26313a,.00022);
 scene.add(new THREE.AmbientLight(0xa8bac9,.2));
 let storage;try{storage=localStorage;}catch{}
 const settings=new GameSettings(storage);
-const saves=new SaveStore(storage);
+const saves=new ServerSaveStore(storage,blackOps?BO1_MAPS:MAPS);
 const worldFov=value=>THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(value)/2)*.75));
 let baseFov=worldFov(settings.value.fov);
 const camera=new THREE.PerspectiveCamera(baseFov,innerWidth/innerHeight,1,18000);camera.up.set(0,0,1);
@@ -33,7 +38,7 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixe
 renderer.info.autoReset=false;renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*settings.value.renderScale/100);
 const viewScene=new THREE.Scene();
 const viewCamera=new THREE.PerspectiveCamera(worldFov(65),innerWidth/innerHeight,.1,300);
-const hud=new OriginalHud($('hud-art')),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene);
+const hud=new (blackOps?BlackOpsHud:OriginalHud)($('hud-art')),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene);
 const visuals=new Map(),dynamic=new Map(),dropVisuals=new Map();
 const state={ready:false,mode:'menu',inputMode:'idle',yaw:Math.PI,pitch:0,loading:'map',fps:0,error:null};
 let game,audio,map,weaponView,grenadeView,actors,effects,presentation;
@@ -42,16 +47,17 @@ let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
 let deathFxTime=0,frameMsTotal=0;
 const loops=new Map();let papView=null,shake=null;
+const pauseKeys=new PauseKeys();
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
-  ({reload:()=>game.reload(),melee:()=>{if(controls.aiming)openMods();else game.melee();},use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
+  ({reload:()=>game.reload(),melee:()=>game.melee(),use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
 },action=>{if(action==='grenade'&&state.mode==='playing')game.releaseGrenade();});
 const mouse=new MouseControls(canvas,document,{mode:()=>({playing:state.mode==='playing',inputMode:state.inputMode,aiming:controls.toggledAim||settings.value.aimMode==='hold'&&settings.value.bindings.aim.some(t=>t&&!t.startsWith('Mouse')&&controls.tokens.has(t))}),buttons:b=>settings.mouseActions(b),fire:()=>game.fire()});
 const pauseMenu=new PauseMenu(settings,{openSaves:mode=>saveSlots.open(mode),saveCount:()=>saves.count(),resume:enterPlay,restart:()=>{game.newGame();resetVisuals();enterPlay();},quit:()=>{game.newGame();resetVisuals();menu(mapChoice.title,'Solo Zombies');}});
 const lobby=new ZombiesLobby(pauseMenu);
 const saveSlots=new SaveSlots(pauseMenu,saves,{currentMap:mapChoice.id,canSave:saveBlocked,save:saveGame,load:loadSlot,weaponName:n=>game?game.weaponName(n):n});
 const testingMenu=new TestingMenu(pauseMenu,()=>state.ready?game:null);
-canvas.setAttribute('aria-label',mapChoice.title+' Zombies game');document.title='WaW Zombies - '+mapChoice.title;
+canvas.setAttribute('aria-label',mapChoice.title+' Zombies game');document.title=(blackOps?'Black Ops':'WaW')+' Zombies - '+mapChoice.title;
 settings.subscribe(value=>{baseFov=worldFov(value.fov);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*value.renderScale/100);renderer.setSize(innerWidth,innerHeight);if(audio)audio.volume=value.volume;controls.reset();mouse.reset();inputHint();});
 const nodePos=e=>e.origin.split(/\s+/).map(Number);
 
@@ -67,14 +73,15 @@ function menu(title,description,button='Resume game') {
   audio?.suspend();
   $('menu-copy').textContent=game&&game.phase!=='ready'?'Round '+(game.round||1)+' · '+game.player.kills+' kills':description;
   pauseMenu.setContext(game&&game.phase!=='ready'?'pause':'start');
+  if(state.inputMode==='locked')state.lockLostAt=performance.now();state.inputMode='idle';
   if(document.pointerLockElement)document.exitPointerLock();
 }
-// Three save slots per map (localStorage). A save snapshots the whole session.
+// Three named server slots per map. A save snapshots the whole session.
 function saveBlocked(){return game?.canSave()?null:'Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';}
 function slotSummary(){
   const g=game,r=g.mapRules;
   return {round:g.round,phase:g.phase,points:g.player.points,kills:g.player.kills,headshots:g.player.headshots,health:Math.round(g.player.health),
-    weapons:g.inventory.map(w=>g.weaponName(w.name)),perks:r?[...r.perks].map(p=>PERKS[p]?.name||p):[],power:r?r.power:null,links:r?r.links.size:null,
+    weapons:g.inventory.map(w=>g.weaponName(w.name)),perks:r?[...r.perks].map(p=>PERKS[p]?.name||p):[],power:r?r.power:null,links:r?(blackOps?Number(r.teleporterLinked):r.links.size):null,teleporterTotal:blackOps?1:3,
     zombies:g.enemies.filter(e=>!e.dead).length,remaining:g.phase==='round'?g.remaining:0,doors:[...g.opened].filter(t=>g.interactions.some(e=>e.target===t)).length,playTime:Math.round(g.elapsed)};
 }
 // The slot card's picture: the current view, drawn now (the drawing buffer is
@@ -88,10 +95,10 @@ function captureThumb(){
     c.getContext('2d').drawImage(src,(src.width-sw)/2,(src.height-sh)/2,sw,sh,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.72);
   }catch{return null;}
 }
-function saveGame(slot){
+async function saveGame(slot,name){
   const blocked=saveBlocked();if(blocked)return {ok:false,message:blocked};
-  const summary=slotSummary(),save={map:mapChoice.id,title:mapChoice.title,slot,savedAt:Date.now(),summary,thumb:captureThumb(),state:game.saveState()};
-  try{saves.put(mapChoice.id,slot,save);}catch{return {ok:false,message:'This browser blocked saving the game (storage is full or disabled).'};}
+  const summary=slotSummary(),save={map:mapChoice.id,title:mapChoice.title,name:name?.trim()||'Round '+summary.round,slot,savedAt:Date.now(),summary,thumb:captureThumb(),state:game.saveState()};
+  try{await saves.put(mapChoice.id,slot,save);}catch(error){return {ok:false,message:error.message||'Unable to save to the server. Your game is still paused.'};}
   const detail=`Slot ${slot+1} · ${mapChoice.title} · Round ${summary.round} · ${summary.points.toLocaleString('en-US')} points`;
   saveToast(detail);$('message').textContent='Game saved to slot '+(slot+1)+'. Load it from the main menu.';
   return {ok:true,message:`Saved to slot ${slot+1}. ${summary.zombies} zombie${summary.zombies===1?'':'s'} and the whole map were kept as they are.`};
@@ -102,21 +109,20 @@ function saveToast(detail){
   toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show');
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),3600);
 }
-function loadSlot(map,slot,play=true){
+async function loadSlot(map,slot,play=true){
+  const mode=state.mode;await saves.refresh();if(state.mode!==mode)return;
   const save=saves.get(map,slot);if(!save||!state.ready||state.mode==='starting')return;
   if(map!==mapChoice.id){const url=new URL(location.href);url.searchParams.set('map',map);url.searchParams.set('load',String(slot+1));location.assign(url.href);return;}
-  // Synchronous from the click, so enterPlay can still capture the mouse.
+  // Restore only after refreshing the server's current slot revision.
   game.loadState(save.state);state.yaw=save.state.yaw;state.pitch=save.state.pitch;cameraPose();
   if(play)enterPlay();else{menu('Paused',mapChoice.title);$('message').textContent=`Loaded slot ${slot+1} · Round ${save.summary?.round}. Resume when you're ready.`;}
 }
 function keyName(action){return bindingName(settings.value.bindings[action].find(Boolean));}
-function openMods(){if(state.mode!=='playing')return;menu('Paused',mapChoice.title);testingMenu.sync();pauseMenu.show('mods');}
 function inputHint(){const fire=settings.value.bindings.fire.filter(Boolean).map(bindingName).join(' / ')||'UNBOUND';$('input-mode').textContent=(state.inputMode==='locked'?'Mouse to look':state.inputMode==='drag'?(state.lockUnsupported?'Drag to look':'Click to capture mouse'):'Mouse capture where supported')+' · '+fire+' fire';}
 function enableDrag(){if(state.mode==='menu'||state.mode==='dead')return;state.inputMode='drag';canvas.focus();inputHint();}
-// Browsers refuse capture requested from Esc (closing the mods/pause menu) and
-// briefly after the cursor was released. Only a refused click well after that
-// means capture is unavailable (embedded previews); then drag-to-look stays.
-function requestMouse(source){state.lockSource=source;try{const result=canvas.requestPointerLock();if(result?.catch)result.catch(lockRefused);}catch{lockRefused();}}
+// Escape resumes without capturing the mouse while the key is held. A later
+// click recaptures it; temporary browser refusals do not reopen the pause menu.
+function requestMouse(source){if(!pauseKeys.canCaptureMouse){enableDrag();return;}state.lockSource=source;try{const result=canvas.requestPointerLock();if(result?.catch)result.catch(lockRefused);}catch{lockRefused();}}
 function lockRefused(){if(state.lockSource==='click'&&performance.now()-(state.lockLostAt||-Infinity)>1500)state.lockUnsupported=true;enableDrag();}
 async function enterPlay() {
   if(state.mode==='starting')return;
@@ -145,9 +151,18 @@ function barrier(w) {
   for(const item of meshes)if(item.entity.script_noteworthy!=='clip')item.object.visible=board++<w.boards;
 }
 function factoryVisuals(){
-  if(mapChoice.id!=='der-riese')return;const powered=!!game?.mapRules?.power;
+  if(mapChoice.id!=='der-riese'&&!blackOps)return;const powered=!!game?.mapRules?.power;
   for(const [target,angle]of [['wnuen_bridge',Math.PI/2],['warehouse_bridge',-Math.PI/2]])for(const item of dynamic.get(target)||[])item.object.rotation.y=powered?0:angle;
   for(const item of dynamic.get('power_switch')||[])item.object.rotation.set(...powerSwitchRotation(item.entity.angles,powered,game?.time||0,game?.mapRules?.powerStartedAt),'ZYX');
+  if(blackOps&&game){
+    const active=game.entities.find(e=>e.targetname===game.data.map.initialBox),at=active&&nodePos(active);
+    for(const items of dynamic.values())for(const item of items){
+      if(game.opened.has(item.entity.targetname))item.object.visible=false;
+      if(at&&/zombie_treasure_box/.test(item.entity.model||''))item.object.visible=item.object.position.distanceTo(new THREE.Vector3(...at))<150;
+      if(item.entity.targetname==='teleporter_link_cable_on')item.object.visible=game.mapRules.teleporterLinked;
+      if(item.entity.targetname==='teleporter_link_cable_off')item.object.visible=!game.mapRules.teleporterLinked;
+    }
+  }
 }
 function open(e) {
   const targets=e.target.includes('upstairs')?['upstairs_blocker','upstairs_blocker2']:[e.target];
@@ -276,6 +291,7 @@ async function init() {
   const began=performance.now();
   const progress=text=>{$('message').textContent=text;state.loading=text;};
   await preloadAssets(progress);
+  try{await saves.prepare();}catch(error){state.savesError=error.message;}
   const [manifest,collision,paths,recovered,navigation,powerNavigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true),mapChoice.id==='der-riese'?get('/data/'+mapChoice.data+'/power-navigation.json',true).catch(()=>null):null]);presentation=recovered;
   map=await loadMap(scene,progress);progress('Loading original weapons and Zombies…');await dynamicAssets(manifest.entities);
   audio=new OriginalAudio(manifest.sounds);audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
@@ -285,7 +301,7 @@ async function init() {
     ...Object.entries(presentation.powerups).map(async([type,name])=>{const object=cloneModel(await model(name));shadeModel(object,[.9,.9,.9]);dropTemplates.set(type,object);})]);
   await prepareBox(manifest);preparePap(manifest);
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
-  game=new TestingGame(manifest,new CollisionWorld(collision,manifest.entities),paths,{
+  game=new (blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     bindingName:keyName,
     message:notice,spawn:spawnVisual,
     removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
@@ -300,7 +316,7 @@ async function init() {
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
-  factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);await audio.preload();resetVisuals();cameraPose();
+  factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps)game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);await audio.preload();resetVisuals();cameraPose();
   const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(actors.warmObject(),...dropTemplates.values());
   const warmFx=effects.create('misc/fx_zombie_powerup_on',0);warmScene.add(warmFx);
   for(const v of boxVisuals.values())for(const object of v.choices.values())object.visible=true;
@@ -323,16 +339,16 @@ async function init() {
   renderer.setRenderTarget(sceneTarget);renderer.render(scene,camera);renderer.setRenderTarget(null);sceneTarget.dispose();
   for(const s of sceneRestore){s.n.visible=s.visible;s.n.frustumCulled=s.culled;if(s.count!==undefined)s.n.count=s.count;}
   state.sceneWarmMs=Math.round(performance.now()-warmStarted);
-  await pauseMenu.prepare(hud);state.ready=true;lobby.ready();testingMenu.sync();state.loading='complete';$('play').disabled=false;pauseMenu.setContext('start');
+  if(!blackOps)await pauseMenu.prepare(hud);state.ready=true;lobby.ready();testingMenu.sync();state.loading='complete';$('play').disabled=false;pauseMenu.setContext('start');
   const saved=saves.count();$('message').textContent='Map loaded and ready. Restarting keeps it loaded.'+(saved?` ${saved} saved game${saved===1?'':'s'} · Load Game to continue.`:'');$('stats').textContent=mapChoice.title+' ready · Build '+document.documentElement.dataset.build.slice(0,8);state.build=document.documentElement.dataset.build;state.preload=preloadState;state.readyMs=performance.now()-began;updateHud();
   // Arriving from another map's Load Game: restore the slot, paused.
   const load=Number(new URLSearchParams(location.search).get('load'));
-  if(load){const url=new URL(location.href);url.searchParams.delete('load');history.replaceState(null,'',url.href);loadSlot(mapChoice.id,load-1,false);}
+  if(load){const url=new URL(location.href);url.searchParams.delete('load');history.replaceState(null,'',url.href);try{await loadSlot(mapChoice.id,load-1,false);}catch(error){notice(error.message);}}
 }
 $('play').addEventListener('click',()=>{if(!state.ready)return;if(game.phase==='dead'){game.newGame();resetVisuals();}enterPlay();});
 document.addEventListener('pointerlockchange',()=>{
   if(document.pointerLockElement===canvas){state.inputMode='locked';state.lockUnsupported=false;canvas.focus();inputHint();}
-  else if(state.inputMode==='locked'){state.inputMode='idle';state.lockLostAt=performance.now();if(state.mode==='playing')menu('Paused','Your session is paused. Resume when you’re ready.');}
+  else if(state.inputMode==='locked'){state.inputMode='idle';state.lockLostAt=performance.now();if(state.mode==='playing'){pauseKeys.nativePause();menu('Paused','Your session is paused. Resume when you’re ready.');}}
 });
 document.addEventListener('pointerlockerror',lockRefused);
 // Capture phase runs before the fire/aim handlers: an uncaptured click
@@ -348,17 +364,17 @@ document.addEventListener('mousemove',event=>{
 });
 const code=e=>e.code||(e.key.length===1?'Key'+e.key.toUpperCase():e.key);
 addEventListener('keydown',event=>{
-  const key=code(event);if(key==='Escape'){event.preventDefault();if(event.repeat)return;if(state.mode==='playing')menu('Paused',mapChoice.title);else if(state.ready&&state.mode!=='starting')pauseMenu.back();return;}
+  const key=code(event);if(key==='Escape'){event.preventDefault();if(!pauseKeys.down(event.repeat))return;if(state.mode==='playing')menu('Paused',mapChoice.title);else if(state.ready&&state.mode!=='starting')pauseMenu.back();return;}
   if(state.mode!=='playing')return;event.preventDefault();controls.press(key,event.repeat);
   if(state.mode==='playing'&&!event.repeat&&settings.actions(key).some(a=>['forward','backward','left','right'].includes(a)))game.update(1/60,input());cameraPose();
 });
-addEventListener('keyup',event=>controls.release(code(event)));
+addEventListener('keyup',event=>{const key=code(event);if(key==='Escape')pauseKeys.up();controls.release(key);});
 canvas.addEventListener('mousedown',event=>{if(state.mode==='playing'){event.preventDefault();controls.press('Mouse'+event.button);}});
 document.addEventListener('mouseup',event=>controls.release('Mouse'+event.button));
 canvas.addEventListener('auxclick',event=>event.preventDefault());
 canvas.addEventListener('wheel',event=>{if(state.mode!=='playing')return;event.preventDefault();const token=event.deltaY<0?'WheelUp':'WheelDown';controls.press(token);controls.release(token);},{passive:false});
-addEventListener('blur',()=>{controls.reset();mouse.reset();if(state.mode==='playing')menu('Paused',mapChoice.title);});
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&state.mode==='playing')menu('Paused','Your session is paused. Resume when you’re ready.');});
+addEventListener('blur',()=>{pauseKeys.reset();controls.reset();mouse.reset();if(state.mode==='playing')menu('Paused',mapChoice.title);});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){pauseKeys.reset();if(state.mode==='playing')menu('Paused','Your session is paused. Resume when you’re ready.');}});
 addEventListener('resize',()=>{for(const c of [camera,viewCamera]){c.aspect=innerWidth/innerHeight;c.updateProjectionMatrix();}renderer.setSize(innerWidth,innerHeight);});
 function input(){return controls.input(mouse.firing);}
 function updateHud() {
@@ -419,4 +435,5 @@ window.wawPreview={state,camera,renderer,scene,get game(){return game;},get map(
   actorAnimations:[...visuals.values()].map(v=>({id:v.enemy.id,stage:v.enemy.stage,animation:v.current,position:v.enemy.position})),ads:aimBlend,
   muzzle:weaponView?.object?.getObjectByName('tag_flash')?.getWorldPosition(new THREE.Vector3()).toArray(),weaponTag:weaponView?.object?.getObjectByName('tag_weapon')?.getWorldPosition(new THREE.Vector3()).toArray(),
   illumination:game&&map?.illumination(game.player.position),aimPoints:[...visuals.values()].filter(v=>!v.enemy.dead).map(v=>({id:v.enemy.id,torso:v.root.getObjectByName('j_spineupper')?.getWorldPosition(new THREE.Vector3()).toArray(),head:v.root.getObjectByName('j_head')?.getWorldPosition(new THREE.Vector3()).toArray()}))})};
+if(blackOps)window.bo1Preview=window.wawPreview;
 cameraPose();requestAnimationFrame(frame);init().catch(error=>{console.error(error);state.error=error.message;$('message').textContent=error.message;$('play').textContent='Unable to start';document.body.classList.add('error');});

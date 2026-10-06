@@ -5,7 +5,7 @@ import {model,cloneModel,originalAnimation,shadeModel} from './assets.js';
 export class GrenadeView {
  constructor(scene,definition){this.scene=scene;this.definition=definition;this.sequence=null;this.root=null;this.phase='idle';}
  async prepare(light){
-  const [hands,grenade]=await Promise.all([model('viewmodel_hands'),model(this.definition.gunModel)]);
+  const [hands,grenade]=await Promise.all([model(this.definition.handsModel||'viewmodel_hands'),model(this.definition.gunModel)]);
   this.object=cloneModel(hands);this.held=cloneModel(grenade);this.object.getObjectByName('tag_weapon').add(this.held);shadeModel(this.object,light.map(c=>Math.max(.09,c*1.5)));
   // Offhand clips omit tag_torso. The engine supplies a neutral torso pose;
   // retaining the generic hands' bind offset pushes the throw offscreen.

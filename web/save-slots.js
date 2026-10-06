@@ -7,10 +7,10 @@ const key=(map,slot)=>`waw-zombies-save-v2:${map}:${slot}`;
 // Three save slots per map in this browser's localStorage. A record holds the
 // game snapshot plus a summary and thumbnail for the slot card.
 export class SaveStore {
-  constructor(storage){this.storage=storage;this.migrate();}
+  constructor(storage,maps=MAPS){this.storage=storage;this.maps=maps;this.migrate();}
   get(map,slot){try{const save=JSON.parse(this.storage?.getItem(key(map,slot))||'null');return save?.state?save:null;}catch{return null;}}
   list(map){return Array.from({length:SLOTS},(_,slot)=>this.get(map,slot));}
-  count(){return MAPS.reduce((sum,m)=>sum+this.list(m.id).filter(Boolean).length,0);}
+  count(){return this.maps.reduce((sum,m)=>sum+this.list(m.id).filter(Boolean).length,0);}
   put(map,slot,save){
     if(!this.storage)throw new Error('unavailable');
     // A full browser quota drops the thumbnail before giving up on the save.
@@ -46,7 +46,11 @@ export class SaveSlots {
   constructor(menu,store,{currentMap,canSave,save,load,weaponName=n=>n}){
     this.menu=menu;this.store=store;this.currentMap=currentMap;this.callbacks={canSave,save,load,weaponName};this.mode='load';this.armed=null;this.justSaved=null;
   }
-  open(mode){this.mode=mode;this.armed=null;this.justSaved=null;this.status('');this.render();}
+  async open(mode){
+    this.mode=mode;this.armed=null;this.justSaved=null;this.nameValue='';this.busy=true;this.status('Loading server saves…');this.render();
+    try{await this.store.refresh?.();this.status('');}catch(error){this.status(error.message,'warn');}
+    finally{this.busy=false;this.render();}
+  }
   status(text,tone=''){const s=$('saves-status');s.textContent=text;s.dataset.tone=tone;}
   arm(action,map,slot){
     clearTimeout(this.disarm);this.armed={action,map,slot};this.render();
@@ -55,11 +59,13 @@ export class SaveSlots {
   isArmed(action,map,slot){return this.armed?.action===action&&this.armed.map===map&&this.armed.slot===slot;}
   render(){
     const root=$('save-slots');root.replaceChildren();
-    const saving=this.mode==='save',blocked=saving?this.callbacks.canSave():null;
+    const saving=this.mode==='save',blocked=this.busy?'Please wait…':saving?this.callbacks.canSave():null;
     $('saves-copy').textContent=saving?(blocked||`Choose a slot for this ${mapById(this.currentMap).title} game. Zombies, the round, your points and everything on the map are kept exactly as they are now.`):
-      'Choose a saved game to continue from the moment it was saved.';
+      'Shared server saves · Choose a game to continue from the moment it was saved.';
     $('saves-copy').dataset.tone=blocked?'warn':'';
-    const maps=saving?[this.currentMap]:[this.currentMap,...MAPS.map(m=>m.id).filter(id=>id!==this.currentMap)];
+    if(saving){const label=el('label','save-name-row');label.htmlFor='save-name';label.append(el('span',null,'Save name'));
+      const input=el('input');input.id='save-name';input.type='text';input.maxLength=80;input.placeholder='e.g. Brad · Round 12';input.value=this.nameValue||'';input.disabled=!!this.busy;input.oninput=()=>this.nameValue=input.value;label.append(input);root.append(label);}
+    const maps=saving?[this.currentMap]:[this.currentMap,...this.store.maps.map(m=>m.id).filter(id=>id!==this.currentMap)];
     for(const map of maps){
       const saves=this.store.list(map);
       if(!saving&&!saves.some(Boolean))continue;
@@ -72,7 +78,7 @@ export class SaveSlots {
     const item=el('div','save-slot');item.setAttribute('role','listitem');
     const armed=this.isArmed(saving?'overwrite':'delete',map,slot),fresh=this.justSaved?.map===map&&this.justSaved.slot===slot;
     item.dataset.state=fresh?'saved':armed?'armed':save?'filled':'empty';
-    const main=el('button','slot-main');main.type='button';main.disabled=saving?blocked:!save;
+    const main=el('button','slot-main');main.type='button';main.disabled=!!this.busy||(saving?blocked:!save);
     const thumb=el('div','slot-thumb');
     if(save?.thumb){const img=el('img');img.src=save.thumb;img.alt='';thumb.append(img);}else thumb.append(el('span','slot-thumb-empty',save?'NO PREVIEW':'EMPTY'));
     if(fresh)thumb.append(menuText('span','slot-stamp','SAVED'));
@@ -80,6 +86,7 @@ export class SaveSlots {
     head.append(menuText('span','slot-name','SLOT '+(slot+1)),el('span','slot-when',save?when(save.savedAt):''));body.append(head);
     if(save){
       const s=save.summary||{};
+      if(save.name)body.append(el('div','slot-save-name',save.name));
       body.append(menuText('div','slot-round','ROUND '+(s.round??'?')));
       const stats=el('div','slot-stats');
       for(const [label,value]of [['Points',number(s.points)],['Kills',number(s.kills)],['Headshots',number(s.headshots)],
@@ -90,7 +97,7 @@ export class SaveSlots {
       // Migrated saves only stored weapon ids.
       const gear=[(s.legacy?s.weapons?.map(this.callbacks.weaponName):s.weapons)?.join(' · ')];
       if(s.perks?.length)gear.push(s.perks.join(', '));
-      if(s.power!=null)gear.push((s.power?'Power on':'Power off')+(s.links!=null?` · ${s.links}/3 teleporters`:''));
+      if(s.power!=null)gear.push((s.power?'Power on':'Power off')+(s.links!=null?` · ${s.links}/${s.teleporterTotal||3} teleporters`:''));
       if(s.doors)gear.push(s.doors+' door'+(s.doors===1?'':'s')+' open');
       if(s.playTime)gear.push(duration(s.playTime)+' played');
       body.append(el('div','slot-gear',gear.filter(Boolean).join('  |  ')));
@@ -98,23 +105,28 @@ export class SaveSlots {
     if(armed)body.append(menuText('div','slot-confirm',saving?'CLICK AGAIN TO OVERWRITE':'CLICK DELETE AGAIN TO ERASE'));
     main.append(thumb,body);
     main.setAttribute('aria-label',`Slot ${slot+1}, `+(save?`${mapById(map).title}, round ${save.summary?.round}, ${save.summary?.points} points, saved ${when(save.savedAt)}`:'empty')+(saving?(save?'. Overwrite':'. Save here'):'. Load'));
-    main.onclick=()=>{
+    main.onclick=async()=>{
+      if(this.busy)return;
       if(saving){
         if(save&&!armed){this.arm('overwrite',map,slot);return;}
         clearTimeout(this.disarm);this.armed=null;
-        const result=this.callbacks.save(slot);
-        if(result.ok){this.justSaved={map,slot};this.status(result.message,'ok');}else this.status(result.message,'warn');
-        this.render();
-      }else if(save)this.callbacks.load(map,slot);
+        this.busy=true;this.status('Saving to the server…');this.render();
+        try{const result=await this.callbacks.save(slot,this.nameValue);if(result.ok){this.justSaved={map,slot};this.status(result.message,'ok');}else{this.status(result.message,'warn');await this.store.refresh?.();}}
+        catch(error){this.status(error.message,'warn');}finally{this.busy=false;this.render();}
+      }else if(save){this.busy=true;this.render();try{await this.callbacks.load(map,slot);}catch(error){this.status(error.message,'warn');}finally{this.busy=false;this.render();}}
     };
     item.append(main);
     if(save&&!saving){
       const remove=menuText('button','slot-delete',this.isArmed('delete',map,slot)?'CONFIRM':'DELETE');remove.type='button';
       remove.setAttribute('aria-label',`Delete slot ${slot+1} save`);
-      remove.onclick=()=>{
+      remove.disabled=!!this.busy;
+      remove.onclick=async()=>{
+        if(this.busy)return;
         if(!this.isArmed('delete',map,slot)){this.arm('delete',map,slot);return;}
-        clearTimeout(this.disarm);this.armed=null;this.store.remove(map,slot);this.status(`Slot ${slot+1} deleted.`);this.render();
-        if(!this.store.count())this.menu.show('home');
+        clearTimeout(this.disarm);this.armed=null;this.busy=true;this.render();
+        try{await this.store.remove(map,slot);this.status(`Slot ${slot+1} deleted.`);if(!this.store.count())this.menu.show('home');}
+        catch(error){this.status(error.message,'warn');try{await this.store.refresh?.();}catch{}}
+        finally{this.busy=false;this.render();}
       };
       item.append(remove);
     }

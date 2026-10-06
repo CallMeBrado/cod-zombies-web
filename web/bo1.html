@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en" data-build="__BUILD__" data-preload="__PRELOAD__">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Black Ops · Zombies</title>
+  <link rel="stylesheet" href="/runtime/__BUILD__/style.css">
+  <script type="importmap">{"imports":{"three":"/vendor/0.186.1/build/three.module.js","three/addons/":"/vendor/0.186.1/examples/jsm/"}}</script>
+  <link rel="stylesheet" href="/runtime/__BUILD__/bo1.css">
+</head>
+<body data-game="black-ops">
+  <canvas id="viewport" tabindex="0" aria-label="Kino der Toten Zombies game"></canvas>
+  <main id="overlay" aria-label="Game menu">
+    <div id="waw-brand" aria-label="Call of Duty: Black Ops"><span data-menu-text>CALL OF DUTY</span><strong data-menu-text>BLACK OPS</strong></div>
+    <h1 id="screen-title" data-menu-text>ZOMBIES</h1>
+    <section id="menu-home">
+      <div class="map-info"><img id="lobby-preview" alt="Selected Zombies map"><h2 id="menu-title" data-menu-text>KINO DER TOTEN</h2><p id="menu-copy">Solo Zombies</p><p id="message" role="status">Preparing map…</p></div>
+      <div id="lobby-players"><div class="lobby-players-heading" data-menu-text>PLAYERS</div><div class="lobby-player-row"><span data-menu-text>PLAYER 1</span><span id="lobby-player-status" data-menu-text>LOADING</span></div></div>
+      <nav class="pause-actions" aria-label="Pause menu">
+        <button id="play" data-menu-text disabled>LOADING…</button>
+        <button id="resume-save" data-menu-text hidden>LOAD GAME</button>
+        <button id="select-map" data-menu-text>SELECT MAP</button>
+        <button id="options" data-menu-text>OPTIONS</button>
+        <button id="mods" data-menu-text hidden disabled>MOD MENU</button>
+        <button id="save-game" data-menu-text hidden>SAVE GAME</button>
+        <button id="restart" data-menu-text hidden>RESTART LEVEL</button>
+        <button id="quit" data-menu-text hidden>QUIT</button>
+        <a id="game-library" href="/" data-menu-text>ALL GAMES</a>
+      </nav>
+    </section>
+    <section id="menu-maps" hidden aria-label="Zombies map selection"><nav id="map-list" role="listbox" aria-label="Maps"></nav><div class="map-detail"><img id="map-preview" alt="Map preview"><h2 id="selected-map-title" data-menu-text></h2><p id="map-description"></p><button id="map-accept" data-menu-text>SELECT MAP</button></div></section>
+    <section id="menu-options" hidden aria-label="Options">
+      <nav class="settings-tabs" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
+        <button id="tab-controls" role="tab" aria-controls="settings-controls" data-menu-text>CONTROLS</button>
+        <button id="tab-mouse" role="tab" aria-controls="settings-mouse" data-menu-text>MOUSE</button>
+        <button id="tab-audio" role="tab" aria-controls="settings-audio" data-menu-text>SOUND</button>
+        <button id="tab-video" role="tab" aria-controls="settings-video" data-menu-text>GRAPHICS</button>
+      </nav>
+      <div class="settings-content">
+        <section id="settings-controls" role="tabpanel" aria-labelledby="tab-controls">
+          <div class="binding-head"><span data-menu-text>ACTION</span><span data-menu-text>PRIMARY</span><span data-menu-text>SECONDARY</span></div>
+          <div id="binding-list" tabindex="0" aria-label="Key bindings"></div>
+          <div class="settings-help">Select a binding, then press a key or mouse button. Esc cancels; Backspace clears. Esc always goes back or pauses.</div>
+          <button id="reset-controls" class="small-action" data-menu-text>RESTORE DEFAULT CONTROLS</button>
+        </section>
+        <section id="settings-mouse" role="tabpanel" aria-labelledby="tab-mouse" hidden>
+          <h2 data-menu-text>MOUSE SETTINGS</h2>
+          <label class="setting-row"><span data-menu-text>Mouse sensitivity</span><input id="sensitivity" type="range" min="1" max="30" step=".5"><output id="sensitivity-value" for="sensitivity"></output></label>
+          <label class="setting-row"><span data-menu-text>Aim sensitivity</span><input id="adsSensitivity" type="range" min=".1" max="1.5" step=".05"><output id="adsSensitivity-value" for="adsSensitivity"></output></label>
+          <label class="setting-row"><span data-menu-text>Invert mouse</span><input id="invertY" type="checkbox"></label>
+          <label class="setting-row"><span data-menu-text>Aim down sight</span><select id="aimMode"><option value="hold">Hold</option><option value="toggle">Toggle</option></select></label>
+          <p class="settings-help">Aim sensitivity multiplies mouse speed while looking down the sights. The separate Toggle aim binding always toggles aiming.</p>
+        </section>
+        <section id="settings-audio" role="tabpanel" aria-labelledby="tab-audio" hidden>
+          <h2 data-menu-text>SOUND SETTINGS</h2>
+          <label class="setting-row"><span data-menu-text>Master volume</span><input id="volume" type="range" min="0" max="1" step=".01"><output id="volume-value" for="volume"></output></label>
+        </section>
+        <section id="settings-video" role="tabpanel" aria-labelledby="tab-video" hidden>
+          <h2 data-menu-text>GRAPHICS SETTINGS</h2>
+          <label class="setting-row"><span data-menu-text>Field of view</span><input id="fov" type="range" min="60" max="100" step="1"><output id="fov-value" for="fov"></output></label>
+          <label class="setting-row"><span data-menu-text>Render resolution</span><input id="renderScale" type="range" min="50" max="150" step="10"><output id="renderScale-value" for="renderScale"></output></label>
+          <label class="setting-row"><span data-menu-text>Frame counter</span><input id="showFps" type="checkbox"></label>
+          <button id="fullscreen" class="small-action" data-menu-text>FULLSCREEN</button>
+          <p class="settings-help">Lower render resolution improves performance. Higher values make the image sharper.</p>
+        </section>
+        <p id="settings-status" role="status">Settings save automatically in this browser.</p>
+      </div>
+    </section>
+    <section id="menu-confirm" hidden aria-label="Confirm session action"><h2 id="confirm-title" data-menu-text></h2><p id="confirm-copy"></p><button id="confirm-no" data-menu-text>CANCEL</button><button id="confirm-yes" data-menu-text>RESTART LEVEL</button></section>
+    <section id="menu-saves" hidden aria-label="Saved games"><p id="saves-copy"></p><div id="save-slots" role="list"></div><p id="saves-status" role="status"></p></section>
+    <section id="menu-mods" hidden aria-label="Testing mod menu">
+      <h2 data-menu-text>TESTING MOD MENU</h2>
+      <label class="mod-toggle"><span data-menu-text>God mode</span><input id="mod-god" type="checkbox"></label>
+      <label class="mod-toggle"><span data-menu-text>Unlimited points</span><input id="mod-points" type="checkbox"></label>
+      <label class="mod-toggle"><span data-menu-text>Unlimited ammo</span><input id="mod-ammo" type="checkbox"></label>
+      <label class="mod-toggle"><span data-menu-text>Unlimited grenades</span><input id="mod-grenades" type="checkbox"></label>
+      <div class="mod-selector"><label for="mod-weapon" data-menu-text>Weapon selector</label><select id="mod-weapon"></select><button id="mod-equip" data-menu-text>EQUIP</button></div>
+      <div class="mod-selector"><label for="mod-round" data-menu-text>Round selector</label><input id="mod-round" type="number" min="1" max="100" step="1" value="1"><button id="mod-set-round" data-menu-text>SET ROUND</button></div>
+      <div class="mod-actions"><button id="mod-add-points" data-menu-text>ADD 10,000 POINTS</button><button id="mod-refill-ammo" data-menu-text>REFILL AMMO</button><button id="mod-refill-grenades" data-menu-text>REFILL GRENADES</button><button id="mod-disable" data-menu-text>TURN OFF ALL MODS</button></div>
+      <p id="mod-status" role="status"></p>
+    </section>
+    <button id="menu-back" data-menu-text hidden>BACK</button>
+    <span class="menu-hint">ESC <span id="escape-hint">BACK</span></span>
+  </main>
+  <div id="blood" aria-hidden="true"></div>
+  <div id="save-toast" role="status" aria-live="polite"><span class="toast-check" aria-hidden="true">&#10003;</span><div><div id="save-toast-title" data-menu-text>GAME SAVED</div><div id="save-toast-detail"></div></div></div>
+  <div id="hud" aria-label="Game status">
+    <canvas id="hud-art" aria-hidden="true"></canvas>
+    <div class="round-panel"><span class="eyebrow">ROUND</span><strong id="round">1</strong><span id="wave"></span></div>
+    <span id="crosshair" aria-hidden="true">+</span><span id="hitmarker" aria-hidden="true">×</span>
+    <div class="center-info"><div id="notice" role="status"></div><div id="powerups"></div><div id="prompt"></div><div id="reload"></div></div>
+    <div class="player-panel"><span class="eyebrow">POINTS</span><strong id="points">500</strong><div class="health"><span id="health-bar"></span></div><small>Health <span id="health">100</span> · Kills <span id="kills">0</span></small></div>
+    <div class="weapon-panel"><div id="weapon">Colt M1911</div><strong id="ammo">8</strong><span class="slash"> / </span><span id="reserve">32</span><small>Grenades <span id="grenades">4</span></small></div>
+  </div>
+  <div id="fps-counter" aria-hidden="true"></div>
+  <footer><span id="stats">Original asset loading</span><span id="input-mode">Mouse capture where supported</span><span id="position"></span></footer>
+  <script type="module" src="/runtime/__BUILD__/bo1-main.js"></script>
+</body>
+</html>

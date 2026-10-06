@@ -59,6 +59,6 @@ export class TestingMenu {
     }
     for(const [name,on]of Object.entries(g.mods))$('mod-'+name).checked=on;
     $('mod-weapon').value=g.weapon.name;$('mod-round').value=g.round||1;
-    this.status('Hold Aim + press Knife to open. Esc closes. Toggles reset when you reload or change maps.');
+    this.status('Esc resumes play. Toggles reset when you reload or change maps.');
   }
 }

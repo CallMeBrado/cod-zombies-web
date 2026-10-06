@@ -17,18 +17,18 @@ export class WeaponView {
     const version=++this.version;
     if(this.rigs.has(weapon.name)){this.activate(this.rigs.get(weapon.name),weapon);return;}
     // Perk bottles and the knuckle crack are viewmodel-only and carry no knife.
-    const [hands,template,knifeTemplate]=await Promise.all([model('viewmodel_hands'),model(weapon.definition.gunModel),weapon.definition.knifeModel?model(weapon.definition.knifeModel):null]);
+    const [hands,template,knifeTemplate]=await Promise.all([model(weapon.definition.handsModel||'viewmodel_hands'),model(weapon.definition.gunModel),weapon.definition.knifeModel?model(weapon.definition.knifeModel):null]);
     const object=cloneModel(hands),gun=cloneModel(template);
     // Attached weapon parts use XAnim translations relative to their model
     // bind positions; hand tracks use their authored local positions.
     gun.traverse(bone=>{if(bone.isBone)bone.userData.animationTranslationBase=bone.position.toArray();});
     object.getObjectByName('tag_weapon').add(gun);
-    const knife=knifeTemplate?cloneModel(knifeTemplate):new THREE.Group();knife.name='Original Ka-Bar knife';object.getObjectByName('tag_knife_attach').add(knife);knife.visible=false;
+    const knife=knifeTemplate?cloneModel(knifeTemplate):new THREE.Group();knife.name='Original Ka-Bar knife';(object.getObjectByName('tag_knife_attach')||object.getObjectByName('tag_weapon')).add(knife);knife.visible=false;
     const root=new THREE.Group(),orientation=new THREE.Group();
     orientation.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0,-1,0,0,0,0,1,0,-1,0,0,0,0,0,0,1));orientation.add(object);root.add(orientation);
     shadeModel(object,light.map(c=>Math.max(.09,c*1.5)));
     const definition=weapon.definition,mixer=new THREE.AnimationMixer(object),clips=new Map();
-    await Promise.all([...new Set(Object.entries(definition).filter(([k,v])=>k.endsWith('Anim')&&v).map(([,v])=>v))].map(async name=>{
+    await Promise.all([...new Set(Object.entries(definition).filter(([k,v])=>k.endsWith('Anim')&&v&&!k.includes('Camera')).map(([,v])=>v))].map(async name=>{
       try{clips.set(name,await originalAnimation(name,object));}catch(error){console.warn(error.message);}
     }));
     if(version!==this.version)return;

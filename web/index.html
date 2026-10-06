@@ -9,6 +9,7 @@
 <body>
   <canvas id="viewport" tabindex="0" aria-label="Nacht der Untoten Zombies game"></canvas>
   <main id="overlay" aria-label="Game menu">
+    <div id="waw-brand" aria-label="Call of Duty: World at War"><span data-menu-text>CALL OF DUTY</span><strong data-menu-text>WORLD AT WAR</strong></div>
     <h1 id="screen-title" data-menu-text>NAZI ZOMBIES</h1>
     <section id="menu-home">
       <div class="map-info"><img id="lobby-preview" alt="Selected Zombies map"><h2 id="menu-title" data-menu-text>NACHT DER UNTOTEN</h2><p id="menu-copy">Solo Zombies</p><p id="message" role="status">Preparing map…</p></div>
@@ -22,6 +23,7 @@
         <button id="save-game" data-menu-text hidden>SAVE GAME</button>
         <button id="restart" data-menu-text hidden>RESTART LEVEL</button>
         <button id="quit" data-menu-text hidden>QUIT</button>
+        <a id="game-library" href="/" data-menu-text>ALL GAMES</a>
       </nav>
     </section>
     <section id="menu-maps" hidden aria-label="Zombies map selection"><nav id="map-list" role="listbox" aria-label="Maps"></nav><div class="map-detail"><img id="map-preview" alt="Map preview"><h2 id="selected-map-title" data-menu-text></h2><p id="map-description"></p><button id="map-accept" data-menu-text>SELECT MAP</button></div></section>

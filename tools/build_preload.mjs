@@ -8,27 +8,35 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {CollisionWorld} from '../web/collision.js';
 import {SoloGame} from '../web/game.js';
-import {MAPS,mapById} from '../web/maps.js';
+import {MAPS,BO1_MAPS,mapById} from '../web/maps.js';
+import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {spawn} from 'node:child_process';
 import {prepareFactoryPowerNavigation} from './prepare_power_navigation.mjs';
+import {prepareKinoDoors} from './prepare_kino_doors.mjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url))),data=path.join(root,'local-data');
 const read=async relative=>JSON.parse(await readFile(path.join(data,relative),'utf8'));
-const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=[...new Set([chosen.zone,'common','nacht'])];
+const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=chosen.assetZones||[...new Set([chosen.zone,'common','nacht'])],blackOps=chosen.game==='black-ops';
 const manifest=await read(chosen.data+'/manifest.json'),presentation=await read(chosen.data+'/presentation.json'),world=await read(chosen.zone+'/web-world/'+chosen.asset+'.json');
 // Validate small physics steps on the host once, and ship the ready graph.
 // Repeat only when the collision, entities, graph or movement code changes.
 const navSources=[chosen.zone+'/web-world/'+chosen.asset+'.collision.json',chosen.zone+'/web-world/'+chosen.asset+'.paths.json',chosen.data+'/manifest.json'];
-const navHash=createHash('sha256');for(const file of navSources)navHash.update(await readFile(path.join(data,file)));
+const navHash=createHash('sha256');for(const [i,file] of navSources.entries()){
+  if(blackOps&&i===2){const {entities,map}=manifest;navHash.update(JSON.stringify({entities,map:{id:map.id,negotiationBegin:map.negotiationBegin,negotiationEnd:map.negotiationEnd,initialZone:map.initialZone,connections:map.connections,volumes:map.volumes,goals:map.goals,powerTargets:map.powerTargets}}));}
+  else navHash.update(await readFile(path.join(data,file)));
+}
 for(const file of ['game.js','map-rules.js','collision.js','native-triangles.js'])navHash.update(await readFile(path.join(root,'web',file)));
+if(blackOps){const source=await readFile(path.join(root,'web/bo1-engine.js'),'utf8'),start=source.indexOf('export class BlackOpsEngine');
+  navHash.update(source.slice(start,source.indexOf('  newGame(){',start)));navHash.update(BlackOpsEngine.prototype.settleFeet.toString());}
 const navStamp=navHash.digest('hex');let navigation;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
-if(navigation?.sourceStamp!==navStamp){
+if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&&navigation?.version)){
   const began=performance.now(),collision=await read(navSources[0]),paths=await read(navSources[1]);
-  const game=new SoloGame(manifest,new CollisionWorld(collision,manifest.entities),paths);game.prepareSpawnPaths();
+  const game=new (blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();
   navigation={...game.preparedNavigation(),sourceStamp:navStamp};await writeFile(path.join(data,chosen.data+'/navigation.json'),JSON.stringify(navigation));
   console.log(`Prepared ${navigation.links.length} directed navigation links and ${navigation.routes.length} window routes on E: in ${((performance.now()-began)/1000).toFixed(1)} seconds.`);
 }
 const files=new Map();
 if(chosen.id==='der-riese')await prepareFactoryPowerNavigation(data,navigation);
+if(blackOps)await prepareKinoDoors();
 async function add(relative,required=true){
   relative=relative.replaceAll('\\','/');const resolved=path.resolve(data,relative),inside=path.relative(data,resolved);
   if(inside.startsWith('..')||path.isAbsolute(inside))throw new Error('Asset path escapes local-data.');
@@ -61,15 +69,15 @@ async function model(name){
     }return;
   }
 }
-await add(chosen.data+'/manifest.json');await add(chosen.data+'/presentation.json');await add(chosen.data+'/navigation.json');await add('ui/fonts/normalFont.json');
+await add(chosen.data+'/manifest.json');await add(chosen.data+'/presentation.json');await add(chosen.data+'/navigation.json');if(!blackOps)await add('ui/fonts/normalFont.json');
 if(chosen.id==='der-riese')await add(chosen.data+'/power-navigation.json');
 for(const effect of Object.values(presentation.effects))for(const element of effect.elements)for(const url of element.textures)await add(decodeURIComponent(url.slice('/data/'.length)));
 for(const entry of Object.values(manifest.sounds).flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));
-for(const name of await readdir(path.join(data,'gameplay/hud')))if(name.endsWith('.png'))await add('gameplay/hud/'+name);
+const hudFolder=blackOps?chosen.data+'/hud':'gameplay/hud';for(const name of await readdir(path.join(data,hudFolder)))if(name.endsWith('.png'))await add(hudFolder+'/'+name);
 for(const name of await readdir(path.join(data,chosen.zone+'/web-world')))await add(chosen.zone+'/web-world/'+name);
 for(const material of Object.values(world.materials)){await texture(material.diffuse);await texture(material.normal);}
-for(const lightmap of world.lightmaps)for(const name of Object.values(lightmap))await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
-const names=new Set(['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1',
+for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(lightmap))if(!blackOps||type==='primary')await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
+const names=new Set([...(blackOps?['viewmodel_usa_pow_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
   ...[manifest.grenade?.gunModel,manifest.grenade?.projectileModel].filter(Boolean),
   ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel]),...Object.values(manifest.gestures||{}).map(g=>g.gunModel)]);
 for(const name of names)await model(name);
@@ -99,12 +107,12 @@ for(const group of groups){
   packs.push({file,url:`/packs/${file}`,files:index.length,bytes:12+json.length+offset,gzipBytes:(await stat(output+'.gz')).size});
 }
 const id=createHash('sha256').update(packs.map(p=>p.file).join('\n')).digest('hex').slice(0,20);
-const metadata={format:'waw-preload-v1',id,packs,files:entries.length,bytes:packs.reduce((n,p)=>n+p.bytes,0),gzipBytes:packs.reduce((n,p)=>n+p.gzipBytes,0),sourceStamp:stamp};
+const metadata={format:'waw-preload-v1',id,packs,files:entries.length,bytes:packs.reduce((n,p)=>n+p.bytes,0),gzipBytes:packs.reduce((n,p)=>n+p.gzipBytes,0),sourceStamp:stamp,...(blackOps?{navigationVersion:'kino-ground-v2'}:{})};
 await writeFile(metaFile,JSON.stringify(metadata,null,2));console.log(`Prepared ${chosen.title}: ${entries.length} assets in ${packs.length} cached parts, ${(metadata.bytes/1048576).toFixed(1)} MiB → ${(metadata.gzipBytes/1048576).toFixed(1)} MiB compressed.`);
 
 async function prepareOtherMaps(){
   if(process.argv.includes('--map'))return;
-  for(const map of MAPS.slice(1)){if(!await stat(path.join(data,map.data+'/manifest.json')).catch(()=>null))continue;
+  for(const map of [...MAPS.slice(1),...BO1_MAPS]){if(!await stat(path.join(data,map.data+'/manifest.json')).catch(()=>null))continue;
     await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[fileURLToPath(import.meta.url),'--map',map.id],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(map.title+' preparation failed')));});
   }
 }

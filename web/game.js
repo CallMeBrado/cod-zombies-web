@@ -32,10 +32,11 @@ function rayBox(origin,dir,lo,hi,max) {
 }
 
 export class SoloGame {
-  constructor(manifest,collision,paths,events={},presentation={}) {
+  constructor(manifest,collision,paths,events={},presentation={},rulesFactory=null) {
     this.data=manifest;this.vars=manifest.variables;this.collision=collision;
+    this.negotiationBegin=manifest.map?.negotiationBegin??16;this.negotiationEnd=manifest.map?.negotiationEnd??17;
     const floorDisabled=collision.disabled;
-    if(manifest.map?.id==='der-riese'){
+    if(manifest.map){
       // Board/door models may overlap the authored node centers. Probe the
       // permanent floor beneath them, rather than their movable clip volumes.
       const targets=manifest.entities.filter(e=>['exterior_goal','zombie_door','zombie_debris'].includes(e.targetname)).map(e=>e.target);
@@ -45,7 +46,7 @@ export class SoloGame {
     // Factory tunnel nodes can sit just below the floor after subtracting the
     // native 16-unit offset. Start their floor probe above that surface so it
     // cannot skip it and snap the navigation graph into the room underneath.
-    const nodeLift=manifest.map?.id==='der-riese'?16:0;
+    const nodeLift=manifest.map?16:0;
     const groundNode=p=>{const start=[p[0],p[1],p[2]+35+nodeLift],f=collision.trace(start,[start[0],start[1],start[2]-128],[14,14,35]);return f.fraction<1&&f.normal[2]>.65?[p[0],p[1],f.end[2]-35]:p;};
     this.nodes=paths.nodes.map(n=>({...n,origin:groundNode([n.origin[0],n.origin[1],n.origin[2]-16])}));
     this.nodeOrder=this.nodes.map((_,i)=>i);
@@ -57,7 +58,7 @@ export class SoloGame {
       const end=this.entities.find(x=>x.targetname===begin?.target);
       const ground=p=>{const f=collision.trace([p[0],p[1],p[2]+35],[p[0],p[1],p[2]+35-128],[10,10,35]);return f.fraction<1&&f.normal[2]>.65?[p[0],p[1],f.end[2]-35]:p;};
       const landing=p=>{
-        const entry=ground(p);if(manifest.map?.id!=='der-riese')return entry;
+        const entry=ground(p);if(!manifest.map)return entry;
         const center=[entry[0],entry[1],entry[2]+35];if(!collision.trace(center,center,[14,14,34.9]).allSolid)return entry;
         // Some native traversal endpoints fit a narrow animation root but
         // intersect a frame with the runtime's walking hull. Settle that hull
@@ -76,7 +77,7 @@ export class SoloGame {
     this.spawnEntities=this.entities.filter(e=>/^zombie_spawner_(init|door|upstairs)$/.test(e.targetname)||manifest.map&&e.script_noteworthy==='zombie_spawner');
     this.spawnPoints=this.spawnEntities.map(e=>vec(e.origin));
     this.spawn=vec(this.entities.find(e=>e.targetname==='initial_spawn_points').origin);
-    this.mapRules=manifest.map?.id==='der-riese'?new FactoryRules(this):null;
+    this.mapRules=rulesFactory?rulesFactory(this):manifest.map?.id==='der-riese'?new FactoryRules(this):null;
     this.newGame();
   }
   emit(type,value){this.events[type]?.(value);}
@@ -88,7 +89,7 @@ export class SoloGame {
     this.player={position:floor.position,health:100,points:this.vars.zombie_score_start,kills:0,headshots:0,velocityZ:0,grounded:true,grenades:4};
     this.scorePopups=[];
     this.accumulator=0;this.physicsTicks=0;this.jumpQueued=false;this.player.previousPosition=this.player.position.slice();this.pathCache.clear();this.linkCache=new Map(this.preparedLinkCache||[]);
-    this.inventory=[this.makeWeapon('zombie_colt')];this.slot=0;this.inventory[0].raised=true;this.switching=null;
+    this.inventory=[this.makeWeapon(this.data.startWeapon||'zombie_colt')];this.slot=0;this.inventory[0].raised=true;this.switching=null;
     this.time=0;this.round=0;this.zombieHealth=this.vars.zombie_health_start;this.phase='ready';this.roundDue=0;this.spawnDue=0;this.remaining=0;
     this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
     this.resumed=false;this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;this.powerupOrder=[];this.powerupIndex=0;this.carpenter=null;this.nextDropId=1;
@@ -124,7 +125,7 @@ export class SoloGame {
   }
   nearest(position,visible=false,regular=false) {
     const scores=new Float64Array(this.nodes.length);let index=-1,best=Infinity;
-    for(let i=0;i<this.nodes.length;i++){const p=this.nodes[i].origin,score=regular&&(this.nodes[i].type===16||this.nodes[i].type===17)?Infinity:(p[0]-position[0])**2+(p[1]-position[1])**2+(p[2]-position[2])**2;scores[i]=score;if(score<best){best=score;index=i;}}
+    for(let i=0;i<this.nodes.length;i++){const p=this.nodes[i].origin,score=regular&&(this.nodes[i].type===this.negotiationBegin||this.nodes[i].type===this.negotiationEnd)?Infinity:(p[0]-position[0])**2+(p[1]-position[1])**2+(p[2]-position[2])**2;scores[i]=score;if(score<best){best=score;index=i;}}
     if(!visible)return index;
     // Test the nearest candidates first. Testing each successive record during
     // source-order scanning used to perform many expensive, distant sweeps.
@@ -168,7 +169,7 @@ export class SoloGame {
       if(at===b)break;done[at]=1;
       for(const link of this.nodes[at].links) {
         const n=link.node;if(n>=costs.length||done[n])continue;
-        if(this.nodes[at].type===16||this.nodes[n].type===17)continue;
+        if(this.nodes[at].type===this.negotiationBegin||this.nodes[n].type===this.negotiationEnd)continue;
         {
           const p=this.nodes[at].origin,q=this.nodes[n].origin;
           const key=at+','+n;let clear=this.linkCache.get(key);
@@ -210,7 +211,7 @@ export class SoloGame {
     const push=entry=>{heap.push(entry);let i=heap.length-1;while(i>0){const p=(i-1)>>1;if(heap[p][0]<=entry[0])break;heap[i]=heap[p];i=p;}heap[i]=entry;};
     const pop=()=>{const first=heap[0],last=heap.pop();if(heap.length){let i=0;while(i*2+1<heap.length){let c=i*2+1;if(c+1<heap.length&&heap[c+1][0]<heap[c][0])c++;if(heap[c][0]>=last[0])break;heap[i]=heap[c];i=c;}heap[i]=last;}return first;};
     while(heap.length){const [cost,at]=pop();if(cost>costs[at])continue;
-      for(const link of this.incoming[at]){const n=link.node;if(this.nodes[n].type===16||this.nodes[at].type===17)continue;
+      for(const link of this.incoming[at]){const n=link.node;if(this.nodes[n].type===this.negotiationBegin||this.nodes[at].type===this.negotiationEnd)continue;
         const key=n+','+at;let clear=this.linkCache.get(key);
         if(clear===undefined){clear=this.walkableLink(this.nodes[n].origin,this.nodes[at].origin,true);this.linkCache.set(key,clear);}
         if(!clear)continue;const value=cost+link.distance;if(value<costs[n]){costs[n]=value;push([value,n]);}
@@ -227,7 +228,7 @@ export class SoloGame {
     // Prepare the whole walkable graph, including the interior, before Play.
     // Outside spawn routes alone left the first hunting zombies doing this work.
     for(let at=0;at<this.nodes.length;at++)for(const link of this.nodes[at].links){
-      const n=link.node;if(n>=this.nodes.length||this.nodes[at].type===16||this.nodes[n].type===17)continue;
+      const n=link.node;if(n>=this.nodes.length||this.nodes[at].type===this.negotiationBegin||this.nodes[n].type===this.negotiationEnd)continue;
       const key=at+','+n;if(!this.linkCache.has(key))this.linkCache.set(key,this.walkableLink(this.nodes[at].origin,this.nodes[n].origin,true));
     }
     this.preparedLinkCache=new Map(this.linkCache);
