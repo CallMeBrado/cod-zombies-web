@@ -72,7 +72,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Mouse and aim sensitivity, invert, hold/toggle aim.
   - Volume, field of view, render scale, fullscreen.
   - FPS counter.
-- **Save game:** save from the pause menu and resume it later from the main menu.
+- **Save game:** three save slots per map. A save keeps the whole session: live zombies, round progress, drops, timers and map state. Slot cards show a screenshot, the round, points, kills, weapons and perks.
 - **Testing mod menu:** hold Aim and press Knife. It has god mode, unlimited points, ammo and grenades, a weapon selector and a round selector.
 - **Network play:** other devices on your local network can connect. Each browser runs its own solo game.
 
@@ -104,7 +104,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
 | **Quick Revive** | Can't be bought solo, matching WaW, where it only speeds up reviving teammates. |
 | **Effects** | Lightning "trail" elements are drawn as camera-facing sprites rather than true ribbons. |
 | **Sound ranges** | The extracted sound definitions have no min/max distances, so hearing ranges are chosen per sound type. |
-| **Saves** | Stored per browser (`localStorage`). Loading a save restarts the saved round from its beginning. |
+| **Saves** | Stored per browser (`localStorage`). Can't save mid-drink, during Pack-a-Punch or with a grenade in hand. |
 | **Multiplayer** | Solo only. There's no co-op and no last stand: going down ends the game. |
 | **Other maps** | Verrückt, Shi No Numa and Black Ops maps (for example Kino der Toten) haven't been started. |
 | **Setup automation** | Der Riese extraction isn't scripted yet; see [Setup](#setup). |
@@ -225,7 +225,7 @@ If Windows Firewall is enabled, allow inbound TCP on that port for `node.exe` on
 
 ### Settings and saves
 
-Settings, key bindings and the save slot are stored in each browser's local storage. A save made in one browser won't appear in another.
+Settings, key bindings and the save slots are stored in each browser's local storage. A save made in one browser won't appear in another.
 
 ---
 

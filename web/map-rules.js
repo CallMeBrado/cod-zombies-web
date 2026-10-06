@@ -1,5 +1,5 @@
 const position=e=>e.origin.split(/\s+/).map(Number);
-const PERKS={specialty_armorvest:{name:'Jugger-Nog',cost:2500,sting:'mx_jugger_sting',family:'jugger'},specialty_fastreload:{name:'Speed Cola',cost:3000,sting:'mx_speed_sting',family:'speed'},specialty_rof:{name:'Double Tap',cost:2000,sting:'mx_doubletap_sting',family:'doubletap'},specialty_quickrevive:{name:'Quick Revive',cost:1500,sting:'mx_revive_sting',family:'revive'}};
+export const PERKS={specialty_armorvest:{name:'Jugger-Nog',cost:2500,sting:'mx_jugger_sting',family:'jugger'},specialty_fastreload:{name:'Speed Cola',cost:3000,sting:'mx_speed_sting',family:'speed'},specialty_rof:{name:'Double Tap',cost:2000,sting:'mx_doubletap_sting',family:'doubletap'},specialty_quickrevive:{name:'Quick Revive',cost:1500,sting:'mx_revive_sting',family:'revive'}};
 // perksacola struct script_sound -> the level.*_jingle flag it shares with its sting.
 const JINGLES={mx_jugger_jingle:'jugger',mx_speed_jingle:'speed',mx_doubletap_jingle:'doubletap',mx_revive_jingle:'revive',mx_packa_jingle:'packa'};
 // The exported aliases carry no min/max distance, so these ranges are chosen
@@ -102,10 +102,10 @@ export class FactoryRules {
     }
     if(key==='trigger_teleport_core'){
       // pa_countdown_success: a PA buzz, then the pad's activation announcement.
-      if(this.linkPending&&g.time<this.linkPending.due){const id=this.linkPending.id;this.links.add(id);this.linkPending=null;this.pa('pa_buzz');this.later(1.2,()=>this.pa('pa_audio_act_pad_'+id,true));
+      if(this.linkPending&&g.time<this.linkPending.due){const id=this.linkPending.id;this.links.add(id);this.linkPending=null;this.pa('pa_buzz');this.later(1.2,{pa:'pa_audio_act_pad_'+id,dialog:true});
         // "Auto teleport the first time": after the pad's wire lights up, player_teleporting
         // waits teleport_delay (2 s) and 2 s more, then drops a special powerup by the fence.
-        const drop=g.entities.find(e=>e.targetname==='teleporter_powerup');if(drop)this.later(this.wireSteps(id)*.1+4,()=>this.specialDrop(position(drop)));g.message('Teleporter linked · '+this.links.size+' / 3');if(this.links.size===3){this.openTarget('pack_door');this.openTarget('pack_door_clip');}}return true;
+        const drop=g.entities.find(e=>e.targetname==='teleporter_powerup');if(drop)this.later(this.wireSteps(id)*.1+4,{specialDrop:position(drop)});g.message('Teleporter linked · '+this.links.size+' / 3');if(this.links.size===3){this.openTarget('pack_door');this.openTarget('pack_door_clip');}}return true;
     }
     if(key==='zombie_vending_upgrade'){
       if(this.pap){if(this.pap.phase==='ready')this.takeUpgrade();return true;}
@@ -125,8 +125,12 @@ export class FactoryRules {
     }
     return false;
   }
-  saveState(){return {power:this.power,flags:[...this.flags],perks:[...this.perks],links:[...this.links]};}
-  loadState(s){if(!s)return;this.power=s.power;this.flags=new Set(s.flags);this.perks=new Set(s.perks);this.links=new Set(s.links);}
+  saveState(){return {power:this.power,flags:[...this.flags],perks:[...this.perks],links:[...this.links],linkPending:this.linkPending&&{...this.linkPending},
+    teleportDue:this.teleportDue,teleportCooldown:this.teleportCooldown,pending:this.pending.map(job=>({...job}))};}
+  loadState(s){if(!s)return;this.power=s.power;this.flags=new Set(s.flags);this.perks=new Set(s.perks);this.links=new Set(s.links);
+    this.linkPending=s.linkPending||null;this.teleportDue=s.teleportDue||0;this.teleportCooldown=s.teleportCooldown||0;this.pending=(s.pending||[]).map(job=>({...job}));
+    // Machines resume their hum without replaying the power-on sound.
+    this.quietPower=true;}
   // PA system speakers (pa_system structs); a speaker says one dialog line at a time.
   pa(alias,dialog=false){(this.speakers??=this.game.entities.filter(e=>e.targetname==='pa_system').map(position)).forEach((at,i)=>this.sound(alias,at,RANGE.pa,dialog?'pa'+i:undefined));}
   wireSteps(id){let steps=0,node=this.game.entities.find(e=>e.targetname==='pad_'+id+'_wire');
@@ -142,13 +146,17 @@ export class FactoryRules {
     if(type==='dog')type=round>=15?'nothing':g.nextPowerup();
     const fx=[at[0],at[1],at[2]+40];
     g.emit('effect',{name:'maps/zombie/fx_zombie_dog_lightning_buildup',position:fx,duration:2});this.sound('pre_spawn',fx,RANGE.music);
-    this.later(1.5,()=>{
-      this.sound('bolt',fx,RANGE.music);this.sound('spawn',fx,RANGE.music);g.emit('shake',{position:fx,amplitude:.5,duration:.75,radius:1000});
-      if(type==='nothing')this.later(1,()=>g.emit('sound',{alias:'sam_nospawn'}));else g.addDrop(type,at);
-    });
+    this.later(1.5,{strike:at,type});
+  }
+  strike(at,type){
+    const g=this.game,fx=[at[0],at[1],at[2]+40];
+    this.sound('bolt',fx,RANGE.music);this.sound('spawn',fx,RANGE.music);g.emit('shake',{position:fx,amplitude:.5,duration:.75,radius:1000});
+    if(type==='nothing')this.later(1,{sound:'sam_nospawn'});else g.addDrop(type,at);
   }
   get announcer(){return ANNOUNCER;}
-  later(delay,run){this.pending.push({at:this.game.time+delay,run});}
+  // Delayed script steps are plain data, so a save can carry them.
+  later(delay,job){this.pending.push({...job,at:this.game.time+delay});}
+  runJob(job){if(job.pa)this.pa(job.pa,job.dialog);else if(job.specialDrop)this.specialDrop(job.specialDrop);else if(job.strike)this.strike(job.strike,job.type);else if(job.sound)this.game.emit('sound',{alias:job.sound});}
   sound(alias,position,range,exclusive){this.game.emit('sound',{alias,position,...range,exclusive});}
   takeUpgrade(){
     const g=this.game,pap=this.pap;if(g.gesture)return;
@@ -161,11 +169,11 @@ export class FactoryRules {
     // teleporters are linked (Pack_A_Punch_on), with its rollers hum.
     if(this.power&&!this.machines){
       this.machines=g.entities.filter(e=>e.targetname==='perksacola'&&JINGLES[e.script_sound]&&e.script_sound!=='mx_packa_jingle').map(e=>({at:position(e),jingle:e.script_sound,jingleDue:g.time+between(31,45),surgeDue:g.time+between(7,18)}));
-      for(const e of g.interactions.filter(e=>e.targetname==='zombie_vending'))this.sound('perks_power_on',position(e),RANGE.machine);
+      if(!this.quietPower)for(const e of g.interactions.filter(e=>e.targetname==='zombie_vending'))this.sound('perks_power_on',position(e),RANGE.machine);
     }
     if(this.power&&this.links.size===3&&!this.papOn){
       this.papOn=true;const trigger=g.interactions.find(e=>e.targetname==='zombie_vending_upgrade'),struct=g.entities.find(e=>e.targetname==='perksacola'&&e.script_sound==='mx_packa_jingle');
-      if(trigger){this.sound('perks_power_on',position(trigger),RANGE.machine);g.emit('loop',{id:'packa_rollers',alias:'packa_rollers_loop',position:position(trigger),...RANGE.hum});}
+      if(trigger){if(!this.quietPower)this.sound('perks_power_on',position(trigger),RANGE.machine);g.emit('loop',{id:'packa_rollers',alias:'packa_rollers_loop',position:position(trigger),...RANGE.hum});}
       if(struct)this.machines?.push({at:position(struct),jingle:struct.script_sound,jingleDue:g.time+between(31,45),surgeDue:Infinity});
     }
     // perks_a_cola_jingle / play_random_broken_sounds: an electrical surge
@@ -187,14 +195,14 @@ export class FactoryRules {
   openTarget(target){const g=this.game;g.opened.add(target);g.collision.disabled.add(target);g.invalidateNavigation([target]);g.emit('open',{target});}
   tick(){
     const g=this.game;
-    for(const job of this.pending.filter(job=>g.time>=job.at)){this.pending.splice(this.pending.indexOf(job),1);job.run();}
+    for(const job of this.pending.filter(job=>g.time>=job.at)){this.pending.splice(this.pending.indexOf(job),1);this.runJob(job);}
     // pa_countdown: a clock tick each second, with the PA counting at 20, 15
     // and 10..1; on timeout a buzz and the link-failed announcement.
     while(this.linkPending&&this.linkPending.ticks<30&&g.time>=this.linkPending.started+this.linkPending.ticks){
       const count=30-this.linkPending.ticks++;g.emit('sound',{alias:'clock_tick_1sec'});
       if(count===20||count===15||count<=10)this.pa('pa_audio_link_'+count);
     }
-    if(this.linkPending&&g.time>=this.linkPending.due){this.linkPending=null;g.message('Teleporter link timed out');this.pa('pa_buzz');this.later(1.2,()=>this.pa('pa_audio_link_fail',true));}
+    if(this.linkPending&&g.time>=this.linkPending.due){this.linkPending=null;g.message('Teleporter link timed out');this.pa('pa_buzz');this.later(1.2,{pa:'pa_audio_link_fail',dialog:true});}
     if(this.teleportDue&&g.time>=this.teleportDue){
       this.teleportDue=0;this.teleportCooldown=g.time+5;
       const destination=position(g.entities.find(e=>e.targetname==='origin_teleport_player_0'));
@@ -202,7 +210,7 @@ export class FactoryRules {
       g.player.position=floor.position;g.player.previousPosition=floor.position.slice();g.player.velocityZ=0;g.player.grounded=floor.grounded;
       g.targetNodeDue=0;g.targetNode=-1;g.emit('teleport');g.emit('sound',{alias:'teleport_in'});
     }
-    this.machineSounds();this.updateUpgrade();
+    this.machineSounds();this.quietPower=false;this.updateUpgrade();
   }
   // Der Riese's round_spawning adds 0.5*zombie_ai_per_player*multiplier solo.
   get soloAiFactor(){return .5;}

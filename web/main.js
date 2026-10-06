@@ -15,6 +15,8 @@ import {PauseMenu} from './pause-menu.js';
 import {GrenadeView} from './grenade-view.js';
 import {selectedMap} from './maps.js';
 import {ZombiesLobby} from './lobby.js';
+import {SaveStore,SaveSlots} from './save-slots.js';
+import {PERKS} from './map-rules.js';
 const mapChoice=selectedMap();
 
 const $=id=>document.getElementById(id);
@@ -22,6 +24,7 @@ const canvas=$('viewport'),scene=new THREE.Scene();scene.background=new THREE.Co
 scene.add(new THREE.AmbientLight(0xa8bac9,.2));
 let storage;try{storage=localStorage;}catch{}
 const settings=new GameSettings(storage);
+const saves=new SaveStore(storage);
 const worldFov=value=>THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(value)/2)*.75));
 let baseFov=worldFov(settings.value.fov);
 const camera=new THREE.PerspectiveCamera(baseFov,innerWidth/innerHeight,1,18000);camera.up.set(0,0,1);
@@ -43,8 +46,9 @@ const controls=new GameInput(settings,action=>{
   ({reload:()=>game.reload(),melee:()=>{if(controls.aiming)openMods();else game.melee();},use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
 },action=>{if(action==='grenade'&&state.mode==='playing')game.releaseGrenade();});
 const mouse=new MouseControls(canvas,document,{mode:()=>({playing:state.mode==='playing',inputMode:state.inputMode,aiming:controls.toggledAim||settings.value.aimMode==='hold'&&settings.value.bindings.aim.some(t=>t&&!t.startsWith('Mouse')&&controls.tokens.has(t))}),buttons:b=>settings.mouseActions(b),fire:()=>game.fire()});
-const pauseMenu=new PauseMenu(settings,{save:saveGame,resumeSave,savedGame,resume:enterPlay,restart:()=>{game.newGame();resetVisuals();enterPlay();},quit:()=>{game.newGame();resetVisuals();menu(mapChoice.title,'Solo Zombies');}});
+const pauseMenu=new PauseMenu(settings,{openSaves:mode=>saveSlots.open(mode),saveCount:()=>saves.count(),resume:enterPlay,restart:()=>{game.newGame();resetVisuals();enterPlay();},quit:()=>{game.newGame();resetVisuals();menu(mapChoice.title,'Solo Zombies');}});
 const lobby=new ZombiesLobby(pauseMenu);
+const saveSlots=new SaveSlots(pauseMenu,saves,{currentMap:mapChoice.id,canSave:saveBlocked,save:saveGame,load:loadSlot,weaponName:n=>game?game.weaponName(n):n});
 const testingMenu=new TestingMenu(pauseMenu,()=>state.ready?game:null);
 canvas.setAttribute('aria-label',mapChoice.title+' Zombies game');document.title='WaW Zombies - '+mapChoice.title;
 settings.subscribe(value=>{baseFov=worldFov(value.fov);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*value.renderScale/100);renderer.setSize(innerWidth,innerHeight);if(audio)audio.volume=value.volume;controls.reset();mouse.reset();inputHint();});
@@ -64,21 +68,45 @@ function menu(title,description,button='Resume game') {
   pauseMenu.setContext(game&&game.phase!=='ready'?'pause':'start');
   if(document.pointerLockElement)document.exitPointerLock();
 }
-// One save slot per browser (localStorage), shared by both maps.
-function saveKey(){return 'waw-zombies-save-v1';}
-function savedGame(){try{const save=JSON.parse(storage?.getItem(saveKey())||'null');return save?.state?.version===1?save:null;}catch{return null;}}
-function saveSummary(save=savedGame()){return save?`Saved game: ${save.title}, round ${save.state.resumeRound}.`:'';}
-function saveGame(){
-  if(!game?.canSave()){$('message').textContent='Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';return;}
-  const state=game.saveState(),save={map:mapChoice.id,title:mapChoice.title,savedAt:Date.now(),state};
-  try{if(!storage)throw new Error('unavailable');storage.setItem(saveKey(),JSON.stringify(save));$('message').textContent='Game saved. '+saveSummary(save)+' Resume it from the main menu.';}
-  catch{$('message').textContent='This browser blocked saving the game.';}
+// Three save slots per map (localStorage). A save snapshots the whole session.
+function saveBlocked(){return game?.canSave()?null:'Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';}
+function slotSummary(){
+  const g=game,r=g.mapRules;
+  return {round:g.round,phase:g.phase,points:g.player.points,kills:g.player.kills,headshots:g.player.headshots,health:Math.round(g.player.health),
+    weapons:g.inventory.map(w=>g.weaponName(w.name)),perks:r?[...r.perks].map(p=>PERKS[p]?.name||p):[],power:r?r.power:null,links:r?r.links.size:null,
+    zombies:g.enemies.filter(e=>!e.dead).length,remaining:g.phase==='round'?g.remaining:0,doors:[...g.opened].filter(t=>g.interactions.some(e=>e.target===t)).length,playTime:Math.round(g.elapsed)};
 }
-function resumeSave(){
-  const save=savedGame();if(!save||!state.ready||state.mode==='starting')return;
-  if(save.map!==mapChoice.id){const url=new URL(location.href);url.searchParams.set('map',save.map);location.assign(url.href);return;}
+// The slot card's picture: the current view, drawn now (the drawing buffer is
+// not preserved between frames) and cropped to 16:9.
+function captureThumb(){
+  try{
+    map?.updateVisibility(camera);renderer.autoClear=true;renderer.render(scene,camera);
+    if(weaponView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);renderer.autoClear=true;}
+    const src=renderer.domElement,c=document.createElement('canvas');c.width=256;c.height=144;
+    const scale=Math.max(c.width/src.width,c.height/src.height),sw=c.width/scale,sh=c.height/scale;
+    c.getContext('2d').drawImage(src,(src.width-sw)/2,(src.height-sh)/2,sw,sh,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.72);
+  }catch{return null;}
+}
+function saveGame(slot){
+  const blocked=saveBlocked();if(blocked)return {ok:false,message:blocked};
+  const summary=slotSummary(),save={map:mapChoice.id,title:mapChoice.title,slot,savedAt:Date.now(),summary,thumb:captureThumb(),state:game.saveState()};
+  try{saves.put(mapChoice.id,slot,save);}catch{return {ok:false,message:'This browser blocked saving the game (storage is full or disabled).'};}
+  const detail=`Slot ${slot+1} · ${mapChoice.title} · Round ${summary.round} · ${summary.points.toLocaleString('en-US')} points`;
+  saveToast(detail);$('message').textContent='Game saved to slot '+(slot+1)+'. Load it from the main menu.';
+  return {ok:true,message:`Saved to slot ${slot+1}. ${summary.zombies} zombie${summary.zombies===1?'':'s'} and the whole map were kept as they are.`};
+}
+let toastTimer=0;
+function saveToast(detail){
+  const toast=$('save-toast');$('save-toast-detail').textContent=detail;pauseMenu.text?.draw($('save-toast-title'));
+  toast.classList.remove('show');void toast.offsetWidth;toast.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),3600);
+}
+function loadSlot(map,slot,play=true){
+  const save=saves.get(map,slot);if(!save||!state.ready||state.mode==='starting')return;
+  if(map!==mapChoice.id){const url=new URL(location.href);url.searchParams.set('map',map);url.searchParams.set('load',String(slot+1));location.assign(url.href);return;}
   // Synchronous from the click, so enterPlay can still capture the mouse.
-  game.loadState(save.state);state.yaw=save.state.yaw;state.pitch=save.state.pitch;cameraPose();enterPlay();
+  game.loadState(save.state);state.yaw=save.state.yaw;state.pitch=save.state.pitch;cameraPose();
+  if(play)enterPlay();else{menu('Paused',mapChoice.title);$('message').textContent=`Loaded slot ${slot+1} · Round ${save.summary?.round}. Resume when you're ready.`;}
 }
 function keyName(action){return bindingName(settings.value.bindings[action].find(Boolean));}
 function openMods(){if(state.mode!=='playing')return;menu('Paused',mapChoice.title);testingMenu.sync();pauseMenu.show('mods');}
@@ -176,8 +204,8 @@ function shot(ray) {
   }
 }
 function makeDrop(drop) {
-  drop.spawned=game.time;drop.expires=game.time+26.5;
-  const v=createPickupView(drop,dropTemplates.get(drop.type),effects,game.time);scene.add(v.root);dropVisuals.set(drop,v);audio.play('spawn_powerup');
+  if(!drop.restored){drop.spawned=game.time;drop.expires=game.time+26.5;}
+  const v=createPickupView(drop,dropTemplates.get(drop.type),effects,drop.spawned??game.time);scene.add(v.root);dropVisuals.set(drop,v);if(!drop.restored)audio.play('spawn_powerup');
 }
 function pickupVisual(drop){
   const root=effects.create('misc/fx_zombie_powerup_grab',game.time);root.position.fromArray(drop.position);root.position.z+=40;scene.add(root);bursts.push({root,due:game.time+1});
@@ -293,7 +321,10 @@ async function init() {
   for(const s of sceneRestore){s.n.visible=s.visible;s.n.frustumCulled=s.culled;if(s.count!==undefined)s.n.count=s.count;}
   state.sceneWarmMs=Math.round(performance.now()-warmStarted);
   await pauseMenu.prepare(hud);state.ready=true;lobby.ready();testingMenu.sync();state.loading='complete';$('play').disabled=false;pauseMenu.setContext('start');
-  $('message').textContent='Map loaded and ready. Restarting keeps it loaded. '+saveSummary();$('stats').textContent=mapChoice.title+' ready · Build '+document.documentElement.dataset.build.slice(0,8);state.build=document.documentElement.dataset.build;state.preload=preloadState;state.readyMs=performance.now()-began;updateHud();
+  const saved=saves.count();$('message').textContent='Map loaded and ready. Restarting keeps it loaded.'+(saved?` ${saved} saved game${saved===1?'':'s'} · Load Game to continue.`:'');$('stats').textContent=mapChoice.title+' ready · Build '+document.documentElement.dataset.build.slice(0,8);state.build=document.documentElement.dataset.build;state.preload=preloadState;state.readyMs=performance.now()-began;updateHud();
+  // Arriving from another map's Load Game: restore the slot, paused.
+  const load=Number(new URLSearchParams(location.search).get('load'));
+  if(load){const url=new URL(location.href);url.searchParams.delete('load');history.replaceState(null,'',url.href);loadSlot(mapChoice.id,load-1,false);}
 }
 $('play').addEventListener('click',()=>{if(!state.ready)return;if(game.phase==='dead'){game.newGame();resetVisuals();}enterPlay();});
 document.addEventListener('pointerlockchange',()=>{

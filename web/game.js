@@ -90,7 +90,7 @@ export class SoloGame {
     this.inventory=[this.makeWeapon('zombie_colt')];this.slot=0;this.inventory[0].raised=true;this.switching=null;
     this.time=0;this.round=0;this.zombieHealth=this.vars.zombie_health_start;this.phase='ready';this.roundDue=0;this.spawnDue=0;this.remaining=0;
     this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
-    this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;this.powerupOrder=[];this.powerupIndex=0;this.carpenter=null;this.nextDropId=1;
+    this.resumed=false;this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;this.powerupOrder=[];this.powerupIndex=0;this.carpenter=null;this.nextDropId=1;
     this.boxes=new Map(this.interactions.filter(e=>e.targetname==='treasure_chest_use').map(e=>[e.target,{entity:e,phase:'closed',weapon:null}]));
     this.mapRules?.reset();
     this.yaw=Math.PI;this.pitch=0;this.ads=0;this.spreadBloom=0;this.moving=false;this.shots=0;this.hits=0;this.nextId=1;this.elapsed=0;
@@ -99,7 +99,7 @@ export class SoloGame {
   }
   get weapon(){return this.inventory[this.slot];}
   makeWeapon(name) {const d=this.data.weapons[name];return {name,clip:d.clipSize,reserve:Math.max(0,d.startAmmo-d.clipSize),definition:d};}
-  start(){if(this.phase==='ready'){this.phase='between';this.roundDue=this.time+2;this.emit('sessionStart');}}
+  start(){if(this.phase==='ready'){this.phase='between';this.roundDue=this.time+2;this.emit('sessionStart');}else if(this.resumed){this.resumed=false;this.emit('sessionStart');}}
   message(text){this.emit('message',text);}
   changePoints(amount) {
     if(!amount)return;
@@ -451,17 +451,59 @@ export class SoloGame {
       e.position=this.collision.step(e.position,[p[0]*scale,p[1]*scale,0],[14,14,35]).position;
     }
   }
-  // A save restarts the saved round from its beginning: live zombies and
-  // in-flight effects are not stored, everything the player earned is.
+  // A save is a snapshot of the whole session at the game clock: live zombies
+  // (stage, route, health, gait, barrier spot), round progress and timers,
+  // drops, active powerups, the mystery box, live grenades and map state.
+  // Viewmodel-only actions (perk drink, Pack-a-Punch, grenade in hand) must end first.
   canSave(){return ['round','between'].includes(this.phase)&&!this.gesture&&!this.mapRules?.pap&&!this.pendingGrenade;}
   saveState(){
-    const mid=this.phase==='round';
-    return {version:1,round:mid?this.round-1:this.round,zombieHealth:mid?this.roundBaseHealth:this.zombieHealth,resumeRound:mid?this.round:this.round+1,
-      player:{position:this.player.position.slice(),health:this.player.health,points:this.player.points,kills:this.player.kills,headshots:this.player.headshots,grenades:this.player.grenades},
+    const plain=v=>v==null?v:JSON.parse(JSON.stringify(v));
+    return {version:2,time:this.time,elapsed:this.elapsed,phase:this.phase,round:this.round,zombieHealth:this.zombieHealth,roundBaseHealth:this.roundBaseHealth,
+      remaining:this.remaining,spawnDue:this.spawnDue,roundDue:this.roundDue,roundStartedAt:this.roundStartedAt,roundEndedAt:this.roundEndedAt,barrierReward:this.barrierReward,
+      ambientDue:this.ambientDue,lastDamage:this.lastDamage,cooldown:this.cooldown,meleeDue:this.meleeDue,rebuildDue:this.rebuildDue,nextId:this.nextId,nextDropId:this.nextDropId,shots:this.shots,hits:this.hits,powerupOrder:this.powerupOrder.slice(),powerupIndex:this.powerupIndex,
+      player:{position:this.player.position.slice(),health:this.player.health,points:this.player.points,kills:this.player.kills,headshots:this.player.headshots,grenades:this.player.grenades,velocityZ:this.player.velocityZ},
       yaw:this.yaw,pitch:this.pitch,inventory:this.inventory.map(w=>({name:w.name,clip:w.clip,reserve:w.reserve})),slot:this.slot,
-      opened:[...this.opened],disabled:[...this.collision.disabled],boards:this.windows.map(w=>[w.target,w.boards]),rules:this.mapRules?.saveState()};
+      opened:[...this.opened],disabled:[...this.collision.disabled],
+      windows:this.windows.map(w=>({target:w.target,boards:w.boards,attackers:[0,1,2].map(i=>this.holdsSpot(w.attackers?.[i])?w.attackers[i].id:null),traverser:w.traverser&&!w.traverser.dead?w.traverser.id:null})),
+      enemies:this.enemies.filter(e=>!e.dead).map(({window,previousPosition,...rest})=>({...plain(rest),window:window?.target})),
+      powerup:{...this.powerup},carpenter:plain(this.carpenter),
+      drops:this.drops.filter(d=>!d.used).map(d=>({id:d.id,type:d.type,position:d.position.slice(),expires:d.expires,spawned:d.spawned})),
+      grenades:this.grenades.filter(g=>!g.held&&!g.exploded).map(g=>({position:g.position.slice(),velocity:g.velocity.slice(),due:g.due,spawned:g.spawned,resting:g.resting,bounceAt:g.bounceAt})),
+      boxes:[...this.boxes].map(([target,{entity,...box}])=>[target,plain(box)]),
+      rules:this.mapRules?.saveState()};
   }
   loadState(s){
+    if(s.version!==2)return this.loadLegacyState(s);
+    this.newGame();
+    for(const key of ['time','elapsed','round','zombieHealth','roundBaseHealth','remaining','spawnDue','roundDue','roundStartedAt','roundEndedAt','barrierReward','ambientDue','lastDamage','cooldown','meleeDue','rebuildDue','nextId','nextDropId','shots','hits','powerupOrder','powerupIndex','yaw','pitch'])if(s[key]!==undefined)this[key]=s[key];
+    this.powerup={...s.powerup};
+    for(const target of s.opened)this.opened.add(target);for(const target of s.disabled)this.collision.disabled.add(target);
+    if(s.disabled.length)this.invalidateNavigation(s.disabled);
+    this.mapRules?.loadState(s.rules);
+    const weapons=s.inventory.filter(w=>this.data.weapons[w.name]).map(w=>({...this.makeWeapon(w.name),clip:w.clip,reserve:w.reserve,raised:true}));
+    this.inventory=weapons.length?weapons:[this.makeWeapon('zombie_colt')];this.slot=Math.min(s.slot,this.inventory.length-1);this.inventory[this.slot].raised=true;
+    Object.assign(this.player,s.player,{position:s.player.position.slice(),previousPosition:s.player.position.slice(),velocityZ:s.player.velocityZ||0});
+    const windows=new Map(this.windows.map(w=>[w.target,w])),enemies=new Map();
+    for(const saved of s.enemies){
+      const window=windows.get(saved.window);if(!window)continue;
+      const enemy={...saved,window,previousPosition:saved.position.slice(),path:saved.path||[]};
+      this.enemies.push(enemy);enemies.set(enemy.id,enemy);this.emit('spawn',enemy);
+    }
+    for(const saved of s.windows){
+      const w=windows.get(saved.target);if(!w)continue;
+      w.boards=saved.boards;w.attackers=saved.attackers.map(id=>enemies.get(id)||null);w.traverser=enemies.get(saved.traverser)||null;
+    }
+    for(const saved of s.drops){const drop={...saved,position:saved.position.slice(),restored:true};this.drops.push(drop);this.emit('drop',drop);this.dropLoop(drop);}
+    this.carpenter=s.carpenter||null;if(this.carpenter)this.emit('loop',{id:'carpenter',alias:'carp_loop',position:this.carpenter.origin.slice(),near:150,far:1400});
+    for(const saved of s.grenades){const g={...saved,position:saved.position.slice(),previousPosition:saved.position.slice(),held:false};this.grenades.push(g);this.emit('grenade',g);}
+    for(const [target,box]of s.boxes){const current=this.boxes.get(target);if(current)Object.assign(current,box);}
+    this.phase=s.phase;this.resumed=true;
+    for(const target of this.opened)this.emit('open',{target});for(const w of this.windows)this.emit('barrier',w);
+    if(this.mapRules)this.emit('power');this.emit('weapon',this.weapon);
+  }
+  // Version 1 saves (before full snapshots) restart the saved round with
+  // everything the player earned but no live zombies.
+  loadLegacyState(s){
     this.newGame();
     this.round=s.round;this.zombieHealth=s.zombieHealth;this.yaw=s.yaw;this.pitch=s.pitch;
     for(const target of s.opened)this.opened.add(target);for(const target of s.disabled)this.collision.disabled.add(target);
@@ -797,10 +839,11 @@ export class SoloGame {
   }
   // powerup_setup: spawn sound, then a looping hum until grabbed or expired.
   addDrop(type,position){
-    const drop={id:this.nextDropId++,type,position:position.slice(),expires:this.time+30};this.drops.push(drop);this.emit('drop',drop);
+    const drop={id:this.nextDropId++,type,position:position.slice(),expires:this.time+30,spawned:this.time};this.drops.push(drop);this.emit('drop',drop);
     const at=[position[0],position[1],position[2]+40];this.emit('sound',{alias:'spawn_powerup',position:at,near:100,far:1200});
-    this.emit('loop',{id:'drop'+drop.id,alias:'spawn_powerup_loop',position:at,near:60,far:700});return drop;
+    this.dropLoop(drop);return drop;
   }
+  dropLoop(drop){const p=drop.position;this.emit('loop',{id:'drop'+drop.id,alias:'spawn_powerup_loop',position:[p[0],p[1],p[2]+40],near:60,far:700});}
   // start_carpenter: rebuild boards nearest-window first, one every 0.05 s,
   // then carp_end and 200 points.
   updateCarpenter(){

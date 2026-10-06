@@ -15,7 +15,7 @@
       <div id="lobby-players"><div class="lobby-players-heading" data-menu-text>PLAYERS</div><div class="lobby-player-row"><span data-menu-text>PLAYER 1</span><span id="lobby-player-status" data-menu-text>LOADING</span></div></div>
       <nav class="pause-actions" aria-label="Pause menu">
         <button id="play" data-menu-text disabled>LOADING…</button>
-        <button id="resume-save" data-menu-text hidden>RESUME SAVED GAME</button>
+        <button id="resume-save" data-menu-text hidden>LOAD GAME</button>
         <button id="select-map" data-menu-text>SELECT MAP</button>
         <button id="options" data-menu-text>OPTIONS</button>
         <button id="mods" data-menu-text hidden disabled>MOD MENU</button>
@@ -63,6 +63,7 @@
       </div>
     </section>
     <section id="menu-confirm" hidden aria-label="Confirm session action"><h2 id="confirm-title" data-menu-text></h2><p id="confirm-copy"></p><button id="confirm-no" data-menu-text>CANCEL</button><button id="confirm-yes" data-menu-text>RESTART LEVEL</button></section>
+    <section id="menu-saves" hidden aria-label="Saved games"><p id="saves-copy"></p><div id="save-slots" role="list"></div><p id="saves-status" role="status"></p></section>
     <section id="menu-mods" hidden aria-label="Testing mod menu">
       <h2 data-menu-text>TESTING MOD MENU</h2>
       <label class="mod-toggle"><span data-menu-text>God mode</span><input id="mod-god" type="checkbox"></label>
@@ -78,6 +79,7 @@
     <span class="menu-hint">ESC <span id="escape-hint">BACK</span></span>
   </main>
   <div id="blood" aria-hidden="true"></div>
+  <div id="save-toast" role="status" aria-live="polite"><span class="toast-check" aria-hidden="true">&#10003;</span><div><div id="save-toast-title" data-menu-text>GAME SAVED</div><div id="save-toast-detail"></div></div></div>
   <div id="hud" aria-label="Game status">
     <canvas id="hud-art" aria-hidden="true"></canvas>
     <div class="round-panel"><span class="eyebrow">ROUND</span><strong id="round">1</strong><span id="wave"></span></div>
