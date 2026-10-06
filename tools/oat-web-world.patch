@@ -25,7 +25,7 @@ diff --git a/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.cpp b/src/ObjWriti
 new file mode 100644
 --- /dev/null
 +++ b/src/ObjWriting/Game/T4/WebWorld/WebWorldDumperT4.cpp
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,301 @@
 +// Local browser export extension for OpenAssetTools. GPL-3.0, like OAT.
 +#include "WebWorldDumperT4.h"
 +#include <filesystem>
@@ -132,23 +132,30 @@ new file mode 100644
 +        for(unsigned int i=0;i<map->vertCount;++i)vertices.push_back({map->verts[i].x,map->verts[i].y,map->verts[i].z});
 +        // The triangle pool also holds unplaced brush-model templates. Walk
 +        // only the world leaves' collision partitions, just as for brushes.
-+        std::map<int,int> worldTriangles;
++        std::map<int,int> worldTriangles,modelTriangles;
 +        std::set<int> visitedTrees;
-+        std::function<void(int)> visitTree = [&](int index) {
++        std::function<void(int,std::map<int,int>&)> visitTree = [&](int index,std::map<int,int>& out) {
 +            if(index < 0 || index >= map->aabbTreeCount || !visitedTrees.insert(index).second) return;
 +            const auto& tree=map->aabbTrees[index];
 +            if(tree.childCount) {
-+                for(int j=0;j<tree.childCount;++j) visitTree(tree.u.firstChildIndex+j);
++                for(int j=0;j<tree.childCount;++j) visitTree(tree.u.firstChildIndex+j,out);
 +            } else if(tree.u.partitionIndex >= 0 && tree.u.partitionIndex < map->partitionCount) {
 +                const auto& partition=map->partitions[tree.u.partitionIndex];
 +                const int contents=tree.materialIndex < map->numMaterials ? map->materials[tree.materialIndex].contentFlags : 1;
-+                for(int j=0;j<partition.triCount;++j) worldTriangles[partition.firstTri+j] |= contents;
++                for(int j=0;j<partition.triCount;++j) out[partition.firstTri+j] |= contents;
 +            }
 +        };
 +        for(unsigned int i=0;i<map->numLeafs;++i)
-+            for(int j=0;j<map->leafs[i].collAabbCount;++j) visitTree(map->leafs[i].firstCollAabbIndex+j);
++            for(int j=0;j<map->leafs[i].collAabbCount;++j) visitTree(map->leafs[i].firstCollAabbIndex+j,worldTriangles);
++        // Brush models (doors, debris) keep their patch triangles at the template
++        // position near the map origin; the game moves them with the entity. A
++        // partition a submodel leaf owns is never world collision, even when a
++        // world leaf also lists it (Nacht's help-room door stood by the stairs).
++        visitedTrees.clear();
++        for(unsigned int i=1;i<map->numSubModels;++i)
++            for(int j=0;j<map->cmodels[i].leaf.collAabbCount;++j) visitTree(map->cmodels[i].leaf.firstCollAabbIndex+j,modelTriangles);
 +        for(const auto& [triangle,contents]:worldTriangles)
-+            if(triangle >= 0 && triangle < map->triCount && (contents & (1|0x10000))) {
++            if(triangle >= 0 && triangle < map->triCount && (contents & (1|0x10000)) && !modelTriangles.contains(triangle)) {
 +                triangleContents.push_back(contents);
 +                for(int j=0;j<3;++j) indices.push_back(map->triIndices[triangle*3+j]);
 +            }

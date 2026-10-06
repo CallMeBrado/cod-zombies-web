@@ -13,6 +13,7 @@ import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {spawn} from 'node:child_process';
 import {prepareFactoryPowerNavigation} from './prepare_power_navigation.mjs';
 import {prepareKinoDoors} from './prepare_kino_doors.mjs';
+import {prepareGateNavigation} from './prepare_gate_navigation.mjs';
 import {navigationStamp} from './navigation_stamp.mjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url))),data=path.join(root,'local-data');
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_launch_media.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Loading movie preparation failed.')));});
@@ -33,7 +34,7 @@ if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&
 }
 const files=new Map();
 if(chosen.id==='der-riese')await prepareFactoryPowerNavigation(data,navigation);
-if(blackOps)await prepareKinoDoors();
+if(blackOps)await prepareKinoDoors();else await prepareGateNavigation(data,chosen,navigation);
 async function add(relative,required=true){
   relative=relative.replaceAll('\\','/');const resolved=path.resolve(data,relative),inside=path.relative(data,resolved);
   if(inside.startsWith('..')||path.isAbsolute(inside))throw new Error('Asset path escapes local-data.');
@@ -68,6 +69,7 @@ async function model(name){
 }
 await add(chosen.data+'/manifest.json');await add(chosen.data+'/presentation.json');await add(chosen.data+'/navigation.json');if(!blackOps)await add('ui/fonts/normalFont.json');
 if(chosen.id==='der-riese')await add(chosen.data+'/power-navigation.json');
+if(!blackOps)await add(chosen.data+'/gate-navigation.json');
 for(const effect of Object.values(presentation.effects))for(const element of effect.elements)for(const url of element.textures)await add(decodeURIComponent(url.slice('/data/'.length)));
 if(presentation.gore)for(const url of [presentation.gore.burst,presentation.gore.drops,...presentation.gore.decals])await add(decodeURIComponent(url.slice('/data/'.length)));
 for(const entry of Object.values(manifest.sounds).flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));

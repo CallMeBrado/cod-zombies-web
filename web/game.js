@@ -8,6 +8,7 @@ export const PHYSICS_STEP=1/120;
 const MAX_ALIVE=32;
 export const NAVIGATION_VERSION='native-triangles-physics-v3';
 export const POWER_NAVIGATION_VERSION='factory-power-v1';
+export const GATE_NAVIGATION_VERSION='gate-states-v1';
 // Grenades hit physical surfaces, not the invisible player movement clips
 // that close window openings and simplify traversal around rubble.
 export const GRENADE_CONTENTS=1;
@@ -278,8 +279,33 @@ export class SoloGame {
     this.powerNavigation={targets:POWER_TARGETS,links};
   }
   preparedPowerNavigation(){return {version:POWER_NAVIGATION_VERSION,navigationVersion:NAVIGATION_VERSION,targets:this.powerNavigation.targets,links:[...this.powerNavigation.links]};}
+  // Every link whose swept bounds touch a door, barrier or power brush, walked
+  // once per open/closed combination of those brushes (at most three overlap),
+  // so opening a door or a torn window selects prepared results instead of
+  // running physics sweeps during play (up to 1.8 s for Nacht's stairs).
+  computeGateNavigation(){
+    const disabled=this.collision.disabled,gated=this.collision.brushes.filter(b=>b.target),links=[];
+    try{
+      for(const key of this.linkCache.keys()){
+        const [a,b]=key.split(',').map(Number),p=this.nodes[a].origin,q=this.nodes[b].origin;
+        const low=[Math.min(p[0],q[0])-18,Math.min(p[1],q[1])-18,Math.min(p[2],q[2])-18],high=[Math.max(p[0],q[0])+18,Math.max(p[1],q[1])+18,Math.max(p[2],q[2])+88];
+        const targets=[...new Set(gated.filter(brush=>brush.mins.every((v,k)=>v<=high[k])&&brush.maxs.every((v,k)=>v>=low[k])).map(brush=>brush.target))].sort();
+        if(!targets.length)continue;if(targets.length>8)throw new Error('Too many gates overlap navigation link '+key);
+        const values=[];
+        for(let mask=0;mask<2**targets.length;mask++){this.collision.disabled=new Set(targets.filter((_,i)=>mask&(1<<i)));values.push(this.walkableLink(p,q,true));}
+        links.push([key,{targets,values}]);
+      }
+    }finally{this.collision.disabled=disabled;}
+    return {version:GATE_NAVIGATION_VERSION,navigationVersion:NAVIGATION_VERSION,links};
+  }
+  useGateNavigation(prepared){this.gateNavigation=prepared?.version===GATE_NAVIGATION_VERSION&&prepared.navigationVersion===NAVIGATION_VERSION?new Map(prepared.links):null;}
   invalidateNavigation(targets){
     this.pathCache.clear();this.targetNodeDue=0;this.spawnDistanceCache=null;
+    if(this.gateNavigation){
+      const changed=new Set(targets);
+      for(const [key,row]of this.gateNavigation)if(row.targets.some(t=>changed.has(t)))this.linkCache.set(key,row.values[row.targets.reduce((bits,t,i)=>bits|(this.collision.disabled.has(t)?1<<i:0),0)]);
+      return;
+    }
     const changed=this.collision.brushes.filter(b=>targets.includes(b.target));
     const powered=this.powerNavigation?.targets.every(target=>this.collision.disabled.has(target));
     // Retain static-world links. Re-test only edges whose swept body/step bounds

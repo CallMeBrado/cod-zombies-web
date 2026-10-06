@@ -325,7 +325,7 @@ async function init() {
   const progress=text=>{state.loading=text;launch.update(launch.element('progress').value,text);};
   const prepared=async(n,text)=>{launch.prepared(n,text);state.loading=text;await new Promise(requestAnimationFrame);};
   await preloadAssets(progress,info=>launch.downloaded(info));await prepared(0,'Preparing downloaded assets…');
-  const [manifest,collision,paths,recovered,navigation,powerNavigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true),mapChoice.id==='der-riese'?get('/data/'+mapChoice.data+'/power-navigation.json',true).catch(()=>null):null]);presentation=recovered;
+  const [manifest,collision,paths,recovered,navigation,powerNavigation,gateNavigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true),mapChoice.id==='der-riese'?get('/data/'+mapChoice.data+'/power-navigation.json',true).catch(()=>null):null,blackOps?null:get('/data/'+mapChoice.data+'/gate-navigation.json',true).catch(()=>null)]);presentation=recovered;
   map=await loadMap(scene,progress);await prepared(1,'Preparing original map objects…');await dynamicAssets(manifest.entities);
   await prepared(2,'Preparing original weapons and Zombies…');
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
@@ -352,7 +352,7 @@ async function init() {
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
-  actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps)game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);await audio.preload();resetVisuals();cameraPose();
+  actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();
   await prepared(5,'Compiling graphics…');
   const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(actors.warmObject(),...dropTemplates.values());
   const warmFx=effects.create('misc/fx_zombie_powerup_on',0);warmScene.add(warmFx);
