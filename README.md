@@ -65,6 +65,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Bullets can hit multiple living zombies along their path, using the original weapon penetration tier to approximate flesh penetration. Solid cover still stops the path.
   - Range damage blends from each original weapon's close damage to its far damage, then stays at its minimum. Shotguns retain their native pellet count and cone width, with a centered pellet and distributed spread for consistent close blasts. Animated head and torso combat volumes supplement mesh hits, so torn clothing and pose seams cannot make an otherwise valid hit miss. These mechanics are shared by WaW and Black Ops.
   - Grenades: cook them, throw them through windows, or pick up live ones and throw them back.
+- **Zombie deaths:** shared skeletal ragdolls for WaW and Black Ops, with physical map contacts, fixed-step simulation and sleeping corpses in the prepared actor pool.
 - **Barriers:** rebuilt with the use key, awarding points with the original repair sound.
 - **Power-ups:**
   - Max Ammo, Insta-Kill, Double Points, Nuke, plus Carpenter on Der Riese.

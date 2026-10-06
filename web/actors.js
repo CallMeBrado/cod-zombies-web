@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {model,cloneModel,originalAnimation,shadeModel} from './assets.js';
 import {ZombieHitTrace} from './zombie-hit-trace.js';
+import {SkeletonRagdoll} from './ragdoll.js';
 
 // Retarget shared clips before gameplay. Spawning only acquires a prepared rig.
 export class ZombieActors {
@@ -18,14 +19,14 @@ export class ZombieActors {
       });
       const mixer=new THREE.AnimationMixer(object),actions=new Map([...clips].map(([name,clip])=>[name,mixer.clipAction(clip)]));
       for(const [name,action]of actions){const once=name.includes('death')||name.includes('tear')||name.includes('traverse');action.setLoop(once?THREE.LoopOnce:THREE.LoopRepeat,once?1:Infinity);action.clampWhenFinished=once;}
-      this.pool.push({root,object,mixer,actions,materials,current:null,enemy:null,started:null,trace:new ZombieHitTrace(root)});
+      this.pool.push({root,object,mixer,actions,materials,current:null,enemy:null,started:null,trace:new ZombieHitTrace(root),ragdoll:new SkeletonRagdoll(root)});
     }
   }
   acquire(enemy){
     if(!this.pool.length){const corpse=[...this.active.values()].find(v=>v.enemy.dead);if(corpse)this.release(corpse.enemy.id);}
     const v=this.pool.pop();if(!v)throw new Error('Prepared zombie actor pool exhausted.');
     v.enemy=enemy;v.current=null;v.started=null;v.traceTick=-1;v.trace.tick=-1;v.root.name='Zombie '+enemy.id;v.root.position.fromArray(enemy.position);v.root.rotation.z=enemy.angle;
-    v.mixer.stopAllAction();this.active.set(enemy.id,v);this.updateOne(v,0,enemy.position);this.light(v);this.scene.add(v.root);return v;
+    v.mixer.stopAllAction();v.ragdoll.reset();this.active.set(enemy.id,v);this.updateOne(v,0,enemy.position);this.light(v);this.scene.add(v.root);return v;
   }
   play(v,name,started=null){
     if(v.current===name&&v.started===started)return;
@@ -33,8 +34,16 @@ export class ZombieActors {
     v.actions.get(v.current)?.fadeOut(.12);action.reset().setEffectiveWeight(1).setEffectiveTimeScale(1);if(v.current)action.fadeIn(.12);action.play();
     v.current=name;v.started=started;
   }
+  kill(enemy,direction=null,strength=60){
+    const v=this.active.get(enemy.id);if(!v||v.ragdoll.active||!v.ragdoll.ready)return false;
+    v.root.position.fromArray(enemy.position);v.root.rotation.z=enemy.angle;
+    if(!v.ragdoll.start(enemy,direction,strength,this.collision))return false;
+    v.mixer.stopAllAction();v.ragdoll.restoreFrozen();v.current=null;v.started=null;v.trace.tick=-1;v.traceTick=-1;return true;
+  }
   updateOne(v,dt,position){
-    const e=v.enemy;v.root.position.fromArray(position);v.root.rotation.z=e.angle;
+    const e=v.enemy;
+    if(e.dead&&v.ragdoll.ready){this.kill(e);v.ragdoll.update(dt,this.collision);v.trace.tick=-1;v.traceTick=-1;return;}
+    v.root.position.fromArray(position);v.root.rotation.z=e.angle;
     let name=v.actions.has(e.gait)?e.gait:'ai_zombie_walk_v1',started=null;
     if(e.dead)name='ai_zombie_death_v1';
     else if(e.stage==='traverse')name=e.traverseAnim;
@@ -43,9 +52,9 @@ export class ZombieActors {
     this.play(v,name,started);
     const action=v.actions.get(name);
     if(action){
-      action.paused=!!e.tear||e.stage==='traverse';
-      if(e.tear)action.time=Math.min(action.getClip().duration,e.age-(e.tear.started-e.spawnTime));
-      if(e.stage==='traverse')action.time=e.traverseTime;
+      action.paused=!e.dead&&(!!e.tear||e.stage==='traverse');
+      if(!e.dead&&e.tear)action.time=Math.min(action.getClip().duration,e.age-(e.tear.started-e.spawnTime));
+      if(!e.dead&&e.stage==='traverse')action.time=e.traverseTime;
       // Movement speed comes from the gait clip's root motion; only an
       // actor without a gait (old tests) still stretches the default walk.
       if(name==='ai_zombie_walk_v1'&&!e.gait)action.setEffectiveTimeScale(e.speed/37.64);
@@ -54,7 +63,7 @@ export class ZombieActors {
     v.trace.tick=-1;v.traceTick=-1;
   }
   light(v){const color=this.map.illumination(v.enemy.position);for(const m of v.materials)if(!m.userData.fixedLight)m.color.setRGB(...color);}
-  release(id){const v=this.active.get(id);if(!v)return;this.scene.remove(v.root);v.mixer.stopAllAction();v.enemy=null;this.active.delete(id);this.pool.push(v);}
+  release(id){const v=this.active.get(id);if(!v)return;this.scene.remove(v.root);v.mixer.stopAllAction();v.ragdoll.reset();v.enemy=null;this.active.delete(id);this.pool.push(v);}
   reset(){for(const id of [...this.active.keys()])this.release(id);}
   warmObject(){return this.pool[0].root;}
 }
