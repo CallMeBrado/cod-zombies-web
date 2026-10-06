@@ -12,7 +12,7 @@
     "inspect": "python -B tools/inspect_game.py",
     "extract": "python -B tools/extract_game.py",
     "verify": "python -B tools/verify_world.py",
-    "test": "node tools/test_startup.mjs && node tools/test_gameplay.mjs && node tools/test_fidelity.mjs && node tools/test_knife_lunge.mjs && node tools/test_ragdoll.mjs && node tools/test_gore.mjs && node tools/test_gamepad.mjs && node tools/test_mouse_controls.mjs && node tools/test_settings.mjs && node tools/test_grenades.mjs && node tools/test_grenade_throwback.mjs && node tools/test_weapon_parts.mjs && node tools/test_runtime_regressions.mjs && node tools/test_score_feedback.mjs && node tools/test_baked_light.mjs && node tools/test_movement_spawn.mjs && node tools/test_spawn_speeds.mjs && node tools/test_save.mjs && node tools/test_testing.mjs && node tools/test_static_rotation.mjs && node tools/test_powerups.mjs && node tools/test_weapon_switch.mjs && node tools/test_bullet_openings.mjs && node tools/test_power_switch.mjs && node tools/test_gate_navigation.mjs && node tools/test_player_voice.mjs && node tools/test_pause_keys.mjs && node tools/test_routes.mjs",
+    "test": "node tools/test_startup.mjs && node tools/test_gameplay.mjs && node tools/test_fidelity.mjs && node tools/test_knife_lunge.mjs && node tools/test_ragdoll.mjs && node tools/test_gore.mjs && node tools/test_dive.mjs && node tools/test_player_movement.mjs && node tools/test_gamepad.mjs && node tools/test_mouse_controls.mjs && node tools/test_settings.mjs && node tools/test_grenades.mjs && node tools/test_grenade_throwback.mjs && node tools/test_weapon_parts.mjs && node tools/test_runtime_regressions.mjs && node tools/test_score_feedback.mjs && node tools/test_baked_light.mjs && node tools/test_movement_spawn.mjs && node tools/test_spawn_speeds.mjs && node tools/test_save.mjs && node tools/test_testing.mjs && node tools/test_static_rotation.mjs && node tools/test_powerups.mjs && node tools/test_weapon_switch.mjs && node tools/test_bullet_openings.mjs && node tools/test_power_switch.mjs && node tools/test_gate_navigation.mjs && node tools/test_player_voice.mjs && node tools/test_pause_keys.mjs && node tools/test_routes.mjs",
     "test:startup": "node tools/test_startup.mjs",
     "test:mods": "node tools/test_testing.mjs",
     "test:bullets": "node tools/test_bullet_openings.mjs",
@@ -34,7 +34,11 @@
     "test:bo1": "node tools/test_bo1.mjs",
     "test:saves": "node tools/test_server_saves.mjs && node tools/test_save.mjs",
     "test:der-riese": "node tools/test_factory.mjs && node tools/test_factory_paths.mjs",
-    "test:controllers": "node tools/test_gamepad.mjs"
+    "test:controllers": "node tools/test_gamepad.mjs",
+    "test:movement": "node tools/test_player_movement.mjs",
+    "prepare:movement": "python -B tools/prepare_player_movement.py && node tools/build_preload.mjs --map kino --assets-only",
+    "test:dive": "node tools/test_dive.mjs",
+    "prepare:dive": "python -B tools/prepare_dive.py && node tools/build_preload.mjs --map kino --assets-only"
   },
   "dependencies": {
     "three": "0.186.1"

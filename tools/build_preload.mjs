@@ -19,6 +19,8 @@ const root=path.dirname(path.dirname(fileURLToPath(import.meta.url))),data=path.
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_launch_media.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Loading movie preparation failed.')));});
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_gore.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Native gore preparation failed.')));});
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_melee.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Native knife preparation failed.')));});
+await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_player_movement.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Native dive preparation failed.')));});
+await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_dive.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Dive audio/body preparation failed.')));});
 const read=async relative=>JSON.parse(await readFile(path.join(data,relative),'utf8'));
 const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=chosen.assetZones||[...new Set([chosen.zone,'common','nacht'])],blackOps=chosen.game==='black-ops';
 const manifest=await read(chosen.data+'/manifest.json'),presentation=await read(chosen.data+'/presentation.json'),world=await read(chosen.zone+'/web-world/'+chosen.asset+'.json');
@@ -81,6 +83,7 @@ for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(li
 const names=new Set([...(blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
   ...[manifest.grenade?.gunModel,manifest.grenade?.projectileModel,presentation.gore?.neckModel].filter(Boolean),
   ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel]),...Object.values(manifest.gestures||{}).map(g=>g.gunModel)]);
+for(const character of manifest.playerBodies||[])for(const key of ['body','head','hat'])if(character[key])names.add(character[key]);
 for(const name of names)await model(name);
 const animations=new Set(Object.keys(presentation.animations));
 for(const weapon of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade||{}])for(const [key,value] of Object.entries(weapon))if(key.endsWith('Anim')&&value)animations.add(value);

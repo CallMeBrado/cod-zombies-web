@@ -3,6 +3,7 @@ import { SCORE_POPUP_SECONDS } from './score-hud.js';
 import {FactoryRules,POWER_TARGETS} from './map-rules.js';
 import {hitDamage,fleshPenetration,pelletAngles} from './ballistics.js';
 import {chooseKnifeLunge,moveKnifeLunge,knifeHitValid,meleeValue} from './knife-lunge.js';
+import {resetMovement,restoreMovement,playerHull,playerView,playerSpeed,playerBusy,changeStance,stanceButton,releaseStance,movementFrame,movementInput,movementEnd,moveDive,stanceSpread} from './player-movement.js';
 export const PHYSICS_STEP=1/120;
 // round_spawning() waits while get_enemy_count() > 31.
 const MAX_ALIVE=32;
@@ -90,6 +91,7 @@ export class SoloGame {
     const floor=this.collision.move(this.spawn,[0,0,-64]);
     if(!floor.grounded)throw new Error('The original player spawn has no walkable collision floor.');
     this.player={position:floor.position,health:100,points:this.vars.zombie_score_start,kills:0,headshots:0,velocityZ:0,grounded:true,grenades:4};
+    resetMovement(this);
     this.scorePopups=[];
     this.accumulator=0;this.physicsTicks=0;this.jumpQueued=false;this.player.previousPosition=this.player.position.slice();this.pathCache.clear();this.linkCache=new Map(this.preparedLinkCache||[]);
     this.inventory=[this.makeWeapon(this.data.startWeapon||'zombie_colt')];this.slot=0;this.inventory[0].raised=true;this.switching=null;
@@ -103,6 +105,13 @@ export class SoloGame {
     this.emit('reset');this.emit('weapon',this.weapon);
   }
   get weapon(){return this.inventory[this.slot];}
+  get viewHeight(){return playerView(this);}
+  get playerHull(){return playerHull(this);}
+  get movementBlocked(){return playerBusy(this);}
+  changeStance(name){return changeStance(this,name);}
+  stanceButton(){stanceButton(this);}
+  releaseStance(cancel=false){releaseStance(this,cancel);}
+  hipSpread(){return stanceSpread(this);}
   makeWeapon(name) {const d=this.data.weapons[name];return {name,clip:d.clipSize,reserve:Math.max(0,d.startAmmo-d.clipSize),definition:d};}
   start(){if(this.phase==='ready'){this.phase='between';this.roundDue=this.time+2;this.emit('sessionStart');}else if(this.resumed){this.resumed=false;this.emit('sessionStart');}}
   message(text){this.emit('message',text);}
@@ -539,13 +548,13 @@ export class SoloGame {
   // (stage, route, health, gait, barrier spot), round progress and timers,
   // drops, active powerups, the mystery box, live grenades and map state.
   // Viewmodel-only actions (perk drink, Pack-a-Punch, grenade in hand) must end first.
-  canSave(){return ['round','between'].includes(this.phase)&&!this.gesture&&!this.mapRules?.pap&&!this.pendingGrenade;}
+  canSave(){return ['round','between'].includes(this.phase)&&!this.gesture&&!this.mapRules?.pap&&!this.pendingGrenade&&!this.dive&&!this.diveRecovery;}
   saveState(){
     const plain=v=>v==null?v:JSON.parse(JSON.stringify(v));
     return {version:2,time:this.time,elapsed:this.elapsed,phase:this.phase,round:this.round,zombieHealth:this.zombieHealth,roundBaseHealth:this.roundBaseHealth,
       remaining:this.remaining,spawnDue:this.spawnDue,roundDue:this.roundDue,roundStartedAt:this.roundStartedAt,roundEndedAt:this.roundEndedAt,barrierReward:this.barrierReward,
       ambientDue:this.ambientDue,lastDamage:this.lastDamage,cooldown:this.cooldown,meleeDue:this.meleeDue,rebuildDue:this.rebuildDue,nextId:this.nextId,nextDropId:this.nextDropId,shots:this.shots,hits:this.hits,powerupOrder:this.powerupOrder.slice(),powerupIndex:this.powerupIndex,
-      player:{position:this.player.position.slice(),health:this.player.health,points:this.player.points,kills:this.player.kills,headshots:this.player.headshots,grenades:this.player.grenades,velocityZ:this.player.velocityZ},
+      player:{position:this.player.position.slice(),health:this.player.health,points:this.player.points,kills:this.player.kills,headshots:this.player.headshots,grenades:this.player.grenades,velocityZ:this.player.velocityZ,stance:this.player.stance},
       yaw:this.yaw,pitch:this.pitch,inventory:this.inventory.map(w=>({name:w.name,clip:w.clip,reserve:w.reserve})),slot:this.slot,
       opened:[...this.opened],disabled:[...this.collision.disabled],
       windows:this.windows.map(w=>({target:w.target,boards:w.boards,attackers:[0,1,2].map(i=>this.holdsSpot(w.attackers?.[i])?w.attackers[i].id:null),traverser:w.traverser&&!w.traverser.dead?w.traverser.id:null})),
@@ -567,6 +576,7 @@ export class SoloGame {
     const weapons=s.inventory.filter(w=>this.data.weapons[w.name]).map(w=>({...this.makeWeapon(w.name),clip:w.clip,reserve:w.reserve,raised:true}));
     this.inventory=weapons.length?weapons:[this.makeWeapon('zombie_colt')];this.slot=Math.min(s.slot,this.inventory.length-1);this.inventory[this.slot].raised=true;
     Object.assign(this.player,s.player,{position:s.player.position.slice(),previousPosition:s.player.position.slice(),velocityZ:s.player.velocityZ||0});
+    restoreMovement(this,s.player.stance);
     const windows=new Map(this.windows.map(w=>[w.target,w])),enemies=new Map();
     for(const saved of s.enemies){
       const window=windows.get(saved.window);if(!window)continue;
@@ -622,6 +632,7 @@ export class SoloGame {
     if(this.player.health===0){this.phase='dead';this.emit('death',{round:this.round,kills:this.player.kills,points:this.player.points});}
   }
   update(dt,input={}) {
+    movementFrame(this,input);
     if(['ready','dead'].includes(this.phase))return;
     this.jumpQueued||=!!input.jump;
     if(!Number.isFinite(dt)||dt<=0)return;
@@ -639,6 +650,7 @@ export class SoloGame {
     dt=Math.min(dt,.05);this.player.previousPosition.splice(0,3,...this.player.position);
     for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
     this.time+=dt;this.elapsed+=dt;this.expireScorePopups();this.updateBoxes();this.mapRules?.tick();
+    input=movementInput(this,input,dt);
     if(moveKnifeLunge(this,dt,input))input={...input,forward:0,side:0,sprint:false,jump:false};
     if(this.pendingMelee&&this.time>=this.pendingMelee.due){this.resolveMelee();this.pendingMelee=null;}
     this.updateGesture();this.updateSwitch();
@@ -653,12 +665,13 @@ export class SoloGame {
       const w=this.weapon,amount=Math.min(w.definition.clipSize-w.clip,w.reserve);w.clip+=amount;w.reserve-=amount;this.reloadEnd=0;this.emit('reloaded');
     }
     this.autoReload();
+    if(!moveDive(this,dt,input)){
     const p=this.player,forward=[Math.cos(this.yaw),Math.sin(this.yaw)],right=[Math.sin(this.yaw),-Math.cos(this.yaw)];
     if(this.sprinting&&input.fire)this.fire();
     let dx=forward[0]*(input.forward||0)+right[0]*(input.side||0),dy=forward[1]*(input.forward||0)+right[1]*(input.side||0);
-    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&(p.grounded||this.time-(this.groundedAt??-Infinity)<.15)&&!this.gesture&&!this.switching;
+    const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&this.player.stance==='stand'&&!this.movementBlocked&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&(p.grounded||this.time-(this.groundedAt??-Infinity)<.15)&&!this.gesture&&!this.switching;
     const movementScale=Number.isFinite(input.movementScale)?Math.max(0,Math.min(1,input.movementScale)):1;
-    const speed=(this.sprinting?285:190)*this.weapon.definition.moveSpeedScale*movementScale;
+    const speed=(this.sprinting?285:190)*this.weapon.definition.moveSpeedScale*movementScale*playerSpeed(this);
     this.moving=len>0;this.spreadBloom=Math.max(0,this.spreadBloom-dt*(this.weapon.definition.hipSpreadDecayRate||4));
     if(len){dx=dx/len*speed*dt;dy=dy/len*speed*dt;}
     this.noclipping=!!this.movePlayerOverride?.(p,input,dt);
@@ -668,16 +681,19 @@ export class SoloGame {
       // On the ground (PM_GroundMove): move along the floor, then settle onto
       // it. Gravity is not applied, so slopes neither slide a standing player
       // nor lift them off for a tick (which cancelled sprint on every ramp).
-      const moved=this.collision.step(p.position,[dx,dy,0]),floor=this.groundBelow(moved.position);
+      const moved=this.collision.step(p.position,[dx,dy,0],this.playerHull),floor=this.groundBelow(moved.position);
       p.position=floor||moved.position;p.grounded=!!floor;p.velocityZ=0;
     }else{
       p.velocityZ-=800*dt;
-      const result=this.collision.step(p.position,[dx,dy,p.velocityZ*dt]);p.position=result.position;p.grounded=result.grounded;
+      const result=this.collision.step(p.position,[dx,dy,p.velocityZ*dt],this.playerHull);p.position=result.position;p.grounded=result.grounded;
       if(p.grounded)p.velocityZ=0;
     }
     // A brief lift (a step lip, a seam) keeps a sprint going; a real fall ends it.
     if(p.grounded)this.groundedAt=this.time;
     }
+    }
+    movementEnd(this,dt);
+    const p=this.player;
     if(p.position[2]<-600&&!this.noclipping)this.damagePlayer(100);
     if(this.time-this.lastDamage>3)p.health=Math.min(this.mapRules?.maxHealth||100,p.health+30*dt);
     for(const enemy of this.enemies)this.tickEnemy(enemy,dt);
@@ -697,14 +713,15 @@ export class SoloGame {
   // Walkable floor within a step (18 units) below the feet, or null when the
   // player walked off an edge and should fall.
   groundBelow(feet){
-    const probe=from=>{const t=this.collision.trace(from,[from[0],from[1],from[2]-18],[14,14,35]);return {t,floor:!t.allSolid&&t.fraction<1&&t.normal[2]>.65?[t.end[0],t.end[1],t.end[2]-35]:null};};
-    const center=[feet[0],feet[1],feet[2]+35],first=probe(center);if(first.floor||first.t.fraction>=1||first.t.allSolid)return first.floor;
+    const half=this.playerHull;
+    const probe=from=>{const t=this.collision.trace(from,[from[0],from[1],from[2]-18],half);return {t,floor:!t.allSolid&&t.fraction<1&&t.normal[2]>.65?[t.end[0],t.end[1],t.end[2]-half[2]]:null};};
+    const center=[feet[0],feet[1],feet[2]+half[2]],first=probe(center);if(first.floor||first.t.fraction>=1||first.t.allSolid)return first.floor;
     // Touching a wall or step edge stops the probe at once; retry a quarter
     // unit away from that surface so it reaches the floor beneath.
     const n=first.t.normal,length=Math.hypot(n[0],n[1])||1;return probe([center[0]+n[0]/length*.25,center[1]+n[1]/length*.25,center[2]]).floor;
   }
   rayHits(range=16000,yaw=this.yaw,pitch=this.pitch) {
-    const origin=[this.player.position[0],this.player.position[1],this.player.position[2]+60];
+    const origin=[this.player.position[0],this.player.position[1],this.player.position[2]+this.viewHeight];
     const dir=[Math.cos(yaw)*Math.cos(pitch),Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch)];
     // Browser gunfire follows visible surfaces, including gaps in props. The
     // walking hulls and invisible clips continue to govern actor movement.
@@ -725,13 +742,14 @@ export class SoloGame {
   }
   rayHit(range=16000,yaw=this.yaw,pitch=this.pitch){return this.rayHits(range,yaw,pitch);}
   fire() {
+    if(this.movementBlocked||this.player.stance==='prone'&&this.moving)return false;
     if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.cooldown||this.time<this.meleeDue||this.reloadEnd)return false;
     if(this.sprinting){this.sprinting=false;this.pendingFire=true;this.sprintExitUntil=this.time+(this.weapon.definition.sprintOutTime||.3);return false;}
     if(this.pendingFire||this.time+1e-9<this.sprintExitUntil)return false;
     const w=this.weapon;if(w.clip<=0){this.reload();return false;}
     const d=w.definition;
     w.clip--;this.cooldown=this.time+Math.max(.075,(d.fireTime+(d.rechamberAnim&&w.clip>0?d.rechamberTime:0))*(this.mapRules?.fireScale||1));this.shots++;
-    const hip=Math.min(d.hipSpreadMax||6,(d.hipSpreadStandMin||0)+this.spreadBloom+(this.moving?d.hipSpreadMoveAdd||0:0));
+    const stanceAccuracy=this.hipSpread(),hip=Math.min(stanceAccuracy.max,stanceAccuracy.min+this.spreadBloom+(this.moving?d.hipSpreadMoveAdd||0:0));
     const spread=(hip*(1-this.ads)+(d.adsSpread||0)*this.ads)*Math.PI/180;
     const penetration=fleshPenetration(d),range=d.maxRange>0?d.maxRange:16000;
     // Resolve the complete blast before changing health, so killing the first
@@ -766,6 +784,7 @@ export class SoloGame {
     }
   }
   melee() {
+    if(this.movementBlocked)return false;
     if(['dead','ready'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.mapRules?.reviveDue||this.time<this.meleeDue)return false;
     const d=this.weapon.definition,lunge=chooseKnifeLunge(this),charge=!!lunge;
     const duration=meleeValue(charge?d.meleeChargeTime:d.meleeTime,charge?1:.5),delay=meleeValue(charge?d.meleeChargeDelay:d.meleeDelay,charge?.15:.05);
@@ -789,11 +808,12 @@ export class SoloGame {
     this.reload();
   }
   reload() {
+    if(this.dive||this.diveRecovery)return false;
     const w=this.weapon;if(this.gesture||this.switching||this.pendingGrenade||this.reloadEnd||this.phase==='dead'||w.clip===w.definition.clipSize||!w.reserve)return;
     const duration=(w.clip===0?w.definition.reloadEmptyTime:w.definition.reloadTime)*(this.mapRules?.reloadScale||1);
     this.pendingFire=false;this.reloadEnd=this.time+duration;this.emit('reload',{empty:w.clip===0,duration});
   }
-  switchWeapon(){if(this.gesture||this.pendingGrenade||this.switching||this.inventory.length<2)return;const previous=this.weapon;this.slot=(this.slot+1)%this.inventory.length;this.beginSwitch(previous);}
+  switchWeapon(){if(this.dive||this.diveRecovery||this.gesture||this.pendingGrenade||this.switching||this.inventory.length<2)return;const previous=this.weapon;this.slot=(this.slot+1)%this.inventory.length;this.beginSwitch(previous);}
   giveWeapon(name) {
     const previous=this.weapon,owned=this.inventory.findIndex(w=>w.name===name);
     if(owned>=0){this.inventory[owned]=this.makeWeapon(name);this.slot=owned;}
@@ -833,6 +853,7 @@ export class SoloGame {
   }
   weaponName(name){return this.data.weaponNames?.[name]||{'zombie_colt':'Colt M1911','kar98k':'Kar98k','m1carbine':'M1A1 Carbine','thompson':'Thompson','bar':'BAR','doublebarrel':'Double barrel','shotgun':'Trench gun','mp40':'MP40','sw_357':'.357 Magnum','stg44':'STG-44','mg42_bipod':'MG42'}[name]||name;}
   use() {
+    if(this.dive)return false;
     if(this.pendingGrenade||this.gesture)return false;
     const grenade=this.nearGrenade();if(grenade)return this.rethrowGrenade(grenade);
     const e=this.nearInteraction();if(!e)return;
@@ -881,6 +902,7 @@ export class SoloGame {
   }
   renderPosition(actor){const a=Math.min(1,this.accumulator/PHYSICS_STEP),previous=actor.previousPosition||actor.position;return lerp(previous,actor.position,a);}
   throwGrenade(cook=false) {
+    if(this.movementBlocked)return false;
     if(!this.player.grenades||['ready','dead'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.meleeDue)return false;
     const d=this.data.grenade,started=this.time,pullAt=started+d.dropTime,throwAt=pullAt+d.holdFireTime;
     this.player.grenades--;this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;
@@ -923,7 +945,7 @@ export class SoloGame {
         this.grenades.push(pending.projectile);
       }
       if(!pending.released&&this.time+1e-9>=pending.releaseAt&&this.time+1e-9<pending.due){
-        pending.released=true;const origin=this.player.position,dir=[Math.cos(this.yaw)*Math.cos(this.pitch),Math.sin(this.yaw)*Math.cos(this.pitch),Math.sin(this.pitch)],eye=[origin[0],origin[1],origin[2]+60];
+        pending.released=true;const origin=this.player.position,dir=[Math.cos(this.yaw)*Math.cos(this.pitch),Math.sin(this.yaw)*Math.cos(this.pitch),Math.sin(this.pitch)],eye=[origin[0],origin[1],origin[2]+this.viewHeight];
         const position=this.collision.trace(eye,eye.map((v,i)=>v+dir[i]*16),[3,3,3],GRENADE_CONTENTS).end;
         const g=pending.projectile||{};Object.assign(g,{position,previousPosition:position.slice(),velocity:dir.map((v,i)=>v*d.projectileSpeed+(i===2?d.projectileSpeedUp:0)),due:pending.due,spawned:this.time,resting:false,bounceAt:0,held:false});
         if(!this.grenades.includes(g))this.grenades.push(g);this.emit('grenade',g);this.emit('sound',{alias:d.fireSoundPlayer});
@@ -932,7 +954,7 @@ export class SoloGame {
     }
     for(const g of this.grenades) {
       g.previousPosition.splice(0,3,...g.position);
-      if(g.held){g.position=[this.player.position[0],this.player.position[1],this.player.position[2]+40];}
+      if(g.held){g.position=[this.player.position[0],this.player.position[1],this.player.position[2]+Math.max(3,this.viewHeight-20)];}
       else if(!g.resting){
         g.velocity[2]-=800*dt;const result=this.collision.trace(g.position,g.position.map((v,i)=>v+g.velocity[i]*dt),[3,3,3],GRENADE_CONTENTS);g.position=result.end;
         if(result.fraction<1){
@@ -946,9 +968,9 @@ export class SoloGame {
       if(this.time+1e-9>=g.due&&!g.exploded){
         if(this.pendingGrenade?.projectile===g)this.pendingGrenade=null;
         g.exploded=true;this.emit('explosion',g);this.emit('sound',{alias:'grenade_explode'});this.emit('sound',{alias:'grenade_explode_bass',volume:.6});
-        const damage=p=>{const center=[p[0],p[1],p[2]+35],range=distance(center,g.position);if(range>=d.explosionRadius)return 0;const start=[g.position[0],g.position[1],g.position[2]+4];if(this.collision.trace(start,center,[0,0,0],1).fraction<.98)return 0;return d.explosionOuterDamage+(d.explosionInnerDamage-d.explosionOuterDamage)*(1-range/d.explosionRadius);};
+        const damage=(p,height=35)=>{const center=[p[0],p[1],p[2]+height],range=distance(center,g.position);if(range>=d.explosionRadius)return 0;const start=[g.position[0],g.position[1],g.position[2]+4];if(this.collision.trace(start,center,[0,0,0],1).fraction<.98)return 0;return d.explosionOuterDamage+(d.explosionInnerDamage-d.explosionOuterDamage)*(1-range/d.explosionRadius);};
         for(const e of this.enemies)if(!e.dead){const amount=damage(e.position);if(amount)this.hitEnemy(e,amount);}
-        const amount=damage(this.player.position);if(amount)this.damagePlayer(Math.round(amount));
+        const amount=damage(this.player.position,this.playerHull[2]);if(amount)this.damagePlayer(Math.round(amount));
       }
     }
     this.grenades=this.grenades.filter(g=>!g.exploded);

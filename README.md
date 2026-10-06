@@ -73,6 +73,8 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Original shuffled drop rotation.
   - Spawn sound and looping hum while a drop sits on the ground.
 - **HUD:** chalk round tally with the white flash between rounds, score with +point popups, ammo, grenades, perk icons and a moving crosshair.
+- **Player stances:** crouch and prone in both games, with lower camera/shot/grenade origins, smaller collision hulls, slower movement and native weapon stance spread. Crouch uses C, prone uses Ctrl, and Stand/Jump uses Space. Standing up under low cover is blocked. Controller B/Circle taps crouch, holds prone; A/Cross stands before jumping. Rebind these in Options. Saves retain stance; older saves default to standing.
+- **Dolphin dive (Black Ops):** Ctrl while sprinting, or hold B/Circle while sprinting, starts a committed forward dive and ends prone. The 200 ms shared-button hold and 250 ms sprint requirement are separate eligibility conditions. The configurable reconstruction profile uses 6.5 m/s forward speed, a 0.45 m movement-root rise, 20.32 m/s² gravity, about 0.42 s flight and 3.30 m total flat-ground travel. Actual walkable contact starts the landing, 70% retained-speed slide (0.25 s), movement pause (0.10 s), and independent weapon recovery (0.50 s from landing); their timers overlap. The recorded 400 ms apex setting is reference metadata and does not introduce a hover or force landing. Walls shorten the path; ledges extend the fall. Damage remains active, and weapon/equipment restrictions remain in force. Native loaded/empty weapon dive clips run alongside an animated original character body, additive camera lowering/landing jolt, stock launch/landing grunt variants, equipment foley and surface-specific landing/slide sounds. Normal crouch/prone remains shared with WaW, which never dolphin dives. These physical/presentation values remain provisional until compared with an original-game reference. [The original PC manual](https://cdn.akamai.steamstatic.com/steam/apps/42700/manuals/BlackOps_PC_Manual_v2.pdf) documents the keyboard controls.
 - **Audio:** 3D positional sound for machines, jingles, the PA system and pickups.
 - **Pause menu:**
   - Rebindable keys (primary and secondary bindings, mouse buttons, wheel).
@@ -260,7 +262,7 @@ Settings and key bindings remain specific to each browser. Game saves are stored
 
 Connect an Xbox, PlayStation, Backbone or other controller and press a button while the game tab is visible. Controllers reported by the browser with the standard mapping work immediately. Button icons follow the active input: Xbox letters, PlayStation symbols, Nintendo labels or generic button numbers. Mouse movement, clicks or keyboard input switch back to keyboard prompts. Disconnecting an active controller pauses the game.
 
-Default controls: left stick moves; right stick looks; LT/L2 aims; RT/R2 fires; A/Cross jumps; X/Square reloads or uses nearby objects (hold to repair barriers); Y/Triangle switches weapons; RB/R1 throws a grenade (hold to cook); LS/L3 toggles sprint; RS/R3 knifes; Menu/Options pauses and resumes. Use the D-pad or left stick to navigate menus, A/Cross to select and B/Circle to go back. LB/L1 and RB/R1 cycle settings tabs.
+Default controls: left stick moves; right stick looks; LT/L2 aims; RT/R2 fires; A/Cross stands/jumps; B/Circle taps crouch and holds prone (hold while sprinting to dive in BO1); X/Square reloads or uses nearby objects (hold to repair barriers); Y/Triangle switches weapons; RB/R1 throws a grenade (hold to cook); LS/L3 toggles sprint; RS/R3 knifes; Menu/Options pauses and resumes. Use the D-pad or left stick to navigate menus, A/Cross to select and B/Circle to go back. LB/L1 and RB/R1 cycle settings tabs.
 
 **Options → Controller** contains stick sensitivity, aim sensitivity, deadzones, inverted look, hold/toggle aim, icon style and per-device button/stick remapping. Unmapped controllers need a one-time setup there: map the controls, release all buttons/sticks, then choose **USE THIS MAPPING**. Settings are saved in that browser, independently of keyboard bindings.
 
@@ -274,10 +276,14 @@ Use HTTPS (or `http://localhost:8789` on the server PC); browsers can restrict [
 npm test                 # Full suite: startup, gameplay, physics, weapons, saves, powerups, routes
 npm run test:der-riese   # Der Riese progression, perks, teleporters, Pack-a-Punch and all spawn routes
 npm run test:controllers # Input switching, mappings, menus, triggers and analog movement at 30–240 FPS
+npm run test:movement    # Crouch/prone, low cover, saves, controller tap/hold and native BO1 dives
+npm run test:dive        # SI trajectory/recovery, ledges, collision events, grunts and character rigs
 npm run prepare:map      # Rebuild both maps' preload packs and zombie navigation
 ```
 
 The route tests run zombies from every spawn at every gait speed the map uses, through the windows and to the player. Any stuck route fails the suite.
+
+Dive calibration defaults are in `web/dive-config.js`, in meters/seconds/degrees. In the local developer console, `wawPreview.configureDive({ rootRiseMeters: 0.45, launchSpeedMps: 6.5 })` applies a bounded profile to subsequent dives. `wawPreview.diveTelemetry()` reports takeoff position, peak root rise, touchdown/stop distance, airborne/slide duration, movement/weapon-ready times and launch/landing counts. `wawPreview.setDiveThirdPerson(true)` shows the character pose for calibration; set it to `false` to restore the first-person view. `npm run prepare:dive` converts the owned stock sound layers and prepares body dependencies on E:. Shared exertion recordings are used by default; the profile table can map character-specific banks when matching recordings exist. No unique per-character dive recordings are assumed.
 
 After changing collision or movement code, run `npm run prepare:map` to rebuild the prepared zombie navigation, then run both test commands.
 

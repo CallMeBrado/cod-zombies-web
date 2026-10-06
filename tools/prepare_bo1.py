@@ -101,6 +101,9 @@ for name, w in weapons.items():
     else: w['startAmmo'] = (w['startAmmo']+1)*w['clipSize']; w['maxAmmo'] *= w['clipSize']
     w['handsModel'] = 'viewmodel_usa_pow_arms'
     w['knifeModel'] = knife['gunModel']
+    for phase in ['in','loop','out']:
+        w['dtp'+phase.title()+'Anim'] = w.get('dtp_'+phase,'')
+        w['dtp'+phase.title()+'EmptyAnim'] = w.get('dtp_empty_'+phase,'')
     for key in ['meleeAnim','meleeChargeAnim','meleeDamage','meleeDelay','meleeChargeDelay','meleeTime','meleeChargeTime','meleeChargeRange']: w[key] = knife[key]
     w['meleeDelay'] = knife['meleeDelay']; w['meleeSwipeSoundPlayer'] = 'wpn_knife_pull_plr'
     upgraded=native_weapons.get(name,('',0))[0]
@@ -252,5 +255,7 @@ manifest = dict(format='bo1-kino-solo-v1',game='black-ops',startWeapon='m1911_zm
 # Character voice lines are a separate, lazily decoded table (tools/prepare_voice.py).
 import prepare_voice
 prepare_voice.prepare_kino(OUTPUT/'manifest.json')
+import prepare_dive
+prepare_dive.prepare()
 (OUTPUT/'presentation.json').write_text(json.dumps(presentation,separators=(',',':')))
 print(json.dumps(dict(entities=len(entities),windows=len(goals),weapons=len(weapons),animations=len(animations),sounds=len(sounds),undecodedSounds=sum(v is None for v in cache.values()),hud=[p.name for p in hud.glob('*.png')]),indent=2))

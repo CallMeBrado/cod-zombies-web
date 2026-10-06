@@ -7,7 +7,8 @@ export class CrosshairHud {
   state(game,ads=0,verticalFov=65) {
     const d=game.weapon.definition;
     const moving=game.moving||!game.player.grounded;
-    const target=Math.min(d.hipSpreadMax||6,(d.hipSpreadStandMin||0)+
+    const accuracy=game.hipSpread?.()||{min:d.hipSpreadStandMin||0,max:d.hipSpreadMax||6};
+    const target=Math.min(accuracy.max,accuracy.min+
       (game.spreadBloom||0)+(moving?d.hipSpreadMoveAdd||0:0));
     if(this.game!==game||game.time<this.time){this.game=game;this.spread=target;this.time=game.time;}
     const dt=Math.max(0,game.time-this.time);this.time=game.time;
@@ -20,6 +21,6 @@ export class CrosshairHud {
       const pulse=(1-Math.cos((game.time-grenade.holdEnd)*Math.PI*2))/2;
       gap=6+4*pulse;alpha=.65+.35*pulse;
     }
-    return {gap,alpha,cooking};
+    return {gap,alpha:game.dive||game.diveRecovery?0:alpha,cooking};
   }
 }

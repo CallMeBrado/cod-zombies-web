@@ -68,7 +68,8 @@ export class WeaponView {
   reload({empty,duration}){this.rechamberAt=0;this.play(empty?this.weapon.definition.reloadEmptyAnim:this.weapon.definition.reloadAnim,duration);}
   offhand(){this.rechamberAt=0;this.flashTime=0;this.play(this.weapon.clip?this.weapon.definition.idleAnim:this.weapon.definition.emptyIdleAnim,0,true);}
   melee({duration,charge=false}={}){const d=this.weapon.definition;this.rechamberAt=0;this.sprintBlend=0;this.meleeRemaining=duration||d.meleeTime||.5;this.knife.visible=true;this.play(charge&&this.clips.has(d.meleeChargeAnim)?d.meleeChargeAnim:d.meleeAnim,this.meleeRemaining);}
-  update(dt,{ads,moving,sprinting,time,reloading,offhand=0}) {
+  dive({phase,duration=0}){const d=this.weapon.definition,empty=!this.weapon.clip,key=phase[0].toUpperCase()+phase.slice(1),anim=empty&&this.clips.has(d['dtp'+key+'EmptyAnim'])?d['dtp'+key+'EmptyAnim']:d['dtp'+key+'Anim'];this.rechamberAt=0;this.flashTime=0;this.meleeRemaining=0;this.play(anim||({in:d.sprintInAnim,loop:d.sprintLoopAnim,out:d.raiseAnim})[phase],duration,phase==='loop',phase==='in');}
+  update(dt,{ads,moving,sprinting,stance='stand',time,reloading,offhand=0}) {
     if(!this.root)return;
     this.actionElapsed+=dt;
     while(this.queue.length&&this.queue[0].due<=this.actionElapsed){const n=this.queue.shift(),alias=n.name.startsWith('sndnt#')?n.name.slice(6):(this.weapon.definition.notetrackSoundMap||'').split('\n').find(l=>l.split(/\s+/)[0]===n.name)?.split(/\s+/)[1];if(alias)this.audio.play(alias);}
@@ -91,7 +92,7 @@ export class WeaponView {
     this.mixer.update(dt);
     this.sprintBlend=THREE.MathUtils.clamp(this.sprintBlend+(target?1:-1)*dt/(target?d.sprintInTime||.3:d.sprintOutTime||.3),0,1);
     const blend=this.sprintBlend*this.sprintBlend*(3-2*this.sprintBlend),phase=time*2*Math.PI/(d.sprintLoopTime||.65);
-    const bob=moving?(1-ads*.85):0,h=.12*(1-blend)+blend*(d.sprintBobH||6)*.08,v=.12*(1-blend)+blend*(d.sprintBobV||8)*.08;
+    const bob=moving?(1-ads*.85)*(stance==='prone'?.35:stance==='crouch'?.65:1):0,h=.12*(1-blend)+blend*(d.sprintBobH||6)*.08,v=.12*(1-blend)+blend*(d.sprintBobV||8)*.08;
     this.root.position.set(-(d.sprintOfsR||0)*blend+Math.sin(phase)*h*bob,(d.sprintOfsU||0)*blend+Math.cos(phase*2)*v*bob,-(d.sprintOfsF||0)*blend);
     // Native positive pitch points forward/down. In the view camera's -Z
     // forward, +Y up coordinates that is a negative rotation about X.

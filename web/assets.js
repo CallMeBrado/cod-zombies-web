@@ -38,7 +38,7 @@ async function textureUrl(url) {
     if(/\/\$identitynormalmap\.dds$/i.test(url)){
       const t=new THREE.DataTexture(new Uint8Array([128,128,255,255]),1,1);t.colorSpace=THREE.NoColorSpace;t.needsUpdate=true;return t;
     }
-    const t=decode(await get(url));t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;
+    const t=decode(await get(url));t.name=decodeURIComponent(url);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;
   })().catch(error=>{textures.delete(url);throw error;}));
   return textures.get(url);
 }
@@ -528,7 +528,7 @@ export class OriginalAudio {
     // One instance per key, like the GSC level.*_jingle flags shared by a
     // machine's purchase sting and its idle jingle.
     if(options.exclusive&&[...this.sources].some(s=>s.exclusive===options.exclusive))return;
-    const entries=this.sounds[alias]||[],s=entries[Math.floor(Math.random()*entries.length)];if(!s)return;
+    const entries=this.sounds[alias]||[],s=entries[Number.isInteger(options.variant)&&options.variant>=0&&options.variant<entries.length?options.variant:Math.floor(Math.random()*entries.length)];if(!s)return;
     const buffer=this.buffers.get(s.url);if(!buffer)return;
     const node=this.context.createBufferSource(),gain=this.context.createGain();node.buffer=buffer;
     const pitch=s.pitch>0?s.pitch:1,when=Math.max(this.context.currentTime,options.when??this.context.currentTime);
@@ -550,6 +550,7 @@ export class OriginalAudio {
     const release=()=>{record.ended=true;this.sources.delete(source);node.disconnect();gain.disconnect();panner?.disconnect();};
     node.onended=release;node.start(when);
     record.stop=(fade=.05)=>{if(!this.sources.has(source))return;const now=this.context.currentTime;gain.gain.setValueAtTime(gain.gain.value,now);gain.gain.linearRampToValueAtTime(0,now+fade);try{node.stop(now+fade);}catch{release();}};
+    record.setVolume=value=>{if(!this.sources.has(source))return;gain.gain.setTargetAtTime(Math.max(0,value)*(s.volume??1),this.context.currentTime,.025);record.volume=Math.max(0,value)*(s.volume??1);};
     return record;
   }
   // Character voice lines are decoded when first spoken (a character has

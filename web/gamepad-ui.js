@@ -97,12 +97,13 @@ export class ControllerHud {
   sync(){
     const active=this.pads.active;this.menuHint.hidden=!active;const original=document.querySelector('.menu-hint');if(original)original.hidden=active;document.body.dataset.controllerActive=String(active);
     const key=this.pads.style+':'+JSON.stringify(this.pads.current?this.pads.settings.mapping(this.pads.current).bindings:null);if(key===this.lastStyle)return;this.lastStyle=key;this.lastPrompt=null;this.lastReload=null;this.legend.replaceChildren();this.menuHint.replaceChildren();if(!this.pads.current)return;
-    for(const [action,label]of [['aim','Aim'],['fire','Fire'],['interact','Reload / use'],['jump','Jump'],['nextWeapon','Swap'],['grenade','Grenade'],['melee','Knife'],['sprint','Sprint'],['pause','Pause']])this.legend.append(hint(this.pads.token(action),this.pads.style,label));
+    for(const [action,label]of [['aim','Aim'],['fire','Fire'],['interact','Reload / use'],['jump','Stand / jump'],['stance','Crouch / prone'],['nextWeapon','Swap'],['grenade','Grenade'],['melee','Knife'],['sprint','Sprint'],['pause','Pause']]){const item=hint(this.pads.token(action),this.pads.style,label);this.legend.append(item);if(action==='stance')this.stanceLabel=item.querySelector('.pad-action-label');}
     for(const [action,label]of [['confirm','SELECT'],['back','BACK'],['pause','RESUME']])this.menuHint.append(hint(this.pads.token(action),this.pads.style,label));
   }
   update(game,playing){
     const wasHidden=this.root.hidden;this.root.hidden=!this.pads.active||!playing||!game;this.menuHint.hidden=!this.pads.active||playing||document.getElementById('launch-screen')?.hidden===false;if(this.menuHint.lastChild)this.menuHint.lastChild.hidden=document.body.dataset.menuContext!=='pause';if(this.root.hidden)return;
     const now=performance.now();if(!wasHidden&&now<this.promptDue)return;this.promptDue=now+50;
+    if(this.stanceLabel)this.stanceLabel.textContent=game.data.game==='black-ops'&&game.sprinting?'Hold: dive':'Crouch / prone';
     const prompt=game.prompt(),label=this.pads.label('use');if(prompt!==this.lastPrompt){this.lastPrompt=prompt;this.context.replaceChildren();const at=label?prompt.indexOf(label):-1;if(at>=0){if(at)this.context.append(el('span',null,prompt.slice(0,at).trim()));this.context.append(buttonGlyph(this.pads.token('interact'),this.pads.style),el('span',null,prompt.slice(at+label.length).replace(/^\s*·\s*/,'')));}else this.context.textContent=prompt;this.context.hidden=!prompt;}
     const reload=game.reloadEnd?'RELOADING':game.weapon.clip===0?'RELOAD':'';if(reload!==this.lastReload){this.lastReload=reload;this.reload.replaceChildren();if(reload==='RELOAD')this.reload.append(buttonGlyph(this.pads.token('interact'),this.pads.style));this.reload.append(el('span',null,reload));this.reload.hidden=!reload;}
   }

@@ -132,7 +132,8 @@ export class BulletTrace {
           }
           THREE.Triangle.getNormal(this.a,this.b,this.c,this.normal);this.normal.applyNormalMatrix(this.normalMatrix.getNormalMatrix(e.matrix));
           if(this.normal.dot(this.worldRay.direction)>0)this.normal.negate();
-          max=distance;best={distance,normal:this.normal.toArray()};
+          const layer=e.geometry.attributes.wawLayer?.getX(ids[0]),texture=e.layers?.[layer]||material.map;
+          max=distance;best={distance,normal:this.normal.toArray(),material:material.name,texture:texture?.name};
         }
       }
     }

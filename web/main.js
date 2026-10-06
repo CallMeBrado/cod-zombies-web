@@ -27,6 +27,10 @@ import {BlackOpsHud} from './bo1-hud.js';
 import {ServerSaveStore} from './server-saves.js';
 import {LaunchScreen} from './launch-screen.js';
 import {PlayerVoice,CHARACTERS,CHARACTER_ARMS} from './player-voice.js';
+import {PlayerBody} from './player-body.js';
+import {DiveAudio,contactSurfaceName} from './dive-audio.js';
+import {divePresentation} from './player-movement.js';
+import {configureDive,predictedDive} from './dive-config.js';
 const mapChoice=selectedMap();
 const blackOps=mapChoice.game==='black-ops';
 // Black Ops solo plays a random one of the four characters (player_set_viewmodel);
@@ -53,6 +57,7 @@ const state={ready:false,mode:'menu',inputMode:'idle',yaw:Math.PI,pitch:0,loadin
 const launch=new LaunchScreen(mapChoice,()=>settings.value.volume);
 let gameLoading,launchAudioContext;
 let game,audio,map,weaponView,grenadeView,actors,effects,presentation;
+let playerBody,diveAudio,diveThirdPerson=false;
 const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts=[];
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
@@ -61,14 +66,14 @@ const loops=new Map();let papView=null,shake=null;const cellObjects=[];let cellM
 const pauseKeys=new PauseKeys();
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
-  ({reload:()=>game.reload(),melee:()=>game.melee(),use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
+  ({crouch:()=>game.changeStance('crouch'),prone:()=>game.changeStance('prone'),reload:()=>game.reload(),melee:()=>game.melee(),use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
 },action=>{if(action==='grenade'&&state.mode==='playing')game.releaseGrenade();});
 const mouse=new MouseControls(canvas,document,{mode:()=>({playing:state.mode==='playing',inputMode:state.inputMode,aiming:controls.toggledAim||settings.value.aimMode==='hold'&&settings.value.bindings.aim.some(t=>t&&!t.startsWith('Mouse')&&controls.tokens.has(t))}),buttons:b=>settings.mouseActions(b),fire:()=>game.fire()});
 let controllerPanel,controllerMenu,controllerHud;
 const gamepads=new GamepadControls(gamepadSettings,{
   mode:()=>state.mode,focused:()=>!document.hidden&&document.hasFocus(),aimBlend:()=>aimBlend,
-  action:action=>{if(state.mode!=='playing'||!game)return;if(action==='pause'){menu('Paused',mapChoice.title);return;}if(action==='interact'){if(game.nearInteraction()||game.nearWindow()||game.nearGrenade())game.use();else game.reload();return;}({fire:()=>game.fire(),melee:()=>game.melee(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon()})[action]?.();},
-  release:action=>{if(action==='grenade'&&state.mode==='playing')game?.releaseGrenade();},
+  action:action=>{if(state.mode!=='playing'||!game)return;if(action==='pause'){menu('Paused',mapChoice.title);return;}if(action==='interact'){if(game.nearInteraction()||game.nearWindow()||game.nearGrenade())game.use();else game.reload();return;}({stance:()=>game.stanceButton(),fire:()=>game.fire(),melee:()=>game.melee(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon()})[action]?.();},
+  release:(action,cancel=false)=>{if(action==='grenade'&&state.mode==='playing')game?.releaseGrenade();if(action==='stance')game?.releaseStance(cancel||state.mode!=='playing');},
   look:(yaw,pitch)=>{if(state.mode!=='playing')return;state.yaw+=yaw;state.pitch=THREE.MathUtils.clamp(state.pitch+pitch,-1.45,1.45);cameraPose();},
   menu:action=>controllerMenu?.handle(action),capture:()=>!!controllerPanel?.capturing,rawCapture:(token,pad)=>controllerPanel?.finish(token,pad),
   changed:owner=>{const previous=state.activeInput||'keyboard';state.activeInput=owner;if(owner==='controller'){if(previous==='keyboard'&&state.mode==='playing'&&game?.pendingGrenade?.cooking)game.releaseGrenade();controls.reset();mouse.reset();state.inputMode='controller';state.controllerUnlockAt=performance.now();if(document.pointerLockElement===canvas)document.exitPointerLock();}else if(state.inputMode==='controller')state.inputMode=document.pointerLockElement===canvas?'locked':'idle';controllerHud?.sync();controllerPanel?.sync();inputHint();},
@@ -85,9 +90,12 @@ const nodePos=e=>e.origin.split(/\s+/).map(Number);
 
 function notice(text){$('notice').textContent=text;noticeDue=performance.now()+3500;}
 function cameraPose() {
-  const p=game?game.renderPosition(game.player):[0,424,17];camera.position.set(p[0],p[1],p[2]+60);
-  const yaw=state.yaw+kickYaw,pitch=THREE.MathUtils.clamp(state.pitch+kickPitch,-1.45,1.45);
-  camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(yaw)*Math.cos(pitch),Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch))));
+  const p=game?game.renderPosition(game.player):[0,424,17],d=game?divePresentation(game,game.time-1/120+game.accumulator):null;
+  camera.up.set(0,0,1);camera.position.set(p[0],p[1],p[2]+(game?.viewHeight??60)+(d?.cameraOffsetUnits||0));
+  let yaw=state.yaw+kickYaw,pitch=THREE.MathUtils.clamp(state.pitch+kickPitch+(d?.cameraPitchRadians||0),-1.45,1.45);
+  if(game?.dive||game?.diveRecovery){const turn=Math.atan2(Math.sin(yaw-d.yaw),Math.cos(yaw-d.yaw)),limit=d.config.lookYawLimitDegrees*Math.PI/180;yaw=d.yaw+THREE.MathUtils.clamp(turn,-limit,limit);pitch=THREE.MathUtils.clamp(pitch,-d.config.lookPitchLimitDegrees*Math.PI/180,d.config.lookPitchLimitDegrees*Math.PI/180);}
+  if(diveThirdPerson&&game){camera.position.set(p[0]-Math.cos(d.yaw)*140,p[1]-Math.sin(d.yaw)*140,p[2]+70);camera.lookAt(p[0],p[1],p[2]+20);}
+  else{camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(yaw)*Math.cos(pitch),Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch))));if(d?.cameraRollRadians)camera.rotateZ(d.cameraRollRadians);}
   game?.aim(yaw,pitch);
 }
 function menu(title,description,button='Resume game') {
@@ -99,7 +107,7 @@ function menu(title,description,button='Resume game') {
   if(document.pointerLockElement)document.exitPointerLock();
 }
 // Three named server slots per map. A save snapshots the whole session.
-function saveBlocked(){return game?.canSave()?null:'Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';}
+function saveBlocked(){return game?.dive||game?.diveRecovery?'Finish the dive and weapon recovery before saving.':game?.canSave()?null:'Finish drinking, collect your Pack-a-Punch weapon or throw your grenade, then save.';}
 function slotSummary(){
   const g=game,r=g.mapRules;
   return {round:g.round,phase:g.phase,points:g.player.points,kills:g.player.kills,headshots:g.player.headshots,health:Math.round(g.player.health),
@@ -186,7 +194,7 @@ function death(stats) {
   if(document.pointerLockElement)document.exitPointerLock();
 }
 async function loadGun(weapon) {
-  if(!weaponView||!game)return;await weaponView.load(weapon,map.illumination(game.player.position));
+  if(!weaponView||!game)return;await Promise.all([weaponView.load(weapon,map.illumination(game.player.position)),playerBody?.weapon(weapon)]);
 }
 function spawnVisual(enemy){actors.acquire(enemy);}
 function barrier(w) {
@@ -350,6 +358,7 @@ async function init() {
   await prepared(2,'Preparing original weapons and Zombies…');
   if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=CHARACTER_ARMS[character];
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
+  if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
@@ -360,9 +369,11 @@ async function init() {
   await prepared(4,'Preparing map collision, navigation and audio…');
   game=new (blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     dialog:e=>voice?.speak(e).catch(console.warn),
+    dive:e=>weaponView.dive(e),
+    diveEvent:e=>diveAudio?.handle(e),contactSurface:(p,n)=>contactSurfaceName(map.bullets.trace([p[0]+n[0]*4,p[1]+n[1]*4,p[2]+6],[0,0,-1],24)),
     bindingName:keyName,controllerPrompts:()=>gamepads.active,
     message:notice,spawn:spawnVisual,
-    kill:e=>{const direction=e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
+    kill:e=>{const direction=e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
     traceShot:(origin,dir,range)=>map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:()=>{damageFlash=1;},death,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
@@ -385,7 +396,7 @@ async function init() {
   warmScene.remove(actors.warmObject());effects.dispose(warmFx);await prepared(6,'Uploading textures and character rigs…');await map.uploadTextures(renderer);
   // Shader compilation alone does not allocate skinning textures or geometry
   // buffers. Draw every prepared rig offscreen before the first spawn/switch.
-  const gpuWarmScene=new THREE.Scene(),rigs=[...actors.pool.map(v=>v.root),...weaponView.rigs.values(),grenadeView.root,...combatEffects.grenades.map(v=>v.mesh),...combatEffects.explosions.map(v=>v.root),...blood.warmObjects()].map(v=>v.root||v),restore=[];
+  const gpuWarmScene=new THREE.Scene(),rigs=[...actors.pool.map(v=>v.root),...weaponView.rigs.values(),grenadeView.root,...combatEffects.grenades.map(v=>v.mesh),...combatEffects.explosions.map(v=>v.root),...blood.warmObjects(),...(playerBody?.warmObjects()||[])].map(v=>v.root||v),restore=[];
   for(const root of rigs){restore.push({root,parent:root.parent,visible:root.visible});root.visible=true;gpuWarmScene.add(root);root.traverse(n=>{if(n.isMesh){restore.push({mesh:n,culled:n.frustumCulled});n.frustumCulled=false;}});}
   const warmTarget=new THREE.WebGLRenderTarget(64,64);
   await renderer.compileAsync(gpuWarmScene,viewCamera);renderer.setRenderTarget(warmTarget);renderer.render(gpuWarmScene,viewCamera);renderer.setRenderTarget(null);warmTarget.dispose();
@@ -466,7 +477,8 @@ function frame(time) {
   if(!paused)mouse.update(time);
   if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){kickPitch+=(Math.random()-.5)*shake.amplitude*.04;kickYaw+=(Math.random()-.5)*shake.amplitude*.04;}}cameraPose();if(game)game.ads=aimBlend;
   if(game&&!paused&&state.mode==='playing')game.update(dt,input());
-  const aimHeld=(gamepads.active?gamepads.aiming:controls.aiming)&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
+  if(gamepads.active&&game?.player.stance!=='stand')gamepads.sprinting=false;
+  const aimHeld=(gamepads.active?gamepads.aiming:controls.aiming)&&!game?.movementBlocked&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;
   if(!paused)aimBlend=THREE.MathUtils.clamp(aimBlend+(aimHeld&&!game?.reloadEnd?1:-1)*dt/adsTime,0,1);
   const adsFov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(game?.weapon.definition.adsZoomFov||60)/2)*.75));
@@ -481,8 +493,9 @@ function frame(time) {
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];if(game.time>=b.due){effects.dispose(b.root);bursts.splice(i,1);}else effects.update(b.root,game.time);}
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}
-  const showWeapon=state.mode==='playing'||pauseMenu.context==='pause',offhand=grenadeView&&game?grenadeView.update(game.time,showWeapon):0;
-  if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,time:game.time,reloading:!!game.reloadEnd,offhand});}
+  const showWeapon=(state.mode==='playing'||pauseMenu.context==='pause')&&!diveThirdPerson,offhand=grenadeView&&game?grenadeView.update(game.time,showWeapon):0;
+  if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,stance:game.player.stance,time:game.time,reloading:!!game.reloadEnd,offhand});}
+  if(game)playerBody?.update(game,state.mode==='playing'||pauseMenu.context==='pause');
   if(game&&game.time>lastLight+.3){lastLight=game.time;
     const color=map.illumination(game.player.position);weaponView?.object?.traverse(n=>{if(n.isMesh&&!n.material.userData.fixedLight)n.material.color.setRGB(...color.map(v=>Math.max(.09,v*1.5)));});
     for(const v of visuals.values())actors.light(v);
@@ -501,6 +514,7 @@ function frame(time) {
   requestAnimationFrame(frame);
 }
 window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
+  dive:{telemetry:game?.lastDive,phase:game?.dive?.phase||'ready',weaponRecovering:!!game?.diveRecovery,audio:diveAudio?.diagnostics(),body:playerBody?.diagnostics()},
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
   grenadeView:grenadeView?.diagnostics(),grenades:game?.grenades.map(g=>({position:g.position,velocity:g.velocity,due:g.due,resting:g.resting,held:!!g.held})),pendingGrenade:game?.pendingGrenade,
@@ -510,6 +524,11 @@ window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView()
   actorAnimations:[...visuals.values()].map(v=>({id:v.enemy.id,stage:v.enemy.stage,animation:v.current,position:v.enemy.position})),ads:aimBlend,
   muzzle:weaponView?.object?.getObjectByName('tag_flash')?.getWorldPosition(new THREE.Vector3()).toArray(),weaponTag:weaponView?.object?.getObjectByName('tag_weapon')?.getWorldPosition(new THREE.Vector3()).toArray(),
   illumination:game&&map?.illumination(game.player.position),aimPoints:[...visuals.values()].filter(v=>!v.enemy.dead).map(v=>({id:v.enemy.id,torso:v.root.getObjectByName('j_spineupper')?.getWorldPosition(new THREE.Vector3()).toArray(),head:v.root.getObjectByName('j_head')?.getWorldPosition(new THREE.Vector3()).toArray()}))})};
+Object.assign(window.wawPreview,{
+  configureDive:patch=>game?{settings:configureDive(game,patch),predicted:predictedDive(game.diveConfig)}:null,
+  diveTelemetry:()=>({report:game?.lastDive,phase:game?.dive?.phase||'ready',weaponRecovering:!!game?.diveRecovery,config:game?.diveConfig,predicted:game&&predictedDive(game.diveConfig),audio:diveAudio?.diagnostics(),body:playerBody?.diagnostics()}),
+  setDiveThirdPerson:on=>{diveThirdPerson=!!on;playerBody?.setThirdPerson(diveThirdPerson);cameraPose();return diveThirdPerson;}
+});
 if(blackOps)window.bo1Preview=window.wawPreview;
 async function bootLobby(){
   // Only menu artwork, fonts and the save catalogue are needed before Start.
