@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {model,cloneModel,originalAnimation,shadeModel} from './assets.js';
+import {model,cloneModel,originalAnimation,shadeModel,applyHideTags} from './assets.js';
 
 export class WeaponView {
   constructor(scene,audio){this.scene=scene;this.audio=audio;this.version=0;this.root=null;this.actions=new Map();this.current=null;this.ads=0;this.queue=[];this.rigs=new Map();this.sprintBlend=0;}
@@ -18,7 +18,7 @@ export class WeaponView {
     if(this.rigs.has(weapon.name)){this.activate(this.rigs.get(weapon.name),weapon);return;}
     // Perk bottles and the knuckle crack are viewmodel-only and carry no knife.
     const [hands,template,knifeTemplate]=await Promise.all([model(weapon.definition.handsModel||'viewmodel_hands'),model(weapon.definition.gunModel),weapon.definition.knifeModel?model(weapon.definition.knifeModel):null]);
-    const object=cloneModel(hands),gun=cloneModel(template);
+    const object=cloneModel(hands),gun=cloneModel(template);applyHideTags(gun,weapon.definition.hideTags);
     // Attached weapon parts use XAnim translations relative to their model
     // bind positions; hand tracks use their authored local positions.
     gun.traverse(bone=>{if(bone.isBone)bone.userData.animationTranslationBase=bone.position.toArray();});

@@ -2,6 +2,8 @@
 // All coordinates use original game units and Z up.
 import {nativeCollisionTriangle} from './native-triangles.js';
 const preparedWorlds=new WeakMap();
+// 128-unit grid cells keyed by number (no per-lookup string building).
+const cellKey=(x,y)=>(x+32768)*65536+(y+32768);
 export class CollisionWorld {
   constructor(data, entities) {
     const prepared=preparedWorlds.get(data);
@@ -61,7 +63,7 @@ export class CollisionWorld {
     const intervals=[];for(const a of axes){const len=Math.hypot(...a);if(len<1e-8)continue;const n=a.map(x=>x/len),p=points.map(p=>n.reduce((s,x,k)=>s+x*p[k],0));intervals.push([...n,Math.min(...p),Math.max(...p)]);}
     const mins=[0,1,2].map(k=>Math.min(...points.map(p=>p[k]))),maxs=[0,1,2].map(k=>Math.max(...points.map(p=>p[k]))),id=this.triangles.length;
     this.triangles.push({mins,maxs,normal,dist:normal.reduce((s,x,k)=>s+x*points[0][k],0),intervals,contents,model});
-    for(let x=Math.floor(mins[0]/128);x<=Math.floor(maxs[0]/128);x++)for(let y=Math.floor(mins[1]/128);y<=Math.floor(maxs[1]/128);y++){const key=x+','+y;if(!this.triangleCells.has(key))this.triangleCells.set(key,[]);this.triangleCells.get(key).push(id);}
+    for(let x=Math.floor(mins[0]/128);x<=Math.floor(maxs[0]/128);x++)for(let y=Math.floor(mins[1]/128);y<=Math.floor(maxs[1]/128);y++){const key=cellKey(x,y);if(!this.triangleCells.has(key))this.triangleCells.set(key,[]);this.triangleCells.get(key).push(id);}
   }
   add(original, origin, target) {
     if (!(original.contents & (1 | 0x10000))) return;
@@ -76,29 +78,44 @@ export class CollisionWorld {
     const {mins,maxs}=brush,id=this.brushes.length;
     this.brushes.push(brush);
     for(let x=Math.floor(mins[0]/128);x<=Math.floor(maxs[0]/128);x++) for(let y=Math.floor(mins[1]/128);y<=Math.floor(maxs[1]/128);y++) {
-      const key=x+','+y;if(!this.cells.has(key))this.cells.set(key,[]);this.cells.get(key).push(id);
+      const key=cellKey(x,y);if(!this.cells.has(key))this.cells.set(key,[]);this.cells.get(key).push(id);
     }
   }
+  // Candidates are gathered in grid-visit order and deduplicated with stamps
+  // (no per-trace Sets); the arithmetic matches the original step for step.
   trace(start,end,half=[0,0,0],mask=1|0x10000,ignoreWalkableTerrain=false) {
-    const low=start.map((v,i)=>Math.min(v,end[i])-half[i]), high=start.map((v,i)=>Math.max(v,end[i])+half[i]);
-    const candidates=new Set(),triangles=new Set(),visit=(x,y)=>{const key=x+','+y;for(const id of this.cells.get(key)||[])candidates.add(id);for(const id of this.triangleCells.get(key)||[])triangles.add(id);};
-    if(high[0]-low[0]<256&&high[1]-low[1]<256){for(let x=Math.floor(low[0]/128);x<=Math.floor(high[0]/128);x++)for(let y=Math.floor(low[1]/128);y<=Math.floor(high[1]/128);y++)visit(x,y);}
+    const s0=start[0],s1=start[1],s2=start[2],e0=end[0],e1=end[1],e2=end[2],h0=half[0],h1=half[1],h2=half[2];
+    const low0=Math.min(s0,e0)-h0,low1=Math.min(s1,e1)-h1,low2=Math.min(s2,e2)-h2,high0=Math.max(s0,e0)+h0,high1=Math.max(s1,e1)+h1,high2=Math.max(s2,e2)+h2;
+    if(this.brushSeen?.length!==this.brushes.length||this.triangleSeen?.length!==this.triangles.length||this.traceStamp>=0xfffffff0){
+      this.brushSeen=new Uint32Array(this.brushes.length);this.triangleSeen=new Uint32Array(this.triangles.length);this.traceStamp=0;this.brushIds=[];this.triangleIds=[];
+    }
+    const stamp=++this.traceStamp,brushSeen=this.brushSeen,triangleSeen=this.triangleSeen,brushIds=this.brushIds,triangleIds=this.triangleIds;brushIds.length=0;triangleIds.length=0;
+    const visit=(x,y)=>{
+      const key=cellKey(x,y),cellBrushes=this.cells.get(key),cellTriangles=this.triangleCells.get(key);
+      if(cellBrushes)for(let i=0;i<cellBrushes.length;i++){const id=cellBrushes[i];if(brushSeen[id]!==stamp){brushSeen[id]=stamp;brushIds.push(id);}}
+      if(cellTriangles)for(let i=0;i<cellTriangles.length;i++){const id=cellTriangles[i];if(triangleSeen[id]!==stamp){triangleSeen[id]=stamp;triangleIds.push(id);}}
+    };
+    if(high0-low0<256&&high1-low1<256){for(let x=Math.floor(low0/128);x<=Math.floor(high0/128);x++)for(let y=Math.floor(low1/128);y<=Math.floor(high1/128);y++)visit(x,y);}
     else{
       // Walk the swept ray's cells, rather than scanning its entire enclosing
       // rectangle. Diagonal shots used to inspect thousands of empty cells.
-      let x=Math.floor(start[0]/128),y=Math.floor(start[1]/128);const ex=Math.floor(end[0]/128),ey=Math.floor(end[1]/128),dx=end[0]-start[0],dy=end[1]-start[1],sx=Math.sign(dx),sy=Math.sign(dy),rx=Math.ceil(half[0]/128),ry=Math.ceil(half[1]/128);
-      let tx=dx?((x+(sx>0?1:0))*128-start[0])/dx:Infinity,ty=dy?((y+(sy>0?1:0))*128-start[1])/dy:Infinity;
+      let x=Math.floor(s0/128),y=Math.floor(s1/128);const ex=Math.floor(e0/128),ey=Math.floor(e1/128),dx=e0-s0,dy=e1-s1,sx=Math.sign(dx),sy=Math.sign(dy),rx=Math.ceil(h0/128),ry=Math.ceil(h1/128);
+      let tx=dx?((x+(sx>0?1:0))*128-s0)/dx:Infinity,ty=dy?((y+(sy>0?1:0))*128-s1)/dy:Infinity;
       const limit=Math.abs(ex-x)+Math.abs(ey-y)+2;
       for(let step=0;step<limit;step++){for(let a=-rx;a<=rx;a++)for(let b=-ry;b<=ry;b++)visit(x+a,y+b);if(x===ex&&y===ey)break;if(tx<=ty){x+=sx;tx+=128/Math.abs(dx);}else{y+=sy;ty+=128/Math.abs(dy);}}
     }
     let fraction=1,normal=[0,0,0],solid=false,allSolid=false;
-    for(const id of candidates) {
-      const b=this.brushes[id];if(!(b.contents&mask)||this.disabled.has(b.target)||b.mins.some((v,i)=>v>high[i])||b.maxs.some((v,i)=>v<low[i]))continue;
+    const disabled=this.disabled,checkDisabled=disabled.size>0;
+    for(let c=0;c<brushIds.length;c++) {
+      const b=this.brushes[brushIds[c]];if(!(b.contents&mask)||checkDisabled&&disabled.has(b.target))continue;
+      const bm=b.mins,bM=b.maxs;if(bm[0]>high0||bm[1]>high1||bm[2]>high2||bM[0]<low0||bM[1]<low1||bM[2]<low2)continue;
       let enter=-1,leave=1,hit=null,outside=false,endOutside=false,reject=false,closest=null,closestDistance=-Infinity;
-      for(const p of b.planes) {
-        const support=Math.abs(p[0])*half[0]+Math.abs(p[1])*half[1]+Math.abs(p[2])*half[2];
-        const d1=p[0]*start[0]+p[1]*start[1]+p[2]*start[2]-p[3]-support;
-        const d2=p[0]*end[0]+p[1]*end[1]+p[2]*end[2]-p[3]-support;
+      const planes=b.planes;
+      for(let k=0;k<planes.length;k++) {
+        const p=planes[k];
+        const support=Math.abs(p[0])*h0+Math.abs(p[1])*h1+Math.abs(p[2])*h2;
+        const d1=p[0]*s0+p[1]*s1+p[2]*s2-p[3]-support;
+        const d2=p[0]*e0+p[1]*e1+p[2]*e2-p[3]-support;
         if(d1>closestDistance){closestDistance=d1;closest=p;}
         if(d2>0)endOutside=true;
         if(d1>0)outside=true;
@@ -119,7 +136,7 @@ export class CollisionWorld {
           // A shallow contact is a clipping plane, not a volume that freezes
           // every direction. Permit tangential motion/escape at floor seams.
           if(closestDistance>=-.06){
-            const inward=closest[0]*(end[0]-start[0])+closest[1]*(end[1]-start[1])+closest[2]*(end[2]-start[2]);
+            const inward=closest[0]*(e0-s0)+closest[1]*(e1-s1)+closest[2]*(e2-s2);
             if(inward<-1e-9){fraction=0;normal=closest.slice(0,3);}
           }else{allSolid=true;fraction=0;normal=closest.slice(0,3);}
         }
@@ -127,21 +144,25 @@ export class CollisionWorld {
       }
       if(enter<leave&&enter>-1&&enter<fraction&&hit){fraction=Math.max(0,enter);normal=hit.slice(0,3);}
     }
-    for(const id of triangles){
-      const t=this.triangles[id];if(!(t.contents&mask)||ignoreWalkableTerrain&&!t.model&&t.normal[2]>.65||t.mins.some((v,i)=>v>high[i])||t.maxs.some((v,i)=>v<low[i]))continue;
-      const velocity=t.normal.reduce((s,n,k)=>s+n*(end[k]-start[k]),0),support=t.normal.reduce((s,n,k)=>s+Math.abs(n)*half[k],0),front=t.normal.reduce((s,n,k)=>s+n*start[k],0)-t.dist-support;
+    const d0=e0-s0,d1=e1-s1,d2=e2-s2;
+    for(let c=0;c<triangleIds.length;c++){
+      const t=this.triangles[triangleIds[c]],n=t.normal;if(!(t.contents&mask)||ignoreWalkableTerrain&&!t.model&&n[2]>.65)continue;
+      const tm=t.mins,tM=t.maxs;if(tm[0]>high0||tm[1]>high1||tm[2]>high2||tM[0]<low0||tM[1]<low1||tM[2]<low2)continue;
+      let velocity=0;velocity+=n[0]*d0;velocity+=n[1]*d1;velocity+=n[2]*d2;
+      let support=0;support+=Math.abs(n[0])*h0;support+=Math.abs(n[1])*h1;support+=Math.abs(n[2])*h2;
+      let front=0;front+=n[0]*s0;front+=n[1]*s1;front+=n[2]*s2;front=front-t.dist-support;
       // A box can overlap the next triangle at a slope seam while its center
       // remains above the surface. Keep that contact; rejecting a penetrated
       // support point lets gravity carry the whole actor through the terrain.
       if(velocity>=-1e-8||front<-support-.03||front+velocity>.03)continue;
-      let enter=0,leave=fraction,hit=t.normal,reject=false;
-      for(const a of t.intervals){const radius=Math.abs(a[0])*half[0]+Math.abs(a[1])*half[1]+Math.abs(a[2])*half[2],p=a[0]*start[0]+a[1]*start[1]+a[2]*start[2],d=a[0]*(end[0]-start[0])+a[1]*(end[1]-start[1])+a[2]*(end[2]-start[2]),min=a[3]-radius,max=a[4]+radius;
+      let enter=0,leave=fraction,hit=n,reject=false;const intervals=t.intervals;
+      for(let k=0;k<intervals.length;k++){const a=intervals[k],radius=Math.abs(a[0])*h0+Math.abs(a[1])*h1+Math.abs(a[2])*h2,p=a[0]*s0+a[1]*s1+a[2]*s2,d=a[0]*d0+a[1]*d1+a[2]*d2,min=a[3]-radius,max=a[4]+radius;
         if(Math.abs(d)<1e-9){if(p<min-1e-7||p>max+1e-7){reject=true;break;}continue;}
-        const first=(min-p)/d,last=(max-p)/d,near=Math.min(first,last),far=Math.max(first,last);if(near>enter){enter=near;hit=a.slice(0,3).map(n=>d>0?-n:n);}leave=Math.min(leave,far);if(enter>leave+1e-7){reject=true;break;}
+        const first=(min-p)/d,last=(max-p)/d,near=Math.min(first,last),far=Math.max(first,last);if(near>enter){enter=near;hit=d>0?[-a[0],-a[1],-a[2]]:[a[0],a[1],a[2]];}leave=Math.min(leave,far);if(enter>leave+1e-7){reject=true;break;}
       }
       if(!reject&&enter<=leave&&enter<fraction){fraction=Math.max(0,enter-.03/Math.max(1e-8,-velocity));normal=hit.slice();}
     }
-    return {fraction,normal,solid,allSolid,end:start.map((v,i)=>v+(end[i]-v)*fraction)};
+    return {fraction,normal,solid,allSolid,end:[s0+(e0-s0)*fraction,s1+(e1-s1)*fraction,s2+(e2-s2)*fraction]};
   }
   move(feet, delta, half=[14,14,35]) {
     const start=[feet[0],feet[1],feet[2]+half[2]];

@@ -126,7 +126,7 @@ export class SoloGame {
     this.spawnDue=this.time;this.phase='round';this.barrierReward=0;this.player.grenades=Math.min(4,this.player.grenades+2);
     this.emit('round',this.round);this.emit('sound',{alias:'chalk'});
   }
-  nearest(position,visible=false,regular=false) {
+  nearest(position,visible=false,regular=false,{cheap=0,physics=32}={}) {
     const scores=new Float64Array(this.nodes.length);let index=-1,best=Infinity;
     for(let i=0;i<this.nodes.length;i++){const p=this.nodes[i].origin,score=regular&&(this.nodes[i].type===this.negotiationBegin||this.nodes[i].type===this.negotiationEnd)?Infinity:(p[0]-position[0])**2+(p[1]-position[1])**2+(p[2]-position[2])**2;scores[i]=score;if(score<best){best=score;index=i;}}
     if(!visible)return index;
@@ -135,17 +135,29 @@ export class SoloGame {
     // A position no node can walk to (inside geometry, off the map) must not
     // sweep the whole graph: stop after 32 physics tests. Links longer than
     // 1024 or rising more than 256 units are rejected without a sweep.
+    const order=this.nodeOrder.slice().sort((a,b)=>scores[a]-scores[b]),inRange=i=>{const q=this.nodes[i].origin;return Number.isFinite(scores[i])&&Math.hypot(q[0]-position[0],q[1]-position[1])<=1024&&Math.abs(q[2]-position[2])<=256;};
+    // Live searches first try a few direct hull sweeps (three traces each)
+    // before any step-by-step walk, which costs ~18 ms per failing node.
+    if(cheap){let tried=0;for(const i of order){if(!inRange(i))continue;if(this.walkableLink(position,this.nodes[i].origin,false))return i;if(++tried>=cheap)break;}}
     let tested=0;
-    for(const i of this.nodeOrder.slice().sort((a,b)=>scores[a]-scores[b])){
-      if(!Number.isFinite(scores[i]))break;const q=this.nodes[i].origin;
-      if(Math.hypot(q[0]-position[0],q[1]-position[1])>1024||Math.abs(q[2]-position[2])>256)continue;
-      if(this.walkableLink(position,q,true))return i;if(++tested>=32)break;
+    for(const i of order){
+      if(tested>=physics)break;if(!inRange(i))continue;
+      if(this.walkableLink(position,this.nodes[i].origin,true))return i;tested++;
     }
     return -1;
   }
   // The node zombies chase toward. A noclipping player is usually off the
   // walkable graph, so they head for the nearest node instead of searching.
-  playerNode(position){return this.noclipping?this.nearest(position,false,true):this.nearest(position,true,true);}
+  // Searched every 0.15 s, so it must stay cheap: keep the current node while
+  // it is close and directly reachable, try direct sweeps to the nearest few,
+  // and otherwise use the nearest node (standing on props, ledges, noclip).
+  playerNode(position){
+    if(this.noclipping)return this.nearest(position,false,true);
+    const current=this.nodes[this.targetNode]?.origin;
+    if(current&&Math.hypot(current[0]-position[0],current[1]-position[1])<256&&this.walkableLink(position,current,false))return this.targetNode;
+    const found=this.nearest(position,true,true,{cheap:16,physics:0});
+    return found>=0?found:this.nearest(position,false,true);
+  }
   walkableLink(p,q,navigation=false){
     const start=[p[0],p[1],p[2]+35.1],end=[q[0],q[1],q[2]+35.1],half=[14,14,34.9];
     const clear=this.collision.trace(start,end,half,1|0x10000,navigation).fraction>=.98;

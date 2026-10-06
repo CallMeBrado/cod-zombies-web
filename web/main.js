@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { get,loadMap,model,cloneModel,originalAnimation,OriginalAudio,shadeModel } from './assets.js';
+import { get,loadMap,model,cloneModel,originalAnimation,OriginalAudio,shadeModel,applyHideTags } from './assets.js';
 import { CollisionWorld } from './collision.js';
 import {TestingGame,TestingMenu} from './testing.js';
 import { WeaponView } from './weapon-view.js';
@@ -271,7 +271,7 @@ function updateDrop(drop,v){
   updatePickupView(drop,v,game.time,effects);
 }
 async function prepareBox(manifest){
-  for(const [name,d]of Object.entries(manifest.weapons)){const object=cloneModel(await model(d.worldModel));shadeModel(object,[.7,.7,.7]);boxTemplates.set(name,object);}
+  for(const [name,d]of Object.entries(manifest.weapons)){const object=cloneModel(await model(d.worldModel));applyHideTags(object,d.hideTags);shadeModel(object,[.7,.7,.7]);boxTemplates.set(name,object);}
   for(const e of manifest.entities.filter(e=>e.targetname==='treasure_chest_use')){
     const lid=dynamic.get(e.target)?.[0],origin=manifest.entities.find(x=>x.targetname===lid?.entity.target);if(!lid||!origin)throw new Error('Original mystery box lid/spawn missing.');
     const v=createBoxView(lid,origin,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);
@@ -485,7 +485,7 @@ function frame(time) {
   if(time>=domDue){updateHud();domDue=time+100;}
   requestAnimationFrame(frame);
 }
-window.wawPreview={state,camera,renderer,scene,applyCellCulling,get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
+window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
   grenadeView:grenadeView?.diagnostics(),grenades:game?.grenades.map(g=>({position:g.position,velocity:g.velocity,due:g.due,resting:g.resting,held:!!g.held})),pendingGrenade:game?.pendingGrenade,

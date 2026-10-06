@@ -118,6 +118,26 @@ export async function model(name) {
   return models.get(name);
 }
 export function cloneModel(template){return clone(template);}
+// A weapon file's hideTags: attachment parts (scopes, suppressors, grips,
+// extended magazines...) are modelled into the gun and skinned to these tag
+// bones; the engine skips them unless the weapon variant uses them. Drop each
+// triangle whose vertices are bound to a hidden tag or one of its children.
+export function applyHideTags(root,tags){
+  const hide=new Set(String(tags||'').split(/\s+/).filter(Boolean).map(t=>t.toLowerCase()));if(!hide.size)return 0;let removed=0;
+  root.traverse(mesh=>{
+    if(!mesh.isSkinnedMesh)return;
+    const hidden=mesh.skeleton.bones.map(bone=>{for(let n=bone;n;n=n.parent)if(hide.has((n.name||'').toLowerCase()))return true;return false;});
+    if(!hidden.some(Boolean))return;
+    const g=mesh.geometry,si=g.getAttribute('skinIndex'),sw=g.getAttribute('skinWeight');if(!si||!sw)return;
+    const bound=v=>{let best=0,weight=-1;for(let k=0;k<si.itemSize;k++){const w=sw.getComponent(v,k);if(w>weight){weight=w;best=si.getComponent(v,k);}}return hidden[best];};
+    const index=g.index?Array.from(g.index.array):Array.from({length:g.attributes.position.count},(_,i)=>i),keep=[];
+    for(let i=0;i<index.length;i+=3)if(!bound(index[i])&&!bound(index[i+1])&&!bound(index[i+2]))keep.push(index[i],index[i+1],index[i+2]);
+    if(keep.length===index.length)return;removed+=(index.length-keep.length)/3;
+    if(!keep.length){mesh.visible=false;return;}
+    const filtered=g.clone();filtered.setIndex(keep);mesh.geometry=filtered;
+  });
+  return removed;
+}
 export async function loadMap(scene,progress) {
   const world=await get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.json',true);
   const bullets=new BulletTrace();
