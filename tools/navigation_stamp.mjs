@@ -16,6 +16,9 @@ export async function navigationStamp(root,chosen,manifest){
   game=game.replace(/^import .*from '\.\/ballistics\.js';\r?\n/m,'');
   game=game.replace(/^import .*from '\.\/knife-lunge\.js';\r?\n/m,'');
   game=game.replace(/^    if\(moveKnifeLunge\(this,dt,input\)\)input=\{\.\.\.input,forward:0,side:0,sprint:false,jump:false\};\r?\n/m,'');
+  // Analog input scales player speed; prepared NPC hull paths do not use it.
+  game=game.replace(/^    const movementScale=Number\.isFinite\(input\.movementScale\)\?Math\.max\(0,Math\.min\(1,input\.movementScale\)\):1;\r?\n/m,'');
+  game=game.replace('*this.weapon.definition.moveSpeedScale*movementScale;','*this.weapon.definition.moveSpeedScale;');
   hash.update(game.split(/\r?\n/).filter(line=>line.trim()).join('\n'));
   for(const name of ['map-rules.js','collision.js','native-triangles.js'])hash.update(await readFile(path.join(root,'web',name)));
   if(chosen.game==='black-ops'){

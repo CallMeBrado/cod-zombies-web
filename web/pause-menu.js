@@ -3,12 +3,12 @@ import {MenuText} from './menu-text.js';
 const $=id=>document.getElementById(id);
 export class PauseMenu {
  constructor(settings,callbacks){
-  this.settings=settings;this.callbacks=callbacks;this.view='home';this.capture=null;this.context='start';this.tabs=['controls','mouse','audio','video'];
+  this.settings=settings;this.callbacks=callbacks;this.view='home';this.capture=null;this.context='start';this.tabs=['controls','controller','mouse','audio','video'];
   $('options').onclick=()=>this.show('options');$('menu-back').onclick=()=>this.back();$('quit').onclick=()=>this.confirm('quit');$('restart').onclick=()=>this.confirm('restart');
   $('save-game').onclick=()=>this.openSaves('save');$('resume-save').onclick=()=>this.openSaves('load');
   $('confirm-no').onclick=()=>this.show('home');$('confirm-yes').onclick=()=>{const action=this.confirmAction;this.show('home');callbacks[action]();};
   $('reset-controls').onclick=()=>{settings.resetControls();this.setStatus('Controls restored to defaults.');};
-  for(const tab of this.tabs){$('tab-'+tab).onclick=()=>this.selectTab(tab);$('tab-'+tab).onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const i=this.tabs.indexOf(tab),next=this.tabs[(i+(e.key==='ArrowRight'?1:3))%4];this.selectTab(next);$('tab-'+next).focus();}};}
+  for(const tab of this.tabs){$('tab-'+tab).onclick=()=>this.selectTab(tab);$('tab-'+tab).onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const i=this.tabs.indexOf(tab),next=this.tabs[(i+(e.key==='ArrowRight'?1:this.tabs.length-1))%this.tabs.length];this.selectTab(next);$('tab-'+next).focus();}};}
   for(const key of ['sensitivity','adsSensitivity','volume','fov','renderScale'])$(key).oninput=()=>settings.update(key,Number($(key).value));
   $('invertY').onchange=()=>settings.update('invertY',$('invertY').checked);$('showFps').onchange=()=>settings.update('showFps',$('showFps').checked);$('aimMode').onchange=()=>settings.update('aimMode',$('aimMode').value);
   $('fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{this.setStatus('Fullscreen is unavailable in this browser.');}};

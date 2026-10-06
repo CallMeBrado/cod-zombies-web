@@ -1,0 +1,27 @@
+.pad-glyph{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:28px;height:25px;padding:0 5px;border:1px solid #d8d8d8a0;border-radius:5px;background:#151515db;color:var(--button-color,#ddd);font:700 12px Arial,sans-serif;box-shadow:0 1px 4px #0008;text-shadow:none;line-height:1}
+.pad-glyph.pad-face{width:26px;height:26px;padding:0;border-radius:50%;font-size:16px}
+.pad-glyph.pad-stick{border-radius:50%;min-width:28px;font-size:10px}
+.pad-glyph svg{display:block;width:22px;height:22px;fill:none;stroke:var(--button-color,#ddd);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.pad-action{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.controller-hud{position:fixed;inset:0;z-index:5;pointer-events:none;color:#ddd;font:14px "Arial Narrow",Arial,sans-serif;text-shadow:1px 1px 3px #000,0 0 5px #000}
+.controller-context,.controller-reload{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;gap:8px;max-width:85vw;text-align:center}
+.controller-context{top:60.5%}.controller-reload{top:55.5%;font-size:12px;color:#ddd}
+.controller-legend{position:absolute;left:50%;bottom:11%;transform:translateX(-50%);display:flex;justify-content:center;flex-wrap:wrap;gap:6px 12px;width:min(580px,58vw);font-size:11px;opacity:.82}
+.controller-legend .pad-glyph{height:22px;min-width:24px;font-size:10px}.controller-legend .pad-face{width:22px;height:22px;font-size:13px}.controller-legend svg{width:18px;height:18px}
+.controller-menu-hint{position:fixed;bottom:calc(var(--unit,1.5px)*16);left:calc(var(--unit,1.5px)*52);z-index:12;display:flex;gap:20px;font:11px Arial,sans-serif;color:#c8c8c8}
+body.playing .controller-menu-hint{display:none}
+body[data-controller-active=true] #overlay button:focus,body[data-controller-active=true] #overlay a:focus{color:#f3b836;outline:1px solid #b4c3cf6b;outline-offset:1px}
+body[data-controller-active=true] #overlay .pause-actions button:focus::before,body[data-controller-active=true] #overlay .pause-actions a:focus::before{background:rgba(230,242,255,.4);mask-image:var(--menu-highlight)}
+body[data-controller-active=true] #overlay .settings-tabs button:focus{background-image:linear-gradient(90deg,#aaa4,transparent)}
+body[data-controller-active=true] #overlay input:focus,body[data-controller-active=true] #overlay select:focus{outline:1px solid #f3b836;outline-offset:3px}
+#settings-controller{overflow:auto;max-height:100%;padding-right:8px;scrollbar-width:thin}
+#controller-status{font:12px Arial,sans-serif;line-height:1.5;margin:0 0 12px;color:#c5b89a;overflow-wrap:anywhere}
+#controller-settings .setting-row{font-size:calc(var(--unit)*13);min-height:calc(var(--unit)*29);gap:10px}
+#controller-settings h3{font-size:calc(var(--unit)*15);margin:18px 0 6px;color:#c8c8c8;font-weight:normal}
+.pad-binding-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:calc(var(--unit)*29);border-bottom:1px solid #ffffff15;font-size:calc(var(--unit)*13)}
+#overlay .pad-binding{width:95px;max-width:40%;height:32px;padding:1px;text-align:center;font:12px Arial,sans-serif;background:#0005}
+.pad-mapping-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}
+#controller-settings select{min-width:100px;max-width:55%;background:#151515;border:1px solid #7776;padding:4px;color:#ddd;font:12px Arial,sans-serif}
+#controller-hud[hidden],.controller-menu-hint[hidden],.controller-context[hidden],.controller-reload[hidden]{display:none!important}
+@media(max-width:850px){.controller-legend{width:60vw;gap:4px 8px;font-size:9px}.controller-legend .pad-glyph{height:19px;min-width:21px;font-size:9px}.controller-legend .pad-face{width:19px}.controller-legend svg{width:16px;height:16px}.controller-context{font-size:12px}.controller-menu-hint{gap:12px;bottom:18px;left:5vw;font-size:10px}}
+@media(max-width:600px) and (orientation:portrait){.settings-tabs{grid-template-columns:repeat(3,1fr)}.controller-legend{width:78vw;bottom:15%;gap:4px 6px}}

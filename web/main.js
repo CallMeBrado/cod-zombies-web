@@ -12,6 +12,8 @@ import {MouseControls} from './mouse-controls.js';
 import {CombatEffects} from './combat-effects.js';
 import {BloodEffects} from './gore.js';
 import {GameSettings,GameInput,bindingName} from './settings.js';
+import {GamepadSettings,GamepadControls} from './gamepad.js';
+import {ControllerPanel,ControllerMenu,ControllerHud} from './gamepad-ui.js';
 import {PauseMenu} from './pause-menu.js';
 import {GrenadeView} from './grenade-view.js';
 import {selectedMap,MAPS,BO1_MAPS} from './maps.js';
@@ -31,7 +33,7 @@ const $=id=>document.getElementById(id);
 const canvas=$('viewport'),scene=new THREE.Scene();scene.background=new THREE.Color(0x10171c);scene.fog=new THREE.FogExp2(0x26313a,.00022);
 scene.add(new THREE.AmbientLight(0xa8bac9,.2));
 let storage;try{storage=localStorage;}catch{}
-const settings=new GameSettings(storage);
+const settings=new GameSettings(storage),gamepadSettings=new GamepadSettings(storage);
 const saves=new ServerSaveStore(storage,blackOps?BO1_MAPS:MAPS);
 const worldFov=value=>THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(value)/2)*.75));
 let baseFov=worldFov(settings.value.fov);
@@ -57,7 +59,18 @@ const controls=new GameInput(settings,action=>{
   ({reload:()=>game.reload(),melee:()=>game.melee(),use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
 },action=>{if(action==='grenade'&&state.mode==='playing')game.releaseGrenade();});
 const mouse=new MouseControls(canvas,document,{mode:()=>({playing:state.mode==='playing',inputMode:state.inputMode,aiming:controls.toggledAim||settings.value.aimMode==='hold'&&settings.value.bindings.aim.some(t=>t&&!t.startsWith('Mouse')&&controls.tokens.has(t))}),buttons:b=>settings.mouseActions(b),fire:()=>game.fire()});
+let controllerPanel,controllerMenu,controllerHud;
+const gamepads=new GamepadControls(gamepadSettings,{
+  mode:()=>state.mode,focused:()=>!document.hidden&&document.hasFocus(),aimBlend:()=>aimBlend,
+  action:action=>{if(state.mode!=='playing'||!game)return;if(action==='pause'){menu('Paused',mapChoice.title);return;}if(action==='interact'){if(game.nearInteraction()||game.nearWindow()||game.nearGrenade())game.use();else game.reload();return;}({fire:()=>game.fire(),melee:()=>game.melee(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon()})[action]?.();},
+  release:action=>{if(action==='grenade'&&state.mode==='playing')game?.releaseGrenade();},
+  look:(yaw,pitch)=>{if(state.mode!=='playing')return;state.yaw+=yaw;state.pitch=THREE.MathUtils.clamp(state.pitch+pitch,-1.45,1.45);cameraPose();},
+  menu:action=>controllerMenu?.handle(action),capture:()=>!!controllerPanel?.capturing,rawCapture:(token,pad)=>controllerPanel?.finish(token,pad),
+  changed:owner=>{const previous=state.activeInput||'keyboard';state.activeInput=owner;if(owner==='controller'){if(previous==='keyboard'&&state.mode==='playing'&&game?.pendingGrenade?.cooking)game.releaseGrenade();controls.reset();mouse.reset();state.inputMode='controller';state.controllerUnlockAt=performance.now();if(document.pointerLockElement===canvas)document.exitPointerLock();}else if(state.inputMode==='controller')state.inputMode=document.pointerLockElement===canvas?'locked':'idle';controllerHud?.sync();controllerPanel?.sync();inputHint();},
+  devicesChanged:()=>controllerPanel?.sync(),disconnect:()=>{if(state.mode==='playing')menu('Paused','Controller disconnected. Reconnect it or use mouse and keyboard.');}
+});
 const pauseMenu=new PauseMenu(settings,{openSaves:mode=>saveSlots.open(mode),saveCount:()=>saves.count(),resume:enterPlay,restart:()=>startGame(),quit:()=>{game.newGame();resetVisuals();menu(mapChoice.title,'Solo Zombies');}});
+controllerPanel=new ControllerPanel(gamepadSettings,gamepads,pauseMenu);controllerMenu=new ControllerMenu(pauseMenu,{mode:()=>state.mode,launch,notice:text=>{$('message').textContent=text;notice(text);}});controllerHud=new ControllerHud(gamepads);controllerHud.sync();
 const lobby=new ZombiesLobby(pauseMenu);
 const saveSlots=new SaveSlots(pauseMenu,saves,{currentMap:mapChoice.id,canSave:saveBlocked,save:saveGame,load:loadSlot,weaponName:n=>game?game.weaponName(n):n});
 const testingMenu=new TestingMenu(pauseMenu,()=>state.ready?game:null);
@@ -73,7 +86,7 @@ function cameraPose() {
   game?.aim(yaw,pitch);
 }
 function menu(title,description,button='Resume game') {
-  paused=true;state.mode='menu';controls.reset();mouse.reset();document.body.classList.remove('playing');
+  paused=true;state.mode='menu';controls.reset();mouse.reset();gamepads.suppressHeld();controllerPanel.cancel();document.body.classList.remove('playing');
   audio?.suspend();
   $('menu-copy').textContent=game&&game.phase!=='ready'?'Round '+(game.round||1)+' · '+game.player.kills+' kills':description;
   pauseMenu.setContext(game&&game.phase!=='ready'?'pause':'start');
@@ -119,8 +132,8 @@ async function loadSlot(map,slot){
   const save=saves.get(map,slot);if(!save||state.mode==='starting'||state.mode==='loading')return;
   const url=new URL(location.href);url.searchParams.set('map',map);url.searchParams.set('load',String(slot+1));location.assign(url.href);
 }
-function keyName(action){return bindingName(settings.value.bindings[action].find(Boolean));}
-function inputHint(){const fire=settings.value.bindings.fire.filter(Boolean).map(bindingName).join(' / ')||'UNBOUND';$('input-mode').textContent=(state.inputMode==='locked'?'Mouse to look':state.inputMode==='drag'?(state.lockUnsupported?'Drag to look':'Click to capture mouse'):'Mouse capture where supported')+' · '+fire+' fire';}
+function keyName(action){return gamepads.active?gamepads.label(action):bindingName(settings.value.bindings[action].find(Boolean));}
+function inputHint(){if(gamepads.active){$('input-mode').textContent='Controller · '+gamepads.label('fire')+' fire · '+gamepads.label('aim')+' aim';return;}const fire=settings.value.bindings.fire.filter(Boolean).map(bindingName).join(' / ')||'UNBOUND';$('input-mode').textContent=(state.inputMode==='locked'?'Mouse to look':state.inputMode==='drag'?(state.lockUnsupported?'Drag to look':'Click to capture mouse'):'Mouse capture where supported')+' · '+fire+' fire';}
 function enableDrag(){if(state.mode==='menu'||state.mode==='dead')return;state.inputMode='drag';canvas.focus();inputHint();}
 // Escape resumes without capturing the mouse while the key is held. A later
 // click recaptures it; temporary browser refusals do not reopen the pause menu.
@@ -146,10 +159,10 @@ async function enterPlay() {
   if(state.mode==='starting')return;
   paused=true;state.mode='starting';$('play').disabled=true;controls.reset();mouse.reset();canvas.focus();
   const soundReady=audio.start();
-  requestMouse('resume');
+  controllerPanel.cancel();gamepads.suppressHeld();if(gamepads.active){state.inputMode='controller';inputHint();}else requestMouse('resume');
   try{
     await soundReady;paused=false;state.mode='playing';document.body.classList.add('playing');game.start();
-    if(game.pendingGrenade?.cooking&&!settings.held('grenade',controls.tokens))game.releaseGrenade();
+    if(game.pendingGrenade?.cooking&&!settings.held('grenade',controls.tokens)&&!gamepads.grenadeHeld)game.releaseGrenade();
   }catch(error){console.error(error);state.error=error.message;menu('Unable to start audio',error.message,'Try again');}
   finally{$('play').disabled=false;}
 }
@@ -325,7 +338,7 @@ async function init() {
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
   await prepared(4,'Preparing map collision, navigation and audio…');
   game=new (blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
-    bindingName:keyName,
+    bindingName:keyName,controllerPrompts:()=>gamepads.active,
     message:notice,spawn:spawnVisual,
     kill:e=>{const direction=e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{resetVisuals();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
     traceShot:(origin,dir,range)=>map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:()=>{damageFlash=1;},death,
@@ -376,16 +389,20 @@ document.addEventListener('pointerlockerror',lockRefused);
 // Capture phase runs before the fire/aim handlers: an uncaptured click
 // recaptures the mouse instead of firing.
 canvas.addEventListener('mousedown',event=>{
+  gamepads.useKeyboard();
   if(state.mode!=='playing'||document.pointerLockElement===canvas||state.lockUnsupported)return;
   event.preventDefault();event.stopImmediatePropagation();requestMouse('click');
 },{capture:true});
 document.addEventListener('mousemove',event=>{
+  if(gamepads.active&&performance.now()-(state.controllerUnlockAt||0)<250)return;
+  if(event.movementX||event.movementY)gamepads.useKeyboard();
   if(state.mode!=='playing'||(state.inputMode!=='locked'&&!(state.inputMode==='drag'&&mouse.dragging)))return;
   mouse.move(event.movementX,event.movementY);
   const sensitivity=.0025*(settings.value.sensitivity/5)*(1+aimBlend*(settings.value.adsSensitivity-1));state.yaw-=event.movementX*sensitivity;state.pitch=THREE.MathUtils.clamp(state.pitch-event.movementY*sensitivity*(settings.value.invertY?-1:1),-1.45,1.45);cameraPose();
 });
 const code=e=>e.code||(e.key.length===1?'Key'+e.key.toUpperCase():e.key);
 addEventListener('keydown',event=>{
+  gamepads.useKeyboard();
   if(state.mode==='loading'){if(event.code==='Escape')event.preventDefault();return;}
   const key=code(event);if(key==='Escape'){event.preventDefault();if(!pauseKeys.down(event.repeat))return;if(state.mode==='playing')menu('Paused',mapChoice.title);else if((state.lobbyReady||state.ready)&&state.mode!=='starting')pauseMenu.back();return;}
   if(state.mode!=='playing')return;event.preventDefault();controls.press(key,event.repeat);
@@ -395,11 +412,13 @@ addEventListener('keyup',event=>{const key=code(event);if(key==='Escape')pauseKe
 canvas.addEventListener('mousedown',event=>{if(state.mode==='playing'){event.preventDefault();controls.press('Mouse'+event.button);}});
 document.addEventListener('mouseup',event=>controls.release('Mouse'+event.button));
 canvas.addEventListener('auxclick',event=>event.preventDefault());
-canvas.addEventListener('wheel',event=>{if(state.mode!=='playing')return;event.preventDefault();const token=event.deltaY<0?'WheelUp':'WheelDown';controls.press(token);controls.release(token);},{passive:false});
-addEventListener('blur',()=>{pauseKeys.reset();controls.reset();mouse.reset();if(state.mode==='playing')menu('Paused',mapChoice.title);});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){pauseKeys.reset();if(state.mode==='playing')menu('Paused','Your session is paused. Resume when you’re ready.');}});
+canvas.addEventListener('wheel',event=>{gamepads.useKeyboard();if(state.mode!=='playing')return;event.preventDefault();const token=event.deltaY<0?'WheelUp':'WheelDown';controls.press(token);controls.release(token);},{passive:false});
+addEventListener('gamepaddisconnected',event=>gamepads.disconnected(event.gamepad.index));
+document.addEventListener('mousedown',()=>gamepads.useKeyboard(),true);
+addEventListener('blur',()=>{gamepads.suppressHeld();pauseKeys.reset();controls.reset();mouse.reset();if(state.mode==='playing')menu('Paused',mapChoice.title);});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){gamepads.suppressHeld();pauseKeys.reset();if(state.mode==='playing')menu('Paused','Your session is paused. Resume when you’re ready.');}});
 addEventListener('resize',()=>{for(const c of [camera,viewCamera]){c.aspect=innerWidth/innerHeight;c.updateProjectionMatrix();}renderer.setSize(innerWidth,innerHeight);});
-function input(){return controls.input(mouse.firing);}
+function input(){return gamepads.active?gamepads.input():controls.input(mouse.firing);}
 function updateHud() {
   if(!game)return;
   $('round').textContent=game.round||1;$('points').textContent=game.player.points.toLocaleString();$('ammo').textContent=game.weapon.clip;$('reserve').textContent=game.weapon.reserve;$('weapon').textContent=game.weaponName(game.weapon.name);
@@ -412,11 +431,12 @@ function updateHud() {
 function frame(time) {
   const began=performance.now();
   const dt=Math.max(0,Math.min((time-frameTime)/1000,.1));frameTime=time;
+  gamepads.poll(dt);controllerHud.update(game,state.mode==='playing');
   if(!state.ready||state.mode==='loading'){requestAnimationFrame(frame);return;}
   if(!paused)mouse.update(time);
   if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){kickPitch+=(Math.random()-.5)*shake.amplitude*.04;kickYaw+=(Math.random()-.5)*shake.amplitude*.04;}}cameraPose();if(game)game.ads=aimBlend;
   if(game&&!paused&&state.mode==='playing')game.update(dt,input());
-  const aimHeld=controls.aiming&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
+  const aimHeld=(gamepads.active?gamepads.aiming:controls.aiming)&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
   const adsTime=(aimHeld?game?.weapon.definition.adsTransInTime:game?.weapon.definition.adsTransOutTime)||.25;
   if(!paused)aimBlend=THREE.MathUtils.clamp(aimBlend+(aimHeld&&!game?.reloadEnd?1:-1)*dt/adsTime,0,1);
   const adsFov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(game?.weapon.definition.adsZoomFov||60)/2)*.75));
@@ -449,7 +469,7 @@ function frame(time) {
   if(time>=domDue){updateHud();domDue=time+100;}
   requestAnimationFrame(frame);
 }
-window.wawPreview={state,camera,renderer,scene,get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:controls.aiming},originalExecutableRunning:false,originalGscInterpreter:false,
+window.wawPreview={state,camera,renderer,scene,get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
   grenadeView:grenadeView?.diagnostics(),grenades:game?.grenades.map(g=>({position:g.position,velocity:g.velocity,due:g.due,resting:g.resting,held:!!g.held})),pendingGrenade:game?.pendingGrenade,

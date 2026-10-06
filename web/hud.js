@@ -72,8 +72,8 @@ export class OriginalHud {
     const crosshair=this.crosshair.state(game,ads,verticalFov);
     if((ads<.8||crosshair.cooking)&&!game.reloadEnd){const {gap,alpha}=crosshair;ctx.globalAlpha=alpha;ctx.strokeStyle='#f4f4ed';ctx.lineWidth=.7;ctx.beginPath();ctx.moveTo(cx-gap-4,cy);ctx.lineTo(cx-gap,cy);ctx.moveTo(cx+gap,cy);ctx.lineTo(cx+gap+4,cy);ctx.moveTo(cx,cy-gap-4);ctx.lineTo(cx,cy-gap);ctx.moveTo(cx,cy+gap);ctx.lineTo(cx,cy+gap+4);ctx.stroke();ctx.globalAlpha=1;}
     if(hit){ctx.strokeStyle='#ddd';ctx.lineWidth=1;ctx.beginPath();for(const x of [-1,1])for(const y of [-1,1]){ctx.moveTo(cx+x*3,cy+y*3);ctx.lineTo(cx+x*6,cy+y*6);}ctx.stroke();}
-    const prompt=game.prompt();if(prompt)this.text(prompt,cx,294,16,'center');
-    if(game.weapon.clip===0&&!game.reloadEnd)this.text((game.events.bindingName?.('reload')||'R')+' · Reload',cx,275,16,'center');
+    const prompt=game.prompt();if(prompt&&!game.events.controllerPrompts?.())this.text(prompt,cx,294,16,'center');
+    if(game.weapon.clip===0&&!game.reloadEnd&&!game.events.controllerPrompts?.())this.text((game.events.bindingName?.('reload')||'R')+' · Reload',cx,275,16,'center');
     const active=Object.entries(game.powerup).map(([name,due])=>name.replaceAll('_',' ')+' '+Math.ceil(due-game.time));
     if(active.length)this.text(active.join('  '),cx,457,14,'center');
   }

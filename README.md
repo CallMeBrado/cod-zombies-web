@@ -76,6 +76,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
 - **Audio:** 3D positional sound for machines, jingles, the PA system and pickups.
 - **Pause menu:**
   - Rebindable keys (primary and secondary bindings, mouse buttons, wheel).
+  - Controller support shared by WaW and Black Ops, with analog sticks, independent aim/fire triggers, grenade cooking, menu navigation and input-dependent button icons.
   - Mouse and aim sensitivity, invert, hold/toggle aim.
   - Volume, field of view, render scale, fullscreen.
   - FPS counter.
@@ -253,6 +254,16 @@ If Windows Firewall is enabled, allow inbound TCP on that port for `node.exe` on
 
 Settings and key bindings remain specific to each browser. Game saves are stored on the server under `local-data/saves/`, so the same named slots appear on other devices. Everyone who can access the site shares them; no additional sign-in is needed. Back up that folder to preserve the saves. The old browser saves are retained locally and imported into empty server slots once.
 
+### Controllers
+
+Connect an Xbox, PlayStation, Backbone or other controller and press a button while the game tab is visible. Controllers reported by the browser with the standard mapping work immediately. Button icons follow the active input: Xbox letters, PlayStation symbols, Nintendo labels or generic button numbers. Mouse movement, clicks or keyboard input switch back to keyboard prompts. Disconnecting an active controller pauses the game.
+
+Default controls: left stick moves; right stick looks; LT/L2 aims; RT/R2 fires; A/Cross jumps; X/Square reloads or uses nearby objects (hold to repair barriers); Y/Triangle switches weapons; RB/R1 throws a grenade (hold to cook); LS/L3 toggles sprint; RS/R3 knifes; Menu/Options pauses and resumes. Use the D-pad or left stick to navigate menus, A/Cross to select and B/Circle to go back. LB/L1 and RB/R1 cycle settings tabs.
+
+**Options → Controller** contains stick sensitivity, aim sensitivity, deadzones, inverted look, hold/toggle aim, icon style and per-device button/stick remapping. Unmapped controllers need a one-time setup there: map the controls, release all buttons/sticks, then choose **USE THIS MAPPING**. Settings are saved in that browser, independently of keyboard bindings.
+
+Use HTTPS (or `http://localhost:8789` on the server PC); browsers can restrict [Gamepad API access](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/getGamepads) on plain HTTP network URLs. Firefox exposes devices after a controller interaction while the page is visible. If browser audio is not unlocked yet, click START GAME once; controller input can then handle the remaining launch and gameplay controls.
+
 ---
 
 ## Development
@@ -260,6 +271,7 @@ Settings and key bindings remain specific to each browser. Game saves are stored
 ```bash
 npm test                 # Full suite: startup, gameplay, physics, weapons, saves, powerups, routes
 npm run test:der-riese   # Der Riese progression, perks, teleporters, Pack-a-Punch and all spawn routes
+npm run test:controllers # Input switching, mappings, menus, triggers and analog movement at 30–240 FPS
 npm run prepare:map      # Rebuild both maps' preload packs and zombie navigation
 ```
 

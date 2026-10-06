@@ -5,6 +5,7 @@
   <title>Black Ops · Zombies</title>
   <link rel="stylesheet" href="/runtime/__BUILD__/style.css">
   <link rel="stylesheet" href="/runtime/__BUILD__/launch-screen.css">
+  <link rel="stylesheet" href="/runtime/__BUILD__/gamepad.css">
   <script type="importmap">{"imports":{"three":"/vendor/0.186.1/build/three.module.js","three/addons/":"/vendor/0.186.1/examples/jsm/"}}</script>
   <link rel="stylesheet" href="/runtime/__BUILD__/bo1.css">
 </head>
@@ -32,6 +33,7 @@
     <section id="menu-options" hidden aria-label="Options">
       <nav class="settings-tabs" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
         <button id="tab-controls" role="tab" aria-controls="settings-controls" data-menu-text>CONTROLS</button>
+        <button id="tab-controller" role="tab" aria-controls="settings-controller" data-menu-text>CONTROLLER</button>
         <button id="tab-mouse" role="tab" aria-controls="settings-mouse" data-menu-text>MOUSE</button>
         <button id="tab-audio" role="tab" aria-controls="settings-audio" data-menu-text>SOUND</button>
         <button id="tab-video" role="tab" aria-controls="settings-video" data-menu-text>GRAPHICS</button>
@@ -43,6 +45,7 @@
           <div class="settings-help">Select a binding, then press a key or mouse button. Esc cancels; Backspace clears. Esc always goes back or pauses.</div>
           <button id="reset-controls" class="small-action" data-menu-text>RESTORE DEFAULT CONTROLS</button>
         </section>
+        <section id="settings-controller" role="tabpanel" aria-labelledby="tab-controller" hidden><h2 data-menu-text>CONTROLLER SETTINGS</h2><p id="controller-status" class="settings-help" role="status"></p><div id="controller-settings"></div></section>
         <section id="settings-mouse" role="tabpanel" aria-labelledby="tab-mouse" hidden>
           <h2 data-menu-text>MOUSE SETTINGS</h2>
           <label class="setting-row"><span data-menu-text>Mouse sensitivity</span><input id="sensitivity" type="range" min="1" max="30" step=".5"><output id="sensitivity-value" for="sensitivity"></output></label>

@@ -608,7 +608,8 @@ export class SoloGame {
     if(this.sprinting&&input.fire)this.fire();
     let dx=forward[0]*(input.forward||0)+right[0]*(input.side||0),dy=forward[1]*(input.forward||0)+right[1]*(input.side||0);
     const len=Math.hypot(dx,dy);this.sprinting=!!input.sprint&&(input.forward||0)>0&&len>0&&this.ads<.1&&!this.reloadEnd&&!this.pendingGrenade&&this.time>=this.meleeDue&&!input.fire&&!this.pendingFire&&this.time>=this.sprintExitUntil&&this.time>=this.cooldown&&p.grounded&&!this.gesture&&!this.switching;
-    const speed=(this.sprinting?285:190)*this.weapon.definition.moveSpeedScale;
+    const movementScale=Number.isFinite(input.movementScale)?Math.max(0,Math.min(1,input.movementScale)):1;
+    const speed=(this.sprinting?285:190)*this.weapon.definition.moveSpeedScale*movementScale;
     this.moving=len>0;this.spreadBloom=Math.max(0,this.spreadBloom-dt*(this.weapon.definition.hipSpreadDecayRate||4));
     if(len){dx=dx/len*speed*dt;dy=dy/len*speed*dt;}
     if(input.jump&&p.grounded){p.velocityZ=270;p.grounded=false;}

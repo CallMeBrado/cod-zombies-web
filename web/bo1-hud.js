@@ -27,7 +27,7 @@ export class BlackOpsHud {
     const cx=W/2,cy=240,v=this.crosshair.state(game,ads,fov);
     if((ads<.8||v.cooking)&&!game.reloadEnd){ctx.globalAlpha=v.alpha;ctx.strokeStyle='#eee';ctx.lineWidth=.7;ctx.beginPath();for(const sign of [-1,1]){ctx.moveTo(cx+sign*v.gap,cy);ctx.lineTo(cx+sign*(v.gap+5),cy);ctx.moveTo(cx,cy+sign*v.gap);ctx.lineTo(cx,cy+sign*(v.gap+5));}ctx.stroke();ctx.globalAlpha=1;}
     if(hit){ctx.strokeStyle='#ddd';ctx.beginPath();for(const x of [-1,1])for(const y of [-1,1]){ctx.moveTo(cx+x*3,cy+y*3);ctx.lineTo(cx+x*6,cy+y*6);}ctx.stroke();}
-    this.text(game.prompt(),cx,294,14,'center');if(!game.weapon.clip&&!game.reloadEnd)this.text((game.events.bindingName?.('reload')||'R')+' · Reload',cx,276,14,'center');
+    if(!game.events.controllerPrompts?.())this.text(game.prompt(),cx,294,14,'center');if(!game.weapon.clip&&!game.reloadEnd&&!game.events.controllerPrompts?.())this.text((game.events.bindingName?.('reload')||'R')+' · Reload',cx,276,14,'center');
     const left=game.mapRules.projectionUntil-game.time;if(left>0)this.text('TELEPORTING IN '+Math.ceil(left),cx,50,17,'center');
     const active=Object.entries(game.powerup).map(([k,t])=>k.replaceAll('_',' ')+' '+Math.ceil(t-game.time));if(active.length)this.text(active.join('   '),cx,455,14,'center');
   }
