@@ -8,8 +8,9 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {CollisionWorld} from '../web/collision.js';
 import {SoloGame} from '../web/game.js';
-import {MAPS,BO1_MAPS,mapById} from '../web/maps.js';
+import {MAPS,BO1_MAPS,BO2_MAPS,mapById} from '../web/maps.js';
 import {BlackOpsEngine} from '../web/bo1-engine.js';
+import {BlackOps2Engine} from '../web/bo2-engine.js';
 import {spawn} from 'node:child_process';
 import {prepareFactoryPowerNavigation} from './prepare_power_navigation.mjs';
 import {prepareKinoDoors} from './prepare_kino_doors.mjs';
@@ -23,21 +24,21 @@ await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_dive.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Dive audio/body preparation failed.')));});
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_player_animations.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Player animation preparation failed.')));});
 const read=async relative=>JSON.parse(await readFile(path.join(data,relative),'utf8'));
-const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=chosen.assetZones||[...new Set([chosen.zone,'common','nacht'])],blackOps=chosen.game==='black-ops';
+const chosen=mapById(process.argv[process.argv.indexOf('--map')+1]),zones=chosen.assetZones||[...new Set([chosen.zone,'common','nacht'])],bo2=chosen.game==='black-ops-2',blackOps=bo2||chosen.game==='black-ops';
 const manifest=await read(chosen.data+'/manifest.json'),presentation=await read(chosen.data+'/presentation.json'),world=await read(chosen.zone+'/web-world/'+chosen.asset+'.json');
 // Validate small physics steps on the host once, and ship the ready graph.
 // Repeat only when the collision, entities, graph or movement code changes.
 const navSources=[chosen.zone+'/web-world/'+chosen.asset+'.collision.json',chosen.zone+'/web-world/'+chosen.asset+'.paths.json',chosen.data+'/manifest.json'];
-const navStamp=await navigationStamp(root,chosen,manifest);let navigation;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
+const navStamp=await navigationStamp(root,chosen,manifest);let navigation,navigationGame;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
 if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&&navigation?.version)){
   const began=performance.now(),collision=await read(navSources[0]),paths=await read(navSources[1]);
-  const game=new (blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();
+  const game=new (bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
   navigation={...game.preparedNavigation(),sourceStamp:navStamp};await writeFile(path.join(data,chosen.data+'/navigation.json'),JSON.stringify(navigation));
   console.log(`Prepared ${navigation.links.length} directed navigation links and ${navigation.routes.length} window routes on E: in ${((performance.now()-began)/1000).toFixed(1)} seconds.`);
 }
 const files=new Map();
 if(chosen.id==='der-riese')await prepareFactoryPowerNavigation(data,navigation);
-if(blackOps)await prepareKinoDoors();else await prepareGateNavigation(data,chosen,navigation);
+if(blackOps&&!bo2)await prepareKinoDoors();else await prepareGateNavigation(data,chosen,navigation,navigationGame);
 async function add(relative,required=true){
   relative=relative.replaceAll('\\','/');const resolved=path.resolve(data,relative),inside=path.relative(data,resolved);
   if(inside.startsWith('..')||path.isAbsolute(inside))throw new Error('Asset path escapes local-data.');
@@ -72,21 +73,26 @@ async function model(name){
 }
 await add(chosen.data+'/manifest.json');await add(chosen.data+'/presentation.json');await add(chosen.data+'/navigation.json');if(!blackOps)await add('ui/fonts/normalFont.json');
 if(chosen.id==='der-riese')await add(chosen.data+'/power-navigation.json');
-if(!blackOps)await add(chosen.data+'/gate-navigation.json');
+if(!blackOps||bo2)await add(chosen.data+'/gate-navigation.json');
 for(const effect of Object.values(presentation.effects))for(const element of effect.elements)for(const url of element.textures)await add(decodeURIComponent(url.slice('/data/'.length)));
 if(presentation.gore)for(const url of [presentation.gore.burst,presentation.gore.drops,...presentation.gore.decals])await add(decodeURIComponent(url.slice('/data/'.length)));
 for(const entry of [...Object.values(manifest.sounds),...Object.values(manifest.voice||{})].flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));
 const hudFolder=blackOps?chosen.data+'/hud':'gameplay/hud';for(const name of await readdir(path.join(data,hudFolder)))if(name.endsWith('.png'))await add(hudFolder+'/'+name);
-for(const name of await readdir(path.join(data,chosen.zone+'/web-world')))await add(chosen.zone+'/web-world/'+name);
+for(const name of await readdir(path.join(data,chosen.zone+'/web-world'))){if(bo2&&!new Set([chosen.asset+'.json',world.vertices,world.indices,chosen.asset+'.collision.json',chosen.asset+'.paths.json',chosen.asset+'.lights.json']).has(name))continue;await add(chosen.zone+'/web-world/'+name);}
 for(const material of Object.values(world.materials)){await texture(material.diffuse);await texture(material.normal);}
-for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(lightmap))if(!blackOps||type==='primary')await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
+for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(lightmap))if(name&&(!blackOps||bo2||type==='primary'))await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
 // Kino's four characters each have their own viewmodel arms.
-const names=new Set([...(blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
+const names=new Set([...(bo2?[...manifest.characterArms,presentation.actors.body,presentation.actors.head,manifest.map.arthurModel]:blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
   ...[manifest.grenade?.gunModel,manifest.grenade?.projectileModel,presentation.gore?.neckModel].filter(Boolean),
   ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel]),...Object.values(manifest.gestures||{}).map(g=>g.gunModel)]);
 for(const character of manifest.playerBodies||[])for(const key of ['body','head','hat','gear'])if(character[key])names.add(character[key]);
+for(const actor of Object.values(presentation.actorVariants||{}))names.add(actor.body);
+for(const e of Object.values(manifest.equipment||{}))names.add(e.model);
+for(const w of Object.values(manifest.weapons))if(w.weaponType==='projectile'&&w.projectileModel)names.add(w.projectileModel);
 for(const name of names)await model(name);
-const animations=new Set([...Object.keys(presentation.animations),...(manifest.playerAnimations||[])]);
+const animations=new Set([...Object.keys(presentation.animations),...(manifest.playerAnimations||[]),...manifest.entities.map(e=>e.closedAnim).filter(Boolean),...(manifest.map.arthurAnimations||[])]);
+for(const actor of Object.values(presentation.actorVariants||{}))for(const name of Object.values(actor.animations))animations.add(name);
+for(const e of Object.values(manifest.equipment||{}))for(const name of [e.animation,e.launchAnimation].filter(Boolean))animations.add(name);
 for(const weapon of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade||{}])for(const [key,value] of Object.entries(weapon))if(key.endsWith('Anim')&&value)animations.add(value);
 for(const name of animations)for(const zone of zones)if(await add(`${zone}/web-anims/${name}.json`,false))break;
 const entries=[...files].sort(([a],[b])=>a.localeCompare(b));
@@ -112,12 +118,12 @@ for(const group of groups){
   packs.push({file,url:`/packs/${file}`,files:index.length,bytes:12+json.length+offset,gzipBytes:(await stat(output+'.gz')).size});
 }
 const id=createHash('sha256').update(packs.map(p=>p.file).join('\n')).digest('hex').slice(0,20);
-const metadata={format:'waw-preload-v1',id,packs,files:entries.length,bytes:packs.reduce((n,p)=>n+p.bytes,0),gzipBytes:packs.reduce((n,p)=>n+p.gzipBytes,0),sourceStamp:stamp,...(blackOps?{navigationVersion:'kino-ground-v2'}:{})};
+const metadata={format:'waw-preload-v1',id,packs,files:entries.length,bytes:packs.reduce((n,p)=>n+p.bytes,0),gzipBytes:packs.reduce((n,p)=>n+p.gzipBytes,0),sourceStamp:stamp,...(blackOps?{navigationVersion:bo2?'buried-ground-v1':'kino-ground-v2'}:{})};
 await writeFile(metaFile,JSON.stringify(metadata,null,2));console.log(`Prepared ${chosen.title}: ${entries.length} assets in ${packs.length} cached parts, ${(metadata.bytes/1048576).toFixed(1)} MiB → ${(metadata.gzipBytes/1048576).toFixed(1)} MiB compressed.`);
 
 async function prepareOtherMaps(){
   if(process.argv.includes('--map'))return;
-  for(const map of [...MAPS.slice(1),...BO1_MAPS]){if(!await stat(path.join(data,map.data+'/manifest.json')).catch(()=>null))continue;
+  for(const map of [...MAPS.slice(1),...BO1_MAPS,...BO2_MAPS]){if(!await stat(path.join(data,map.data+'/manifest.json')).catch(()=>null))continue;
     await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[fileURLToPath(import.meta.url),'--map',map.id,...(process.argv.includes('--assets-only')?['--assets-only']:[])],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(map.title+' preparation failed')));});
   }
 }

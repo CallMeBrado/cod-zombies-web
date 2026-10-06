@@ -1,6 +1,6 @@
 export const GAMEPAD_SETTINGS_KEY='cod-zombies-gamepad-settings-v1';
-export const PAD_ACTIONS=[['fire','Fire'],['aim','Aim'],['interact','Use / rebuild / reload'],['jump','Stand / jump'],['stance','Crouch / prone / BO1 dive'],['sprint','Sprint'],['melee','Knife'],['grenade','Grenade / cook'],['nextWeapon','Switch weapon'],['pause','Pause / resume'],['confirm','Menu select'],['back','Menu back']];
-export const DEFAULT_PAD_MAPPING={ready:true,bindings:{fire:'Button7',aim:'Button6',interact:'Button2',jump:'Button0',stance:'Button1',sprint:'Button10',melee:'Button11',grenade:'Button5',nextWeapon:'Button3',pause:'Button9',confirm:'Button0',back:'Button1'},axes:{moveX:'Axis0+',moveY:'Axis1+',lookX:'Axis2+',lookY:'Axis3+'},rest:[]};
+export const PAD_ACTIONS=[['fire','Fire'],['aim','Aim'],['interact','Use / rebuild / reload'],['jump','Stand / jump'],['stance','Crouch / prone / dive'],['sprint','Sprint'],['melee','Knife'],['grenade','Grenade / cook'],['nextWeapon','Switch weapon'],['equipment','Place equipment'],['pause','Pause / resume'],['confirm','Menu select'],['back','Menu back']];
+export const DEFAULT_PAD_MAPPING={ready:true,bindings:{fire:'Button7',aim:'Button6',interact:'Button2',jump:'Button0',stance:'Button1',sprint:'Button10',melee:'Button11',grenade:'Button5',nextWeapon:'Button3',equipment:'Button12',pause:'Button9',confirm:'Button0',back:'Button1'},axes:{moveX:'Axis0+',moveY:'Axis1+',lookX:'Axis2+',lookY:'Axis3+'},rest:[]};
 const UNKNOWN_MAPPING={...DEFAULT_PAD_MAPPING,ready:false};
 export const DEFAULT_PAD_SETTINGS={version:1,enabled:true,sensitivity:5,adsSensitivity:.5,moveDeadzone:.16,lookDeadzone:.12,invertY:false,aimMode:'hold',promptStyle:'auto',mappings:{}};
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x)),finite=(x,f=0)=>Number.isFinite(x)?x:f;
@@ -15,7 +15,7 @@ export function normalizePadSettings(saved){
     if(!key.startsWith('pad:')||key.length>244||!value||typeof value!=='object')continue;
     const mapping=structuredClone(DEFAULT_PAD_MAPPING);mapping.ready=value.ready===true;
     for(const [action]of PAD_ACTIONS)if(value.bindings&&Object.hasOwn(value.bindings,action))mapping.bindings[action]=validPadBinding(value.bindings[action])?value.bindings[action]:null;
-    if(!Object.hasOwn(value.bindings||{},'stance')&&PAD_ACTIONS.some(([a])=>!['stance','confirm','back'].includes(a)&&mapping.bindings[a]===mapping.bindings.stance))mapping.bindings.stance=null;
+    for(const added of ['stance','equipment'])if(!Object.hasOwn(value.bindings||{},added)&&PAD_ACTIONS.some(([a])=>![added,'confirm','back'].includes(a)&&mapping.bindings[a]===mapping.bindings[added]))mapping.bindings[added]=null;
     for(const action of Object.keys(mapping.axes))if(value.axes&&Object.hasOwn(value.axes,action))mapping.axes[action]=axisBinding(value.axes[action])?value.axes[action]:null;
     mapping.rest=Array.isArray(value.rest)?value.rest.slice(0,16).map(x=>clamp(finite(x),-1,1)):[];out.mappings[key]=mapping;
   }return out;
@@ -122,7 +122,7 @@ export class GamepadControls {
         const move=r.waitForSticks?{x:0,y:0,magnitude:0}:left;
         this.state={forward:-move.y,side:move.x,movementScale:move.magnitude,sprint:this.sprinting,jump:edges.includes('jump'),use:held('interact'),fire:held('fire')};
         if(right.magnitude&&!r.waitForSticks){const curve=Math.pow(right.magnitude,1.6)/right.magnitude,speed=this.settings.value.sensitivity*.65*(1+this.aimBlend()*(this.settings.value.adsSensitivity-1));this.look(-right.x*curve*speed*Math.min(.1,dt),-right.y*curve*speed*Math.min(.1,dt)*(this.settings.value.invertY?-1:1));}
-        for(const a of ['pause','fire','interact','melee','grenade','nextWeapon','stance'])if(edges.includes(a)){this.action(a);if(this.mode()!==mode)break;}
+        for(const a of ['pause','fire','interact','melee','grenade','nextWeapon','stance','equipment'])if(edges.includes(a)){this.action(a);if(this.mode()!==mode)break;}
         if(released.includes('grenade')&&this.grenadeHeld)this.release('grenade');this.grenadeHeld=held('grenade');
         if(released.includes('stance')&&this.stanceHeld)this.release('stance');this.stanceHeld=held('stance');
       }else{

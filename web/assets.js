@@ -7,6 +7,8 @@ import {BakedLightSamples} from './baked-light.js';
 import {selectedMap} from './maps.js';
 import {BulletTrace} from './bullet-trace.js';
 import {decodeKinoLightmap} from './bo1-lighting.js';
+import {decodeBC5} from './bo2-textures.js';
+import {nativeDiffuse} from './native-material.js';
 const mapChoice=selectedMap(),assetZones=mapChoice.assetZones||[...new Set([mapChoice.zone,'common','nacht'])];
 
 const dds=new DDSLoader(), textures=new Map(), models=new Map();
@@ -14,6 +16,7 @@ export async function get(url,json=false) {
   return assetData(url,json);
 }
 function decode(buffer) {
+  const bc5=decodeBC5(buffer);if(bc5){const t=new THREE.DataTexture(bc5.pixels,bc5.width,bc5.height);t.minFilter=THREE.LinearFilter;return t;}
   const h=new DataView(buffer),flags=h.getUint32(80,true);
   if(flags&4) {
     const p=dds.parse(buffer,true);if(!p.width||!p.mipmaps?.length)throw new Error('Unsupported DDS');
@@ -49,6 +52,13 @@ async function diffuse(name) {
   throw new Error('Original texture unavailable: '+name);
 }
 function film(shader) {
+  if(mapChoice.game==='black-ops-2'){
+    shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
+      float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
+      outgoingLight=mix(vec3(luma),outgoingLight,.90)*vec3(1.035,1.,.94);
+      gl_FragColor.rgb=outgoingLight;
+      #include <tonemapping_fragment>`);return;
+  }
   if(mapChoice.game==='black-ops'){
     // Kino's own zombie_theater.vision saturation, contrast and tint values.
     shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
@@ -91,7 +101,7 @@ export async function model(name) {
     manager.setURLModifier(url=>url.replace('/images/,','/images/'));
     const loader=new GLTFLoader(manager);
     for(const zone of assetZones) {
-      const r=await assetResponse(`/data/${zone}/model_export/${encodeURIComponent(name)}_lod0.glb`);
+      const r=await assetResponse(`/data/${zone}/model_export/${name.split('/').map(encodeURIComponent).join('/')}_lod0.glb`);
       if(!r.ok)continue;
       const gltf=await loader.parseAsync(await r.arrayBuffer(),`/data/${zone}/model_export/`);
       // A model can reference a material owned by a different fastfile. OAT's
@@ -100,11 +110,11 @@ export async function model(name) {
       const materials=new Set();gltf.scene.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material])materials.add(m);});
       await Promise.all([...materials].map(async material=>{
         const original=await nativeMaterial(material.name);
-        const color=original?.textures?.find(t=>t.semantic==='colorMap');
+        const color=nativeDiffuse(original);
         // OAT can also take the first listed image (e.g. the dissolve
         // shaders' mask01 color0Map) as the base color; use the colorMap.
         const mapName=decodeURIComponent(material.map?.name||'').split('/').pop().replace(/\.dds$/i,'');
-        const misassigned=!!material.map&&!!color&&mapName!==color.image&&original.textures.some(t=>t.image===mapName&&t.semantic!=='colorMap');
+        const misassigned=!!material.map&&!!color&&mapName!==color.image&&original.textures.some(t=>t.image===mapName);
         if((!material.map||misassigned)&&color){material.map=await diffuse(color.image);material.color.setRGB(1,1,1);material.needsUpdate=true;}
         // GLB materials are all opaque. The T4 technique set carries the
         // blend: mc_l_sm_b* (glass, decals) alpha-blends and mc_l_sm_t*
@@ -112,6 +122,14 @@ export async function model(name) {
         const technique=/^mc_l_sm_([a-z])\d/.exec(original?.techniqueSet||'')?.[1];
         if(technique==='b'){material.transparent=true;material.depthWrite=false;material.needsUpdate=true;}
         else if(technique==='t'){material.alphaTest=.5;material.needsUpdate=true;}
+        if(original?._game==='t6'){
+          const pass=original.stateBits?.find(s=>s.colorWriteRgb&&s.depthTest==='less_equal'&&!s.polymodeLine);
+          if(pass?.alphaTest&&pass.alphaTest!=='disabled'){material.alphaTest=.5;material.needsUpdate=true;}
+          if(pass?.blendOpRgb==='add'&&pass.srcBlendRgb==='src_alpha'){
+            material.transparent=true;material.depthWrite=!!pass.depthWrite;material.needsUpdate=true;
+          }
+          if(pass?.cullFace==='none')material.side=THREE.DoubleSide;
+        }
       }));
       // OAT converts model geometry and root bones to Y up. Restore T4's Z up.
       const group=new THREE.Group();group.rotation.x=Math.PI/2;group.add(gltf.scene);
@@ -163,6 +181,9 @@ export async function loadMap(scene,progress) {
       const secondary=new THREE.DataTexture(decodeKinoLightmap(a,b,native.secondary.width,native.secondary.height),native.secondary.width,native.secondary.height,THREE.RGBAFormat,THREE.FloatType);
       secondary.colorSpace=THREE.NoColorSpace;secondary.minFilter=secondary.magFilter=THREE.LinearFilter;secondary.channel=1;secondary.needsUpdate=true;
       lightmaps.push({primary:await load(lm.primary),secondary});
+    }else if(mapChoice.game==='black-ops-2'){
+      const primary=new THREE.DataTexture(new Uint8Array([0,0,0,255]),1,1);primary.needsUpdate=true;
+      lightmaps.push({primary,secondary:await load(lm.secondary)});
     }else lightmaps.push({primary:await load(lm.primary),secondary:await load(lm.secondary)});
   }
   // Every primary light's parameters in one float texture (4 RGBA texels per
@@ -203,7 +224,20 @@ export async function loadMap(scene,progress) {
         shader.fragmentShader=`varying vec2 wawSurfaceUv; varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;
           uniform sampler2D wawPrimary,wawNormal; uniform bool wawHasNormal; uniform highp sampler2D wawLights;\n`+shader.fragmentShader;
         const normalSample=arrays?.normal?'texture(wawNormalArray,vec3(wawSurfaceUv,vWawNormalLayer))':'texture2D(wawNormal,wawSurfaceUv)';
-        shader.fragmentShader=shader.fragmentShader.replace('vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );',`
+        shader.fragmentShader=shader.fragmentShader.replace('vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );',mapChoice.game==='black-ops-2'?`
+          // T6 stores ambient, directional intensity and direction in three
+          // stacked images. Alpha is the intensity divisor, not normal XY.
+          vec2 uvT6=vec2(vLightMapUv.x,vLightMapUv.y/3.);
+          vec4 a=texture2D(lightMap,uvT6),b=texture2D(lightMap,uvT6+vec2(0.,1./3.));
+          vec3 direction=texture2D(lightMap,uvT6+vec2(0.,2./3.)).rgb*2.-1.;
+          vec3 N=normalize(wawWorldNormal);
+          if(wawHasNormal){vec2 xy=${normalSample}.rg*4.015748-2.015748;
+            vec3 dp1=dFdx(wawWorldPos),dp2=dFdy(wawWorldPos);vec2 du1=dFdx(wawSurfaceUv),du2=dFdy(wawSurfaceUv);
+            vec3 T=dp1*du2.y-dp2*du1.y,B=dp2*du1.x-dp1*du2.x;
+            float scale=inversesqrt(max(max(dot(T,T),dot(B,B)),.000001));
+            N=normalize(T*scale*xy.x+B*scale*xy.y+N*sqrt(max(0.,1.-dot(xy,xy))));}
+          vec3 baked=a.rgb/(a.a+.000001)+b.rgb/(b.a+.000001)*max(0.,dot(direction,N));
+          vec4 lightMapTexel=vec4(baked*PI,1.);`:`
           // The recovered T4 shader samples ambient RGB in the upper half and
           // directional RGB in the lower half; their alpha channels encode XY.
           vec4 a=texture2D(lightMap,vec2(vLightMapUv.x,vLightMapUv.y*.5));
@@ -263,7 +297,7 @@ export async function loadMap(scene,progress) {
   // Compile-tool surfaces (shadow casters, shadow caulk, HDR portals, clips)
   // are invisible in the original renderer; drawing them showed their editor
   // placeholder textures as walls and added draw calls. Collision is separate.
-  const toolMaterial=/^wc\/(shadowcaster|caulk|hdrportal|nodraw|clip|trigger|hint|skip|portal)/i;
+  const toolMaterial=/^w(?:p)?c\/(shadowcaster|caulk|hdrportal|nodraw|clip|trigger|hint|skip|portal)/i;
   world.surfaces.forEach((s,i)=>{
     if(toolMaterial.test(s.material))return;
     const id=surfaceToModel.get(i)||0;
@@ -342,7 +376,9 @@ export async function loadMap(scene,progress) {
   const texel=(t,u,v)=>{const {data,width,height}=t.image;const offset=(Math.min(height-1,Math.max(0,Math.floor(v*height)))*width+Math.min(width-1,Math.max(0,Math.floor(u*width))))*4;return Array.from(data.slice(offset,offset+4),x=>x/(t.type===THREE.FloatType?1:255));};
   const illumination=position=>{
     const best=lighting.nearest(position);
-    if(!best)return [.08,.10,.13];const a=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5),b=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5+.5);
+    if(!best)return [.08,.10,.13];
+    if(mapChoice.game==='black-ops-2'){const a=texel(best.lm.secondary,best.uv[0],best.uv[1]/3),b=texel(best.lm.secondary,best.uv[0],best.uv[1]/3+1/3);return a.slice(0,3).map((v,k)=>Math.max(.018,Math.min(4,v/(a[3]+.000001)+b[k]/(b[3]+.000001)*.5)));}
+    const a=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5),b=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5+.5);
     return a.slice(0,3).map((v,i)=>Math.max(.018,v+b[i]));
   };
   progress('Loading original bunker props…');

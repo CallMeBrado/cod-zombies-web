@@ -21,7 +21,7 @@ export function createLobbyApi({maps,maxPlayers=4,lobbyTimeoutMs=20000,busyTimeo
       if(host!==String(req.headers.host).toLowerCase())throw error(403,'Use the lobby on this site.');}
   }
   // Black Ops players each play a different one of the four characters.
-  const usesCharacters=map=>valid.get(map)?.game==='black-ops';
+  const usesCharacters=map=>['black-ops','black-ops-2'].includes(valid.get(map)?.game);
   function freeCharacter(l,wanted,self){
     const taken=new Set([...l.players.values()].filter(p=>p!==self).map(p=>p.character));
     if(Number.isInteger(wanted)&&wanted>=0&&wanted<characters&&!taken.has(wanted))return wanted;

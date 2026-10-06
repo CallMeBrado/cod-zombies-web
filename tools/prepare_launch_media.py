@@ -12,9 +12,12 @@ MOVIES = {
     'nacht': ('Call of Duty World at War', 'nazi_zombie_prototype_load'),
     'der-riese': ('Call of Duty World at War', 'nazi_zombie_factory_load'),
     'kino': ('Call of Duty Black Ops', 'zombie_theater_load'),
+    'buried': ('Call of Duty Black Ops II', 'zm_buried_load'),
 }
 for name, (game, movie) in MOVIES.items():
     source = GAMES / game / 'main' / 'video' / (movie + '.bik')
+    if game == 'Call of Duty Black Ops II':
+        source = GAMES / game / 'video' / (movie + '.webm')
     if not source.exists():
         continue
     destination = OUTPUT / (name + '.mp4')

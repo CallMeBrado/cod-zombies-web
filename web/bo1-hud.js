@@ -5,10 +5,10 @@ import {CrosshairHud} from './crosshair-hud.js';
 import {drawCoop} from './coop-hud.js';
 const icons={specialty_armorvest:'specialty_juggernaut_zombies',specialty_fastreload:'specialty_fastreload_zombies',specialty_rof:'specialty_doubletap_zombies',specialty_quickrevive:'specialty_quickrevive_zombies'};
 export class BlackOpsHud {
-  constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.images=new Map();this.crosshair=new CrosshairHud();this.ready=false;this.roundLayer=document.createElement('canvas');this.roundLayer.width=128;this.roundLayer.height=64;}
+  constructor(canvas,options={}){this.folder=options.folder||'gameplay/bo1-kino';this.icons=options.icons||icons;this.scorebar=options.scorebar||'scorebar_zom_1';this.canvas=canvas;this.ctx=canvas.getContext('2d');this.images=new Map();this.crosshair=new CrosshairHud();this.ready=false;this.roundLayer=document.createElement('canvas');this.roundLayer.width=128;this.roundLayer.height=64;}
   async load(){
-    await Promise.all([...Object.values(icons),'scorebar_zom_1','hud_us_grenade',...[1,2,3,4,5].map(i=>'chalkmarks_'+i)].map(async name=>{
-      const response=await assetResponse('/data/gameplay/bo1-kino/hud/'+name+'.png');if(!response.ok)throw new Error('Missing BO1 HUD: '+name);
+    await Promise.all([...Object.values(this.icons),this.scorebar,'hud_us_grenade',...[1,2,3,4,5].map(i=>'chalkmarks_'+i)].map(async name=>{
+      const response=await assetResponse('/data/'+this.folder+'/hud/'+name+'.png');if(!response.ok)throw new Error('Missing Zombies HUD: '+name);
       const url=URL.createObjectURL(await response.blob());try{const image=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=url;});this.images.set(name,image);}finally{URL.revokeObjectURL(url);}
     }));this.ready=true;
   }
@@ -20,10 +20,10 @@ export class BlackOpsHud {
     const round=roundIndicatorState(game),r=this.roundLayer.getContext('2d');r.clearRect(0,0,128,64);
     if(round.round<=10){r.drawImage(this.images.get('chalkmarks_'+Math.min(round.round,5)),0,0,64,64);if(round.round>5)r.drawImage(this.images.get('chalkmarks_'+(round.round-5)),58,0,64,64);}else this.text(round.round,5,55,38,'left','#fff',r);
     r.globalCompositeOperation='source-in';r.fillStyle=round.color;r.fillRect(0,0,128,64);r.globalCompositeOperation='source-over';ctx.globalAlpha=round.alpha;ctx.drawImage(this.roundLayer,10,406);ctx.globalAlpha=1;
-    let slot=0;for(const id of game.mapRules.perks)ctx.drawImage(this.images.get(icons[id]),12+slot++*28,379,24,24);
-    ctx.drawImage(this.images.get('scorebar_zom_1'),W-125,383,110,18);this.text(game.player.points,W-27,398,21,'right');
+    let slot=0;for(const id of game.mapRules.perks){const image=this.images.get(this.icons[id]);if(image)ctx.drawImage(image,12+slot++*28,379,24,24);}
+    ctx.drawImage(this.images.get(this.scorebar),W-125,383,110,18);this.text(game.player.points,W-27,398,21,'right');
     if(game.coopHud)drawCoop(this,ctx,game.coopHud,W,s);
-    this.text(game.weapon.clip,W-88,456,32,'right');this.text('/ '+game.weapon.reserve,W-81,456,19);this.text(game.weaponName(game.weapon.name),W-25,472,10,'right','#aaa');
+    this.text(game.weapon.name.startsWith('slowgun')?Math.round(game.paralyzerHeat):game.weapon.clip,W-88,456,32,'right');this.text(game.weapon.name.startsWith('slowgun')?' / 115':'/ '+game.weapon.reserve,W-81,456,19);this.text(game.weaponName(game.weapon.name),W-25,472,10,'right','#aaa');
     ctx.drawImage(this.images.get('hud_us_grenade'),W-38,418,13,15);this.text(game.player.grenades,W-43,430,13,'right');
     for(const p of game.scorePopups){const v=scorePopupState(p,game.time);if(v){ctx.globalAlpha=v.alpha;this.text(v.text,W-28+v.x,398+v.y,19,'right',v.color);}}ctx.globalAlpha=1;
     const cx=W/2,cy=240,v=this.crosshair.state(game,ads,fov);

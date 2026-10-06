@@ -1,14 +1,14 @@
 # CoD Zombies Web
 
-A browser runtime for **Call of Duty Zombies**, with World at War and a Black Ops preview. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copies of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
+A browser runtime for **Call of Duty Zombies**, with World at War, Black Ops and Black Ops II. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copies of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
 
 World at War has **Nacht der Untoten** and **Der Riese**. The Black Ops browser preview adds **Kino der Toten**, using the installed game's original T5 map and assets.
 
-The collection opens each game's own themed lobby: **World at War** at `/world-at-war/` and **Black Ops** at `/black-ops/`. **Black Ops II** remains **Coming soon**. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
+The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / Buried** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
 ![Nacht der Untoten in the browser](docs/images/nacht-gameplay.jpg)
 
-> **Unofficial fan project.** Not affiliated with or endorsed by Activision or Treyarch. No game assets are included in this repository. You need a legally owned copy of *Call of Duty: World at War* or *Call of Duty: Black Ops* for the maps you play; the tools extract assets from your installation into a local, git-ignored folder.
+> **Unofficial fan project.** Not affiliated with or endorsed by Activision or Treyarch. No game assets are included in this repository. You need a legally owned copy of the corresponding game and map DLC; the tools extract assets from your installation into a local, git-ignored folder.
 
 ---
 
@@ -125,6 +125,30 @@ npm run prepare:bo1
 
 Extraction, conversion, prepared packs and navigation remain under this project on E:. `npm run test:bo1` checks the native floor, ammo, rounds, interactions and sounds; `npm run test:saves` checks server persistence and sharing.
 
+### Black Ops II: Buried
+
+Buried opens from the collection into an orange and charcoal BO2 lobby and map selector. Its dedicated T6 rules run on the shared browser renderer and fixed-step movement/combat foundation. The original executable is not run in the browser.
+
+The map uses the original T6 packed world geometry, three-layer HDR lightmaps, native collision, static models, doors, windows and 2,403 navigation nodes with 16,603 links. The exporter also reads T6 weapon definitions, character rigs, XAnim clips, material states, sound banks and Buried's original loading movie. START GAME downloads a prepared pack with measured byte progress, prepares the scene, then waits for the movie or offers Skip Intro.
+
+Survival includes T6 round counts and health scaling, spawning near occupied zones, factory descent, town doors, original viewmodels and animations, wall buys and mystery box cycling, seven perk machines, power and Pack-a-Punch. Buried rules add Arthur's key/cell, booze charges through authored barricades, candy protection, six placeable weapon chalks, the bank and weapon locker, mansion ghosts and a free perk. Buildable parts can be assembled at free benches into a Turbine, Trample Steam, Head Chopper or Subsurface Resonator. Equip one and use **5 / controller D-pad Up** to place it; Use retrieves it. Bindings can be changed in Options. The Resonator needs a nearby Turbine.
+
+Ray Gun, Ray Gun Mark II and explosive weapons use traveling projectiles, native damage and splash values. The Paralyzer has heat, cooling, slowing and a damage cone. Shared grenade cooking, stance/dive controls, gore, pause/options, testing menu and named server saves also apply to Buried. Saves keep chalks, Arthur, bank/locker, maze gates and built/placed equipment.
+
+This is a playable survival port under development, not complete stock BO2 parity. Easter-egg quests, the Time Bomb, persistent upgrades, dual-wield presentation, chalk drawing visuals, upgraded melee viewmodels, Vulture Aid's gas and through-wall markers, full native wonder-weapon effects and exact Arthur/ghost behavior remain unfinished. Solo survival is the tested mode; Buried's special interactions have not yet been validated in co-op. Some equipment and ghost behaviors are approximations. The initial map pack is about 500 MiB compressed and is cached after download.
+
+To extract the installed game and prepare Buried on E: using the existing OAT toolchain:
+
+```powershell
+python -B tools/extend_bo2_exporter.py
+& tools/build_exporter.ps1
+python -B tools/extract_bo2.py
+npm run prepare:bo2
+npm run test:bo2
+```
+
+`tools/decompile_bo2.py` optionally produces local script references using gsc-tool. Those scripts stay under ignored `local-data/bo2-scripts/` and are not served or packaged. All extraction, navigation, cache and prepared asset output remains under this project's directory on E:.
+
 ### WaW: in progress or not yet implemented
 
 | Area | Status |
@@ -140,7 +164,7 @@ Extraction, conversion, prepared packs and navigation remain under this project 
 | **Sound ranges** | The extracted sound definitions have no min/max distances, so hearing ranges are chosen per sound type. |
 | **Saves** | Can't save mid-drink, during Pack-a-Punch, with a grenade in hand or during a burst. Save after the action finishes. |
 | **Multiplayer** | Solo only. There's no co-op and no last stand: going down ends the game. |
-| **Other maps** | Verrückt, Shi No Numa, additional Black Ops maps and Black Ops II haven't been started. |
+| **Other maps** | Verrückt, Shi No Numa and additional Black Ops / Black Ops II maps haven't been started. |
 | **Setup automation** | Der Riese extraction isn't scripted yet; see [Setup](#setup). |
 
 ---

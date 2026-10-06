@@ -3,5 +3,13 @@ export const MAPS=Object.freeze([
   {id:'der-riese',title:'Der Riese',zone:'der-riese',asset:'nazi_zombie_factory',data:'gameplay/der-riese',image:'loadscreen_zombie_factory',description:'The Giant is rising. Battle the undead at the secret research facility. Restore power and link the teleporters to unlock Pack-a-Punch.'}
 ]);
 export const BO1_MAPS=Object.freeze([{id:'kino',game:'black-ops',title:'Kino der Toten',zone:'bo1-kino',asset:'zombie_theater',data:'gameplay/bo1-kino',image:'loadscreen_zombie_theater',assetZones:['bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui'],description:'Battle the undead in an abandoned theater. Restore power, link the teleporter and reach Pack-a-Punch in the projection room.'}]);
-export function mapById(id){return [...MAPS,...BO1_MAPS].find(map=>map.id===id)||MAPS[0];}
-export function selectedMap(){return typeof location!=='undefined'&&location.pathname.startsWith('/black-ops')?BO1_MAPS[0]:MAPS.find(m=>m.id===(typeof location==='undefined'?'nacht':new URLSearchParams(location.search).get('map')))||MAPS[0];}
+export const BO2_MAPS=Object.freeze([{id:'buried',game:'black-ops-2',title:'Buried',zone:'bo2-buried',asset:'zm_buried',data:'gameplay/bo2-buried',image:'loadscreen_buried_zclassic_processing',assetZones:['bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui'],description:'An old mining town lies buried beneath the surface. Descend into the darkness, restore power and survive the undead.'}]);
+export const ALL_MAPS=Object.freeze([...MAPS,...BO1_MAPS,...BO2_MAPS]);
+export function mapById(id){return ALL_MAPS.find(map=>map.id===id)||MAPS[0];}
+export function selectedMap(){
+  if(typeof location!=='undefined'){
+    if(location.pathname.startsWith('/black-ops-2'))return BO2_MAPS[0];
+    if(location.pathname.startsWith('/black-ops'))return BO1_MAPS[0];
+  }
+  return MAPS.find(m=>m.id===(typeof location==='undefined'?'nacht':new URLSearchParams(location.search).get('map')))||MAPS[0];
+}

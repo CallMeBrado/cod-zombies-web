@@ -7,7 +7,7 @@ export const DIVE={hold:BO1_INPUT_REFERENCE.stanceHoldSeconds,stanceHold:BO1_INP
 const stance=g=>STANCES[g.player.stance]||STANCES.stand;
 export const playerHull=g=>{if(!g.dive)return stance(g).half;const t=Math.min(1,Math.max(0,(g.time-g.dive.started)/g.dive.config.bodyBlendSeconds)),blend=t*t*(3-2*t);return [14,14,35+(15-35)*blend];};
 export const playerView=g=>{const current=g.viewHeightCurrent??stance(g).view,previous=g.viewHeightPrevious??current;return previous+(current-previous)*Math.min(1,(g.accumulator??1/120)*120);};
-export const playerSpeed=g=>stance(g).speed;
+export const playerSpeed=g=>stance(g).speed*(g.data.game==='black-ops-2'&&g.mapRules?.perks.has('specialty_longersprint')?1.07:1);
 export const playerBusy=g=>!!g.dive||!!g.diveRecovery||g.time<(g.stanceReadyAt||0);
 export function resetMovement(g){g.player.stance='stand';g.viewHeightCurrent=60;g.viewHeightPrevious=60;g.stanceReadyAt=0;g.stanceChangedAt=0;g.stanceHold=null;g.dive=null;g.diveRecovery=null;g.lastDive=null;g.diveEndedAt=-Infinity;g.nextDiveId=1;g.movementSession=(g.movementSession||0)+1;g.diveConfig??=normalizeDiveConfig(g.data.playerMovement?.dive);g.sprintStartedAt=null;g.groundedAt=undefined;g.jumpStanceBlocked=false;g.sprintStanceBlocked=false;g.lastMoveSpeed=0;g.horizontalVelocity=[0,0];}
 export function restoreMovement(g,s){g.player.stance=Object.hasOwn(STANCES,s)?s:'stand';g.viewHeightCurrent=stance(g).view;g.viewHeightPrevious=g.viewHeightCurrent;g.dive=null;g.diveRecovery=null;g.diveEndedAt=-Infinity;g.stanceHold=null;}
@@ -18,7 +18,7 @@ function fits(g,name){
 export function changeStance(g,name,{toggle=true,dive=true}={}){
   if(!Object.hasOwn(STANCES,name)||['ready','dead'].includes(g.phase)||g.dive||g.mods?.noclip||g.mapRules?.reviveDue)return false;
   if(toggle&&g.player.stance===name)name='stand';
-  if(name==='prone'&&dive&&g.data.game==='black-ops'&&g.sprinting&&startDive(g))return true;
+  if(name==='prone'&&dive&&['black-ops','black-ops-2'].includes(g.data.game)&&g.sprinting&&startDive(g))return true;
   if(name==='prone'&&!g.player.grounded)return false;
   if(STANCES[name].half[2]>playerHull(g)[2]&&!fits(g,name)){g.message('Cannot '+(name==='stand'?'stand':'crouch')+' here');return false;}
   const previous=g.player.stance;g.player.stance=name;g.stanceChangedAt=g.time;if(name!=='stand')g.sprintStanceBlocked=true;g.sprinting=false;g.sprintStartedAt=null;
@@ -33,7 +33,7 @@ export function movementInput(g,input,dt){
   if(!input.jump)g.jumpStanceBlocked=false;
   const hold=g.stanceHold;
   if(hold&&!hold.handled){
-    const sprintHold=hold.sprint&&g.data.game==='black-ops';
+    const sprintHold=hold.sprint&&['black-ops','black-ops-2'].includes(g.data.game);
     // The stance hold and sprint eligibility run concurrently. A qualifying
     // held request waits for the remaining sprint time rather than dropping
     // into ordinary prone just before the sprint becomes eligible.
@@ -60,7 +60,7 @@ export function movementEnd(g,dt){
 // The sprint's horizontal velocity carries the dive; only the upward speed is set.
 export function startDive(g){
   const c=normalizeDiveConfig(g.diveConfig),p=g.player,velocity=(g.horizontalVelocity||[0,0]).slice(),speed=Math.hypot(...velocity);
-  if(g.data.game!=='black-ops'||p.health<=0||g.dive||g.diveRecovery||p.stance!=='stand'||!p.grounded||!g.sprinting||g.sprintStartedAt===null||g.time-g.sprintStartedAt<c.startupSeconds-1e-9||speed<=c.minSpeed||g.time-g.diveEndedAt<=c.exhaustionSeconds||g.gesture||g.switching||g.pendingGrenade||g.reloadEnd||g.pendingMelee)return false;
+  if(!['black-ops','black-ops-2'].includes(g.data.game)||p.health<=0||g.dive||g.diveRecovery||p.stance!=='stand'||!p.grounded||!g.sprinting||g.sprintStartedAt===null||g.time-g.sprintStartedAt<c.startupSeconds-1e-9||speed<=c.minSpeed||g.time-g.diveEndedAt<=c.exhaustionSeconds||g.gesture||g.switching||g.pendingGrenade||g.reloadEnd||g.pendingMelee)return false;
   const direction=velocity.map(v=>v/speed),id=g.nextDiveId++;
   const report={id,session:g.movementSession,takeoffPosition:p.position.slice(),started:g.time,launchSpeed:speed,peakRise:0,touchdownDistance:null,finalStopDistance:null,airborneSeconds:null,slideSeconds:0,movementReadySeconds:null,weaponReadySeconds:null,launchEvents:0,landingEvents:0,collisionEvents:0,configuration:{...c}};
   g.dive={id,phase:'air',started:g.time,phaseAt:g.time,origin:p.position.slice(),launchZ:p.position[2],direction,yaw:Math.atan2(direction[1],direction[0]),velocity,launchSpeed:speed,config:c,report,startView:playerView(g),sequence:0,loop:false,landingAt:null};g.lastDive=report;

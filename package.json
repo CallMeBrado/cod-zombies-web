@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Browser Zombies runtime using original WaW and Black Ops assets with shared server saves",
+  "description": "Browser Zombies runtime using original WaW, Black Ops and Black Ops II assets with shared server saves",
   "scripts": {
     "start": "node tools/build_preload.mjs && node tools/serve.mjs",
     "prepare:map": "node tools/build_preload.mjs",
@@ -32,6 +32,8 @@
     "test:launch": "node tools/test_launch.mjs && node tools/test_pause_keys.mjs && node tools/test_routes.mjs",
     "prepare:bo1": "python -B tools/prepare_bo1.py && node tools/build_preload.mjs --map kino",
     "test:bo1": "node tools/test_bo1.mjs",
+    "prepare:bo2": "python -B tools/prepare_bo2.py && node --max-old-space-size=6144 tools/build_preload.mjs --map buried",
+    "test:bo2": "python -B tools/validate_bo2_assets.py && node tools/test_bo2.mjs",
     "test:saves": "node tools/test_server_saves.mjs && node tools/test_save.mjs",
     "test:der-riese": "node tools/test_factory.mjs && node tools/test_factory_paths.mjs",
     "test:controllers": "node tools/test_gamepad.mjs",

@@ -105,8 +105,8 @@ export class KinoRules extends FactoryRules {
 }
 
 export class BlackOpsEngine extends TestingGame {
-  constructor(manifest,collision,paths,events={},presentation={}){
-    super(manifest,collision,paths,events,presentation,g=>new KinoRules(g));
+  constructor(manifest,collision,paths,events={},presentation={},rulesFactory=g=>new KinoRules(g)){
+    super(manifest,collision,paths,events,presentation,rulesFactory);
     this.engine='black-ops-t5';
     const disabled=collision.disabled;
     try{

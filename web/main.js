@@ -16,7 +16,7 @@ import {GamepadSettings,GamepadControls} from './gamepad.js';
 import {ControllerPanel,ControllerMenu,ControllerHud} from './gamepad-ui.js';
 import {PauseMenu} from './pause-menu.js';
 import {GrenadeView} from './grenade-view.js';
-import {selectedMap,MAPS,BO1_MAPS} from './maps.js';
+import {selectedMap,MAPS,BO1_MAPS,BO2_MAPS} from './maps.js';
 import {ZombiesLobby} from './lobby.js';
 import {LobbyPresence} from './lobby-presence.js';
 import {NetSession} from './net-session.js';
@@ -29,6 +29,9 @@ import {powerSwitchRotation} from './factory-view.js';
 import {PauseKeys} from './pause-keys.js';
 import {BlackOpsEngine} from './bo1-engine.js';
 import {BlackOpsHud} from './bo1-hud.js';
+import {BlackOps2Engine,BO2_CHARACTERS,BO2_ARMS,BO2_PERKS} from './bo2-engine.js';
+import {BlackOps2Hud} from './bo2-hud.js';
+import {BuriedView} from './bo2-view.js';
 import {ServerSaveStore} from './server-saves.js';
 import {LaunchScreen} from './launch-screen.js';
 import {PlayerVoice,CHARACTERS,CHARACTER_ARMS} from './player-voice.js';
@@ -37,7 +40,8 @@ import {DiveAudio,contactSurfaceName} from './dive-audio.js';
 import {divePresentation} from './player-movement.js';
 import {configureDive,predictedDive} from './dive-config.js';
 const mapChoice=selectedMap();
-const blackOps=mapChoice.game==='black-ops';
+const bo2=mapChoice.game==='black-ops-2',blackOps=bo2||mapChoice.game==='black-ops';
+const characterNames=bo2?BO2_CHARACTERS:CHARACTERS,characterArms=bo2?BO2_ARMS:CHARACTER_ARMS;
 // Black Ops solo plays a random one of the four characters (player_set_viewmodel);
 // ?character=0-3 picks one. A save keeps its character.
 const characterParam=new URLSearchParams(location.search).get('character');
@@ -45,10 +49,11 @@ let character=blackOps?(/^[0-3]$/.test(characterParam||'')?Number(characterParam
 
 const $=id=>document.getElementById(id);
 const canvas=$('viewport'),scene=new THREE.Scene();scene.background=new THREE.Color(0x10171c);scene.fog=new THREE.FogExp2(0x26313a,.00022);
+if(bo2){scene.background.set(0x17120e);scene.fog.color.set(0x322719);scene.fog.density=.00013;}
 scene.add(new THREE.AmbientLight(0xa8bac9,.2));
 let storage;try{storage=localStorage;}catch{}
 const settings=new GameSettings(storage),gamepadSettings=new GamepadSettings(storage);
-const saves=new ServerSaveStore(storage,blackOps?BO1_MAPS:MAPS);
+const saves=new ServerSaveStore(storage,bo2?BO2_MAPS:blackOps?BO1_MAPS:MAPS);
 const worldFov=value=>THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(value)/2)*.75));
 let baseFov=worldFov(settings.value.fov);
 const camera=new THREE.PerspectiveCamera(baseFov,innerWidth/innerHeight,1,18000);camera.up.set(0,0,1);
@@ -56,13 +61,13 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixe
 renderer.info.autoReset=false;renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*settings.value.renderScale/100);
 const viewScene=new THREE.Scene();
 const viewCamera=new THREE.PerspectiveCamera(worldFov(65),innerWidth/innerHeight,.1,300);
-const hud=new (blackOps?BlackOpsHud:OriginalHud)($('hud-art')),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene),blood=new BloodEffects(scene);
+const hud=new (bo2?BlackOps2Hud:blackOps?BlackOpsHud:OriginalHud)($('hud-art')),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene),blood=new BloodEffects(scene);
 const visuals=new Map(),dynamic=new Map(),dropVisuals=new Map();
 const state={ready:false,mode:'menu',inputMode:'idle',yaw:Math.PI,pitch:0,loading:'idle',fps:0,error:null};
 const launch=new LaunchScreen(mapChoice,()=>settings.value.volume);
 let gameLoading,launchAudioContext;
 let game,audio,map,weaponView,grenadeView,actors,effects,presentation;
-let playerBody,diveAudio,diveThirdPerson=false;
+let playerBody,diveAudio,diveThirdPerson=false,buriedView;
 // Online co-op: the relay session, the co-op rules and the other players' bodies.
 let session=null,coop=null,remotePlayers=null,coopEnded=false,hiddenStep=performance.now();
 // The view glides over steps (stairs, ledges, low props) instead of popping.
@@ -75,13 +80,13 @@ const loops=new Map();let papView=null,shake=null;const cellObjects=[];let cellM
 const pauseKeys=new PauseKeys();
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
-  ({crouch:()=>game.changeStance('crouch'),prone:()=>game.changeStance('prone'),reload:()=>game.reload(),melee:()=>game.melee(),use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
+  ({crouch:()=>game.changeStance('crouch'),prone:()=>game.changeStance('prone'),reload:()=>game.reload(),melee:()=>game.melee(),use:()=>game.use(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),equipment:()=>game.placeEquipment?.(),fire:()=>game.fire(),lookLeft:()=>state.yaw+=.08,lookRight:()=>state.yaw-=.08,lookUp:()=>state.pitch=Math.min(1.45,state.pitch+.06),lookDown:()=>state.pitch=Math.max(-1.45,state.pitch-.06)})[action]?.();
 },action=>{if(action==='grenade'&&state.mode==='playing')game.releaseGrenade();});
 const mouse=new MouseControls(canvas,document,{mode:()=>({playing:state.mode==='playing',inputMode:state.inputMode,aiming:controls.toggledAim||settings.value.aimMode==='hold'&&settings.value.bindings.aim.some(t=>t&&!t.startsWith('Mouse')&&controls.tokens.has(t))}),buttons:b=>settings.mouseActions(b),fire:()=>game.fire()});
 let controllerPanel,controllerMenu,controllerHud;
 const gamepads=new GamepadControls(gamepadSettings,{
   mode:()=>state.mode,focused:()=>!document.hidden&&document.hasFocus(),aimBlend:()=>aimBlend,
-  action:action=>{if(state.mode!=='playing'||!game)return;if(action==='pause'){menu('Paused',mapChoice.title);return;}if(action==='interact'){if(game.nearInteraction()||game.nearWindow()||game.nearGrenade())game.use();else game.reload();return;}({stance:()=>game.stanceButton(),fire:()=>game.fire(),melee:()=>game.melee(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon()})[action]?.();},
+  action:action=>{if(state.mode!=='playing'||!game)return;if(action==='pause'){menu('Paused',mapChoice.title);return;}if(action==='interact'){if(game.nearInteraction()||game.nearWindow()||game.nearGrenade())game.use();else game.reload();return;}({stance:()=>game.stanceButton(),fire:()=>game.fire(),melee:()=>game.melee(),grenade:()=>game.throwGrenade(true),nextWeapon:()=>game.switchWeapon(),equipment:()=>game.placeEquipment?.()})[action]?.();},
   release:(action,cancel=false)=>{if(action==='grenade'&&state.mode==='playing')game?.releaseGrenade();if(action==='stance')game?.releaseStance(cancel||state.mode!=='playing');},
   look:(yaw,pitch)=>{if(state.mode!=='playing')return;state.yaw+=yaw;state.pitch=THREE.MathUtils.clamp(state.pitch+pitch,-1.45,1.45);cameraPose();},
   menu:action=>controllerMenu?.handle(action),capture:()=>!!controllerPanel?.capturing,rawCapture:(token,pad)=>controllerPanel?.finish(token,pad),
@@ -94,7 +99,7 @@ function leaveCoop(){teardownCoop();game.newGame();resetVisuals();presence.setSt
 controllerPanel=new ControllerPanel(gamepadSettings,gamepads,pauseMenu);controllerMenu=new ControllerMenu(pauseMenu,{mode:()=>state.mode,launch,notice:text=>{$('message').textContent=text;notice(text);}});controllerHud=new ControllerHud(gamepads);controllerHud.sync();
 const lobby=new ZombiesLobby(pauseMenu);
 // Black Ops rows name each player's character; World at War rows are numbered.
-lobby.nameFor=(player,mine)=>blackOps?CHARACTERS[player.character??(mine?character:0)].toUpperCase():'PLAYER '+(player.slot+1);
+lobby.nameFor=(player,mine)=>blackOps?characterNames[player.character??(mine?character:0)].toUpperCase():'PLAYER '+(player.slot+1);
 // Players on this server who open the same map share its pre-game lobby.
 // Black Ops characters are unique per lobby: before the map loads, take the
 // character the lobby assigns. Starting a game is still a solo game.
@@ -117,7 +122,7 @@ function syncLobbyStart(shared){
 }
 const saveSlots=new SaveSlots(pauseMenu,saves,{currentMap:mapChoice.id,canSave:saveBlocked,save:saveGame,load:loadSlot,weaponName:n=>game?game.weaponName(n):n});
 const testingMenu=new TestingMenu(pauseMenu,()=>state.ready?game:null);
-canvas.setAttribute('aria-label',mapChoice.title+' Zombies game');document.title=(blackOps?'Black Ops':'WaW')+' Zombies - '+mapChoice.title;
+canvas.setAttribute('aria-label',mapChoice.title+' Zombies game');document.title=(bo2?'Black Ops II':blackOps?'Black Ops':'WaW')+' Zombies - '+mapChoice.title;
 settings.subscribe(value=>{baseFov=worldFov(value.fov);renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*value.renderScale/100);renderer.setSize(innerWidth,innerHeight);if(audio)audio.volume=value.volume;controls.reset();mouse.reset();inputHint();});
 const nodePos=e=>e.origin.split(/\s+/).map(Number);
 
@@ -146,7 +151,7 @@ function saveBlocked(){if(coop)return 'Co-op games cannot be saved.';return game
 function slotSummary(){
   const g=game,r=g.mapRules;
   return {round:g.round,phase:g.phase,points:g.player.points,kills:g.player.kills,headshots:g.player.headshots,health:Math.round(g.player.health),
-    weapons:g.inventory.map(w=>g.weaponName(w.name)),perks:r?[...r.perks].map(p=>PERKS[p]?.name||p):[],power:r?r.power:null,links:r?(blackOps?Number(r.teleporterLinked):r.links.size):null,teleporterTotal:blackOps?1:3,
+    weapons:g.inventory.map(w=>g.weaponName(w.name)),perks:r?[...r.perks].map(p=>(bo2?BO2_PERKS:PERKS)[p]?.name||p):[],power:r?r.power:null,links:r?(blackOps?Number(r.teleporterLinked):r.links.size):null,teleporterTotal:bo2?0:blackOps?1:3,
     zombies:g.enemies.filter(e=>!e.dead).length,remaining:g.phase==='round'?g.remaining:0,doors:[...g.opened].filter(t=>g.interactions.some(e=>e.target===t)).length,playTime:Math.round(g.elapsed)};
 }
 // The slot card's picture: the current view, drawn now (the drawing buffer is
@@ -278,7 +283,7 @@ function factoryVisuals(){
     const active=game.entities.find(e=>e.targetname===game.data.map.initialBox),at=active&&nodePos(active);
     for(const items of dynamic.values())for(const item of items){
       if(game.opened.has(item.entity.targetname))item.object.visible=false;
-      if(at&&/zombie_treasure_box/.test(item.entity.model||''))item.object.visible=item.object.position.distanceTo(new THREE.Vector3(...at))<150;
+      if(at&&/zombie_treasure_box|p6_anim_zm_magic_box/.test(item.entity.model||''))item.object.visible=item.object.position.distanceTo(new THREE.Vector3(...at))<150;
       if(item.entity.targetname==='teleporter_link_cable_on')item.object.visible=game.mapRules.teleporterLinked;
       if(item.entity.targetname==='teleporter_link_cable_off')item.object.visible=!game.mapRules.teleporterLinked;
     }
@@ -296,6 +301,7 @@ async function dynamicAssets(entities) {
     if(entity.classname==='script_brushmodel'&&entity.model?.startsWith('*'))object=map.brushMeshes.get(Number(entity.model.slice(1)));
     else if(entity.classname==='script_model')try{object=cloneModel(await model(entity.model));}catch(e){console.warn(e.message);}
     if(!object)continue;
+    if(entity.closedAnim){const clip=await originalAnimation(entity.closedAnim,object,false),mixer=new THREE.AnimationMixer(object);const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();mixer.setTime(clip.duration);}
     const group=new THREE.Group();group.position.fromArray(nodePos(entity));
     if(entity.classname==='script_model')shadeModel(object,map.illumination(nodePos(entity)));
     const angles=(entity.angles||'0 0 0').split(/\s+/).map(x=>Number(x)*Math.PI/180);group.rotation.set(angles[2],-angles[0],angles[1],'ZYX');group.add(object);
@@ -316,6 +322,7 @@ function resetVisuals() {
   for(const b of boxVisuals.values()){b.weaponRoot.visible=false;b.glow.visible=false;b.lid.object.quaternion.copy(b.closed);}
   for(const burst of bursts)effects.dispose(burst.root);bursts.length=0;
   combatEffects.reset();blood.reset();
+  buriedView?.reset();
   deathFxTime=0;
   grenadeView?.reset();
   state.yaw=game?.data.map?Number(game.entities.find(e=>e.targetname==='initial_spawn_points').angles.split(' ')[1])*Math.PI/180:Math.PI;state.pitch=0;factoryVisuals();kickPitch=0;kickYaw=0;damageFlash=0;controls.reset();aimBlend=0;mouse.reset();lastLight=-1;cameraPose();
@@ -363,6 +370,7 @@ function updateDrop(drop,v){
 async function prepareBox(manifest){
   for(const [name,d]of Object.entries(manifest.weapons)){const object=cloneModel(await model(d.worldModel));applyHideTags(object,d.hideTags);shadeModel(object,[.7,.7,.7]);boxTemplates.set(name,object);}
   for(const e of manifest.entities.filter(e=>e.targetname==='treasure_chest_use')){
+    if(bo2){const item=dynamic.get(e.target)?.[0],bone=item?.object.getObjectByName('j_hinge');if(!bone)throw new Error('Buried mystery box hinge missing.');const v=createBoxView({object:bone,entity:item.entity},item.entity,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);continue;}
     const lid=dynamic.get(e.target)?.[0],origin=manifest.entities.find(x=>x.targetname===lid?.entity.target);if(!lid||!origin)throw new Error('Original mystery box lid/spawn missing.');
     const v=createBoxView(lid,origin,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);
   }
@@ -423,12 +431,13 @@ async function init() {
   const progress=text=>{state.loading=text;launch.update(launch.element('progress').value,text);};
   const prepared=async(n,text)=>{launch.prepared(n,text);state.loading=text;await new Promise(requestAnimationFrame);};
   await preloadAssets(progress,info=>launch.downloaded(info));await prepared(0,'Preparing downloaded assets…');
-  const [manifest,collision,paths,recovered,navigation,powerNavigation,gateNavigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true),mapChoice.id==='der-riese'?get('/data/'+mapChoice.data+'/power-navigation.json',true).catch(()=>null):null,blackOps?null:get('/data/'+mapChoice.data+'/gate-navigation.json',true).catch(()=>null)]);presentation=recovered;
+  const [manifest,collision,paths,recovered,navigation,powerNavigation,gateNavigation]=await Promise.all([get('/data/'+mapChoice.data+'/manifest.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.collision.json',true),get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.paths.json',true),get('/data/'+mapChoice.data+'/presentation.json',true),get('/data/'+mapChoice.data+'/navigation.json',true),mapChoice.id==='der-riese'?get('/data/'+mapChoice.data+'/power-navigation.json',true).catch(()=>null):null,blackOps&&!bo2?null:get('/data/'+mapChoice.data+'/gate-navigation.json',true).catch(()=>null)]);presentation=recovered;
   map=await loadMap(scene,progress);await prepared(1,'Preparing original map objects…');await dynamicAssets(manifest.entities);
   await prepared(2,'Preparing original weapons and Zombies…');
-  if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=CHARACTER_ARMS[character];
+  if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=characterArms[character];
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
   if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
+  if(bo2){buriedView=new BuriedView(scene,map,dynamic);await buriedView.prepare(manifest);}
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
@@ -437,8 +446,11 @@ async function init() {
   await prepareBox(manifest);preparePap(manifest);
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
   await prepared(4,'Preparing map collision, navigation and audio…');
-  game=new (blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
+  game=new (bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     dialog:e=>voice?.speak(e).catch(console.warn),
+    buriedItem:e=>buriedView?.item(e),
+    buriedEquipment:e=>buriedView?.place(e),buriedEquipmentRemove:id=>buriedView?.remove(id),buriedEquipmentLaunch:e=>buriedView?.launch(e),
+    buriedProjectile:e=>buriedView?.projectile(e),buriedProjectileRemove:id=>buriedView?.removeProjectile(id),projectileImpact:r=>{combatEffects.impact(r,game.time);if(r.hit)blood.burst(r.end,r.dir,game.time,r.hit.head);},
     dive:e=>weaponView.dive(e),
     diveEvent:e=>diveAudio?.handle(e),contactSurface:(p,n)=>contactSurfaceName(map.bullets.trace([p[0]+n[0]*4,p[1]+n[1]*4,p[2]+6],[0,0,-1],24)),
     bindingName:keyName,controllerPrompts:()=>gamepads.active,
@@ -456,9 +468,9 @@ async function init() {
     explosion:g=>{combatEffects.explosion(g,game.time);}
   },presentation);
   if(blackOps)game.character=character;
-  actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();
+  actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps||bo2){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();
   await prepared(5,'Compiling graphics…');
-  const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(actors.warmObject(),...dropTemplates.values());
+  const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(...actors.warmObjects(),...dropTemplates.values());
   const warmFx=effects.create('misc/fx_zombie_powerup_on',0);warmScene.add(warmFx);
   for(const v of boxVisuals.values())for(const object of v.choices.values())object.visible=true;
   await Promise.all([renderer.compileAsync(scene,camera),renderer.compileAsync(warmScene,camera),renderer.compileAsync(viewScene,viewCamera)]);
@@ -581,7 +593,7 @@ function frame(time) {
   map?.updateVisibility(camera);applyCellCulling();
   renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
   if(game&&state.mode==='playing'&&time>=hudDue){
-    if(coop){const names=blackOps?CHARACTERS.map(n=>n.toUpperCase()):null,target=coop.reviveTarget();
+    if(coop){const names=blackOps?characterNames.map(n=>n.toUpperCase()):null,target=coop.reviveTarget();
       game.coopHud={rows:coop.scoreboard(names),markers:(remotePlayers?.markers(camera,innerWidth,innerHeight)||[]).map(m=>({...m,name:coop.nameOf(m.id,names),color:coop.scoreboard(names).find(r=>r.id===m.id)?.color})),
         down:coop.down?Math.max(0,Math.ceil(coop.down.bleedout-game.time)):null,dead:coop.dead,revive:target?{name:coop.nameOf(target.id,names),progress:coop.revive?.id===target.id?coop.revive.progress:0,key:keyName('use')}:null};}
     else game.coopHud=null;
@@ -593,6 +605,7 @@ function frame(time) {
     const counter=$('fps-counter');counter.classList.toggle('on',settings.value.showFps);if(settings.value.showFps)counter.textContent=state.fps+' FPS\n'+(frameMsTotal/frames).toFixed(1)+' ms CPU';
     frames=0;frameMsTotal=0;fpsTime=time;}
   if(time>=domDue){updateHud();domDue=time+100;}
+  if(game&&state.ready)buriedView?.update(game,paused?0:dt);
   requestAnimationFrame(frame);
 }
 window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
@@ -611,7 +624,7 @@ Object.assign(window.wawPreview,{
   diveTelemetry:()=>({report:game?.lastDive,phase:game?.dive?.phase||'ready',weaponRecovering:!!game?.diveRecovery,config:game?.diveConfig,predicted:game&&predictedDive(game.diveConfig),audio:diveAudio?.diagnostics(),body:playerBody?.diagnostics()}),
   setDiveThirdPerson:on=>{diveThirdPerson=!!on;playerBody?.setThirdPerson(diveThirdPerson);cameraPose();return diveThirdPerson;}
 });
-if(blackOps)window.bo1Preview=window.wawPreview;
+if(bo2)window.bo2Preview=window.wawPreview;else if(blackOps)window.bo1Preview=window.wawPreview;
 async function bootLobby(){
   // Only menu artwork, fonts and the save catalogue are needed before Start.
   saves.prepare().then(()=>{$('resume-save').hidden=pauseMenu.context==='pause'||!saves.count();}).catch(error=>{state.savesError=error.message;});

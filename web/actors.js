@@ -12,8 +12,15 @@ export class ZombieActors {
     const body=cloneModel(bodyTemplate),head=cloneModel(headTemplate);head.userData.zombieHeadRoot=true;
     if(this.presentation.gore?.neckModel){const neck=cloneModel(await model(this.presentation.gore.neckModel));neck.userData.zombieNeckRoot=true;neck.traverse(n=>{if(n.isMesh)n.userData.goreOnly=true;});(this.presentation.gore.neckMount==='body'?body:body.getObjectByName('j_spine4')).add(neck);}
     head.traverse(n=>{if(n.isMesh)n.userData.zombieHead=true;});body.getObjectByName('j_spine4')?.add(head);shadeModel(body,[1,1,1]);
-    const clips=new Map(await Promise.all(Object.keys(this.presentation.animations).map(async name=>[name,await originalAnimation(name,body,true)])));
-    for(let i=0;i<32;i++){
+    await this.prepareRig(body,Object.fromEntries(Object.keys(this.presentation.animations).map(n=>[n,n])),32,this.pool);
+    this.variantPools=new Map();
+    for(const [kind,config]of Object.entries(this.presentation.actorVariants||{})){
+      const object=cloneModel(await model(config.body));shadeModel(object,[1,1,1]);const pool=[];this.variantPools.set(kind,pool);await this.prepareRig(object,config.animations,config.count||8,pool);
+    }
+  }
+  async prepareRig(body,names,count,pool){
+    const clips=new Map(await Promise.all(Object.entries(names).map(async([alias,name])=>{const clip=await originalAnimation(name,body,true);clip.name=alias;return [alias,clip];})));
+    for(let i=0;i<count;i++){
       const object=cloneModel(body),root=new THREE.Group();root.add(object);
       const materials=[];object.traverse(n=>{if(!n.isMesh)return;n.frustumCulled=false;
         const clone=m=>{const copy=m.clone();copy.onBeforeCompile=m.onBeforeCompile;materials.push(copy);return copy;};
@@ -23,12 +30,13 @@ export class ZombieActors {
       for(const [name,action]of actions){const once=name.includes('death')||name.includes('tear')||name.includes('traverse');action.setLoop(once?THREE.LoopOnce:THREE.LoopRepeat,once?1:Infinity);action.clampWhenFinished=once;}
       let headModel,neckModel;object.traverse(n=>{if(n.userData.zombieHeadRoot)headModel=n;if(n.userData.zombieNeckRoot)neckModel=n;});
       const headRoot=new THREE.Group(),headFragment=new SeveredHead(headRoot);
-      this.pool.push({root,object,mixer,actions,materials,current:null,enemy:null,started:null,trace:new ZombieHitTrace(root),ragdoll:new SkeletonRagdoll(root),headModel,neckModel,headMount:headModel?.parent,headFragment,headRest:headModel&&{position:headModel.position.clone(),quaternion:headModel.quaternion.clone(),scale:headModel.scale.clone()}});
+      pool.push({pool,root,object,mixer,actions,materials,current:null,enemy:null,started:null,trace:new ZombieHitTrace(root),ragdoll:new SkeletonRagdoll(root),headModel,neckModel,headMount:headModel?.parent,headFragment,headRest:headModel&&{position:headModel.position.clone(),quaternion:headModel.quaternion.clone(),scale:headModel.scale.clone()}});
     }
   }
   acquire(enemy){
-    if(!this.pool.length){const corpse=[...this.active.values()].find(v=>v.enemy.dead);if(corpse)this.release(corpse.enemy.id);}
-    const v=this.pool.pop();if(!v)throw new Error('Prepared zombie actor pool exhausted.');
+    const pool=this.variantPools?.get(enemy.kind)||this.pool;
+    if(!pool.length){const corpse=[...this.active.values()].find(v=>v.pool===pool&&v.enemy.dead);if(corpse)this.release(corpse.enemy.id);}
+    const v=pool.pop();if(!v)throw new Error('Prepared zombie actor pool exhausted.');
     v.enemy=enemy;v.current=null;v.started=null;v.traceTick=-1;v.trace.tick=-1;v.root.name='Zombie '+enemy.id;v.root.position.fromArray(enemy.position);v.root.rotation.z=enemy.angle;
     v.mixer.stopAllAction();this.restoreHead(v);v.ragdoll.reset();this.active.set(enemy.id,v);this.updateOne(v,0,enemy.position);this.light(v);this.scene.add(v.root);return v;
   }
@@ -57,6 +65,7 @@ export class ZombieActors {
     const e=v.enemy;
     if(e.dead&&v.ragdoll.ready){this.kill(e);v.ragdoll.update(dt,this.collision);v.headFragment?.update(dt,this.collision);v.trace.tick=-1;v.traceTick=-1;return;}
     v.root.position.fromArray(position);v.root.rotation.z=e.angle;
+    if(e.stage==='rise')v.root.position.z-=50*Math.max(0,(e.riseUntil-e.spawnTime-e.age)/(e.riseUntil-e.spawnTime));
     let name=v.actions.has(e.gait)?e.gait:'ai_zombie_walk_v1',started=null;
     if(e.dead)name='ai_zombie_death_v1';
     else if(e.stage==='traverse')name=e.traverseAnim;
@@ -76,7 +85,8 @@ export class ZombieActors {
     v.trace.tick=-1;v.traceTick=-1;
   }
   light(v){const color=this.map.illumination(v.enemy.position);for(const m of v.materials)if(!m.userData.fixedLight)m.color.setRGB(...color);}
-  release(id){const v=this.active.get(id);if(!v)return;this.scene.remove(v.root);v.mixer.stopAllAction();this.restoreHead(v);v.ragdoll.reset();v.enemy=null;this.active.delete(id);this.pool.push(v);}
+  release(id){const v=this.active.get(id);if(!v)return;this.scene.remove(v.root);v.mixer.stopAllAction();this.restoreHead(v);v.ragdoll.reset();v.enemy=null;this.active.delete(id);(v.pool||this.pool).push(v);}
   reset(){for(const id of [...this.active.keys()])this.release(id);}
   warmObject(){return this.pool[0].root;}
+  warmObjects(){return [this.warmObject(),...[...(this.variantPools?.values()||[])].map(pool=>pool[0].root)];}
 }

@@ -21,7 +21,7 @@ export class LaunchScreen {
     document.body.append(this.root);this.movie=this.root.querySelector('video');
     this.element=id=>this.root.querySelector('#launch-'+id);
     this.element('map').textContent=map.title.toUpperCase();
-    this.movie.poster='/data/'+(map.game==='black-ops'?map.data:'gameplay')+'/hud/'+map.image+'.png';
+    this.movie.poster='/data/'+(map.game?map.data:'gameplay')+'/hud/'+map.image+'.png';
     this.movie.addEventListener('ended',()=>{
       // Some original movies fade to black. Keep the original map artwork
       // visible when a slow download outlasts the cinematic.

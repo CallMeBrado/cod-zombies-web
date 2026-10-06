@@ -1,10 +1,10 @@
-import {MAPS,BO1_MAPS,selectedMap} from './maps.js';
+import {MAPS,BO1_MAPS,BO2_MAPS,selectedMap} from './maps.js';
 const $=id=>document.getElementById(id);
 export class ZombiesLobby {
   constructor(menu){
     this.menu=menu;this.current=selectedMap();this.selection=this.current;this.shared=null;this.localStatus='LOADING';
     this.nameFor=(player,mine)=>'PLAYER '+(player.slot+1);
-    for(const map of this.current.game==='black-ops'?BO1_MAPS:MAPS){
+    for(const map of this.current.game==='black-ops-2'?BO2_MAPS:this.current.game==='black-ops'?BO1_MAPS:MAPS){
       const button=document.createElement('button');button.type='button';button.dataset.menuText='';button.dataset.map=map.id;button.textContent=map.title.toUpperCase();
       button.onclick=()=>this.choose(map);$('map-list').append(button);
     }
@@ -20,7 +20,7 @@ export class ZombiesLobby {
     this.menu.setText('menu-title',this.current.title.toUpperCase());
     this.menu.setText('selected-map-title',this.selection.title.toUpperCase());
     $('map-description').textContent=this.selection.description;
-    for(const [id,map]of [['lobby-preview',this.current],['map-preview',this.selection]]){$(id).src='/data/'+(map.game==='black-ops'?map.data:'gameplay')+'/hud/'+map.image+'.png';$(id).alt=map.title;}
+    for(const [id,map]of [['lobby-preview',this.current],['map-preview',this.selection]]){$(id).src='/data/'+(map.game?map.data:'gameplay')+'/hud/'+map.image+'.png';$(id).alt=map.title;}
     for(const button of $('map-list').children)button.setAttribute('aria-selected',String(button.dataset.map===this.selection.id));
     this.menu.setText('map-accept','SELECT MAP');this.menu.text?.paint();
   }

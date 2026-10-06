@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { networkInterfaces } from 'node:os';
-import {MAPS,BO1_MAPS,mapById} from '../web/maps.js';
+import {MAPS,BO1_MAPS,BO2_MAPS,mapById} from '../web/maps.js';
 import {pageRoute} from '../web/routes.js';
 import {createSaveApi} from './save-api.mjs';
 import {createLobbyApi} from './lobby-api.mjs';
@@ -15,8 +15,8 @@ import {sendMovie} from './media-response.mjs';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const port = Number(process.env.PORT || 8789);
 const host = process.env.HOST || '0.0.0.0';
-const saveApi=createSaveApi({directory:path.join(root,'local-data/saves'),maps:[...MAPS,...BO1_MAPS]});
-const lobbyApi=createLobbyApi({maps:[...MAPS,...BO1_MAPS],log:line=>console.log(new Date().toISOString()+' '+line)});
+const saveApi=createSaveApi({directory:path.join(root,'local-data/saves'),maps:[...MAPS,...BO1_MAPS,...BO2_MAPS]});
+const lobbyApi=createLobbyApi({maps:[...MAPS,...BO1_MAPS,...BO2_MAPS],log:line=>console.log(new Date().toISOString()+' '+line)});
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be between 1 and 65535.');
 function lanUrls() {
   if (host === '127.0.0.1' || host === '::1') return [];
@@ -29,12 +29,12 @@ function lanUrls() {
 }
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.wav': 'audio/wav', '.glb': 'model/gltf-binary' };
+  '.png': 'image/png', '.wav': 'audio/wav', '.flac':'audio/flac', '.glb': 'model/gltf-binary' };
 const builds=new Map();
 async function currentBuild(){
   const preload=JSON.parse(await readFile(path.join(root,'local-data/preload.json'),'utf8'));
   const maps={nacht:preload};for(const map of MAPS.slice(1))maps[map.id]=JSON.parse(await readFile(path.join(root,'local-data',map.data,'preload.json'),'utf8'));
-  for(const map of BO1_MAPS)try{maps[map.id]=JSON.parse(await readFile(path.join(root,'local-data',map.data,'preload.json'),'utf8'));}catch{}
+  for(const map of [...BO1_MAPS,...BO2_MAPS])try{maps[map.id]=JSON.parse(await readFile(path.join(root,'local-data',map.data,'preload.json'),'utf8'));}catch{}
   const names=(await readdir(path.join(root,'web'))).filter(n=>/\.(js|css|html)$/.test(n)).sort();
   const files=await Promise.all(names.map(async name=>[name,await readFile(path.join(root,'web',name))]));
   const hash=createHash('sha256').update(JSON.stringify(Object.entries(maps).map(([key,value])=>[key,value.id])));for(const [name,buffer] of files)hash.update(name).update(buffer);
@@ -56,9 +56,9 @@ const server = http.createServer(async (req, res) => {
     if(page?.redirect){res.writeHead(302,{'Location':page.redirect,'Cache-Control':'no-store'});res.end();return;}
     if(page?.template){
       const build=await currentBuild();
-      const map=page.game==='black-ops'?BO1_MAPS[0]:MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||MAPS[0];
+      const map=page.game==='black-ops-2'?BO2_MAPS[0]:page.game==='black-ops'?BO1_MAPS[0]:MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||MAPS[0];
       const preview=page.game==='black-ops'&&build.maps[map.id]?.navigationVersion!=='kino-ground-v2';
-      const preloadConfig=page.game&&!preview?encodeURIComponent(JSON.stringify(build.maps[map.id].packs.map(({url,bytes})=>({url,bytes})))):'';
+      const preloadConfig=page.game&&!preview?encodeURIComponent(JSON.stringify((build.maps[map.id]?.packs||[]).map(({url,bytes})=>({url,bytes})))):'';
       const html=build.files.get(preview?'bo1-progress.html':page.template).toString('utf8').replaceAll('__BUILD__',build.id).replaceAll('__PRELOAD__',preloadConfig);
       sendBuffer(req,res,Buffer.from(html),'text/html');return;
     }
@@ -84,7 +84,7 @@ const server = http.createServer(async (req, res) => {
       folder = path.join(root, 'local-data'); relative = pathname.slice(6);
       // Publish game assets, while keeping extraction reports, logs and process files local.
       const assetFolder = path.relative(folder, path.resolve(folder, relative)).split(path.sep)[0];
-      if (!['gameplay', 'nacht', 'der-riese', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','launch'].includes(assetFolder)) {
+      if (!['gameplay', 'nacht', 'der-riese', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
         res.writeHead(404); res.end('File not found.'); return;
       }
     } else if (pathname.startsWith('/vendor/')) {
