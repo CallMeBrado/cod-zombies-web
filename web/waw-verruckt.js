@@ -28,6 +28,10 @@ export class VerrucktRules extends FactoryRules {
       return {trigger:{...e,position:vec(e.origin)},hulls:this.data.trapHulls?.[e.target]||[],points:E.filter(x=>x.targetname===e.target&&x.classname==='script_struct').map(x=>vec(x.origin)),
         speaker:vec(E.find(x=>x.targetname==='loudspeaker')?.origin)};});
     game.interactions.push(...this.traps.map(t=>t.trigger));
+    // Spawn routes by origin and window, found or not; reset whenever a door
+    // or barrier changes the navigation.
+    this.routes=new Map();const invalidate=game.invalidateNavigation.bind(game);
+    game.invalidateNavigation=targets=>{this.routes.clear();return invalidate(targets);};
   }
   reset(){
     super.reset();
@@ -94,13 +98,20 @@ export class VerrucktRules extends FactoryRules {
       origin=f.fraction<1?[spot[0],spot[1],f.end[2]-35]:spot.slice();
     }
     const target=spawner.target&&g.entities.find(e=>e.targetname===spawner.target),from=target?vec(target.origin):origin;
-    const nodes=this.windows().sort((a,b)=>distance(a.outside,from)-distance(b.outside,from)).slice(0,3);if(!nodes.length)return false;
+    // A goal the zombie cannot path to is skipped (zombie_assure_node sends a
+    // stuck zombie to the closest reachable entrance instead).
+    const key=origin.join(','),nodes=[];
+    for(const w of this.windows().sort((a,b)=>distance(a.outside,from)-distance(b.outside,from))){
+      const prepared=!rise&&g.spawnRoutes.get(w.target)?.routes.get(key);
+      const id=key+'>'+w.target;if(!prepared&&!this.routes.has(id))this.routes.set(id,g.path(origin,w.outside));
+      const route=(prepared||this.routes.get(id)).map(p=>p.slice());
+      if(route.length&&distance(route.at(-1),w.outside)<40)nodes.push({w,route});
+      if(nodes.length===3)break;
+    }
+    if(!nodes.length)return false;
     const desired=[nodes[0]];
-    for(let i=1;i<nodes.length;i++){if(distance(origin,nodes[i].outside)-distance(origin,nodes[i-1].outside)>500)break;desired.push(nodes[i]);}
-    const window=desired[Math.floor(Math.random()*desired.length)];
-    const prepared=!rise&&g.spawnRoutes.get(window.target)?.routes.get(origin.join(','));
-    const route=prepared?prepared.map(p=>p.slice()):g.path(origin,window.outside);
-    if(!route.length&&!rise)return false;
+    for(let i=1;i<nodes.length;i++){if(distance(origin,nodes[i].w.outside)-distance(origin,nodes[i-1].w.outside)>500)break;desired.push(nodes[i]);}
+    const {w:window,route}=desired[Math.floor(Math.random()*desired.length)];
     const gait=g.zombieGait();
     if(rise){const goal=window.outside;angle=Math.atan2(goal[1]-origin[1],goal[0]-origin[0]);}
     const enemy={id:g.nextId++,position:origin.slice(),previousPosition:origin.slice(),health:g.zombieHealth,window,stage:rise?'rise':'approach',afterRise:'approach',

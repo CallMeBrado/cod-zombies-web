@@ -272,12 +272,15 @@ export async function loadMap(scene,progress) {
     else if(blend&&blend!=='opaque'){
       mat.transparent=true;mat.depthWrite=false;
       if(blend!=='alpha'){mat.blending=THREE.CustomBlending;mat.blendEquation=THREE.AddEquation;
-        [mat.blendSrc,mat.blendDst]={premultiplied:[THREE.OneFactor,THREE.OneMinusSrcAlphaFactor],add:[THREE.OneFactor,THREE.OneFactor],multiply:[THREE.ZeroFactor,THREE.SrcColorFactor]}[blend]||[THREE.SrcAlphaFactor,THREE.OneMinusSrcAlphaFactor];}
+        [mat.blendSrc,mat.blendDst]={premultiplied:[THREE.OneFactor,THREE.OneMinusSrcAlphaFactor],add:[THREE.OneFactor,THREE.OneFactor],multiply:[THREE.ZeroFactor,THREE.SrcColorFactor],
+          // T4's wc_*_add light shafts: invdestcolor, one (a screen blend).
+          screen:[THREE.OneMinusDstColorFactor,THREE.OneFactor]}[blend]||[THREE.SrcAlphaFactor,THREE.OneMinusSrcAlphaFactor];}
     }
     if(decal){mat.polygonOffset=true;mat.polygonOffsetFactor=-1;mat.polygonOffsetUnits=-4;}
   };
-  const buildMaterial=({key,map,normal,emissive,lm,vertexColors,alpha,arrays,layer,blend,decal})=>{
+  const buildMaterial=({key,map,normal,emissive,lm,vertexColors,alpha,arrays,layer,blend,decal,tint,falloff})=>{
     const mat=new THREE.MeshBasicMaterial({map,side:THREE.DoubleSide,vertexColors,alphaTest:alpha?.2:0,lightMap:!emissive&&lm?lm.secondary:null});mat.name=key;blendState(mat,blend,decal);
+    if(tint)mat.color.setRGB(...tint);
     const hasNormal=!!(arrays?arrays.normal:normal),layered=!!(arrays?arrays.layer:layer);
     mat.onBeforeCompile=shader=>{
       if(arrays?.layer){shader.uniforms.wawLayerArray={value:arrays.layer};shader.fragmentShader='uniform mediump sampler2DArray wawLayerArray;\n'+shader.fragmentShader;layerShader(shader,'texture(wawLayerArray,vec3(vMapUv,vWawLayer1))');}
@@ -288,6 +291,13 @@ export async function loadMap(scene,progress) {
         shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\n          vWawLayer=wawLayer; vWawNormalLayer=wawNormalLayer;');
         shader.fragmentShader='uniform mediump sampler2DArray wawDiffuse;'+(arrays.normal?' uniform mediump sampler2DArray wawNormalArray;':'')+' flat varying float vWawLayer; flat varying float vWawNormalLayer;\n'+shader.fragmentShader;
         shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>','diffuseColor*=texture(wawDiffuse,vec3(vMapUv,vWawLayer));');
+      }
+      // wc_unlit_falloff: the color fades from falloffBeginColor face-on to
+      // falloffEndColor edge-on; additive passes scale by the vertex alpha.
+      if(falloff){
+        shader.uniforms.wawFalloff={value:new THREE.Vector2(...falloff)};
+        shader.vertexShader='varying float wawFacing;\n'+shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n          wawFacing=abs(dot(normalize(normalMatrix*normal),normalize(-mvPosition.xyz)));');
+        shader.fragmentShader='uniform vec2 wawFalloff; varying float wawFacing;\n'+shader.fragmentShader.replace('#include <opaque_fragment>','outgoingLight*=mix(wawFalloff.y,wawFalloff.x,wawFacing)*diffuseColor.a;\n#include <opaque_fragment>');
       }
       if(lm&&!emissive){
         Object.assign(shader.uniforms,{wawPrimary:{value:lm.primary},wawNormal:{value:arrays?map:(normal||map)},wawHasNormal:{value:hasNormal},wawLights:{value:lightTexture}});
@@ -333,13 +343,13 @@ export async function loadMap(scene,progress) {
       }
       film(shader);
     };
-    mat.customProgramCacheKey=()=>[!!lm,!!emissive,hasNormal,vertexColors,alpha,arrays?'array':'',layered].join('|');
+    mat.customProgramCacheKey=()=>[!!lm,!!emissive,hasNormal,vertexColors,alpha,arrays?'array':'',layered,!!falloff].join('|');
     return mat;
   };
   const material=(s)=>{
     const key=[s.material,s.lightmap].join('|');if(mats.has(key))return key;
     const {map,normal,layer,info}=maps.get(s.material);
-    mats.set(key,buildMaterial({key,map,normal,emissive:info.emissive,lm:lightmaps[s.lightmap],vertexColors:!s.material.startsWith('*'),alpha:!info.blend&&/foliage|chalk|puddle/.test(s.material),layer,blend:info.blend,decal:info.decal}));return key;
+    mats.set(key,buildMaterial({key,map,normal,emissive:info.emissive,lm:lightmaps[s.lightmap],vertexColors:!s.material.startsWith('*'),alpha:!info.blend&&/foliage|chalk|puddle/.test(s.material),layer,blend:info.blend,decal:info.decal,tint:info.tint,falloff:info.falloff}));return key;
   };
   // Texture arrays: compressed textures of one role, format, size and mip count
   // share a GPU array; each world vertex carries its layer. ?arrays=0 disables.
@@ -386,9 +396,9 @@ export async function loadMap(scene,progress) {
     if(id===0){
       const {map,normal,layer,info}=maps.get(s.material),d=arrayLayer(map,'d'),n=normal?arrayLayer(normal,'n'):null,l=layer?arrayLayer(layer,'d'):null;
       if(d&&(!normal||n)&&(!layer||l)){
-        const alpha=!info.blend&&/foliage|chalk|puddle/.test(s.material),vertexColors=!s.material.startsWith('*'),key=[d.bucket.key,n?.bucket.key||'-',l?.bucket.key||'-',s.lightmap,!!info.emissive,alpha,vertexColors,info.blend||'',!!info.decal].join('|');
+        const alpha=!info.blend&&/foliage|chalk|puddle/.test(s.material),vertexColors=!s.material.startsWith('*'),key=[d.bucket.key,n?.bucket.key||'-',l?.bucket.key||'-',s.lightmap,!!info.emissive,alpha,vertexColors,info.blend||'',!!info.decal,info.tint||'',info.falloff||''].join('|');
         if(l)markLayer(s,info,l.layer);
-        if(!arrayGroups.has(key))arrayGroups.set(key,{indices:[],lights:[],layers:[],normalLayers:[],cells:[],meta:{d:d.bucket,n:n?.bucket||null,l:l?.bucket||null,lm:lightmaps[s.lightmap],emissive:!!info.emissive,alpha,vertexColors,blend:info.blend,decal:!!info.decal}});
+        if(!arrayGroups.has(key))arrayGroups.set(key,{indices:[],lights:[],layers:[],normalLayers:[],cells:[],meta:{d:d.bucket,n:n?.bucket||null,l:l?.bucket||null,lm:lightmaps[s.lightmap],emissive:!!info.emissive,alpha,vertexColors,blend:info.blend,decal:!!info.decal,tint:info.tint,falloff:info.falloff}});
         const g=arrayGroups.get(key),light=lightIndex(s);
         for(let k=0;k<s.triangleCount*3;k++){g.indices.push(s.firstVertex+idx[s.baseIndex+k]);g.lights.push(light);g.layers.push(d.layer);g.normalLayers.push(n?n.layer:0);}
         for(let k=0;k<s.triangleCount;k++)g.cells.push(surfaceCell[i]);
@@ -436,7 +446,7 @@ export async function loadMap(scene,progress) {
     draw.setIndex(index);draw.boundingSphere=full.boundingSphere;draw.boundingBox=full.boundingBox;mesh.geometry=draw;cellMeshes.push({mesh,source,ranges,index});return mesh;
   };
   for(const [key,g]of arrayGroups){
-    const m=g.meta,mat=buildMaterial({key:'array:'+key,map:arrayMap,normal:null,emissive:m.emissive,lm:m.lm,vertexColors:m.vertexColors,alpha:m.alpha,blend:m.blend,decal:m.decal,arrays:{diffuse:arrayTexture(m.d),normal:m.n?arrayTexture(m.n):null,layer:m.l?arrayTexture(m.l):null}});
+    const m=g.meta,mat=buildMaterial({key:'array:'+key,map:arrayMap,normal:null,emissive:m.emissive,lm:m.lm,vertexColors:m.vertexColors,alpha:m.alpha,blend:m.blend,decal:m.decal,tint:m.tint,falloff:m.falloff,arrays:{diffuse:arrayTexture(m.d),normal:m.n?arrayTexture(m.n):null,layer:m.l?arrayTexture(m.l):null}});
     const sorted=byCell(g,['indices','lights','layers','normalLayers']);
     const mesh=new THREE.Mesh(compactGeometry(sorted.indices,sorted.lights,sorted.layers,sorted.normalLayers),mat);mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh,{layers:m.d.textures});cellCulled(mesh,sorted.ranges);worldBatches++;
   }

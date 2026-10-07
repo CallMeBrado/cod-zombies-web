@@ -40,6 +40,12 @@ assert(risen,'A riser spawns');assert(/traverse_ground/.test(risen.riseAnim));
 assert(manifest.map.riseSpots.some(s=>Math.hypot(s[0]-risen.position[0],s[1]-risen.position[1])<1),'Risers use the zombie_rise structs');
 run(risen.riseUntil-g.time+.1);assert.equal(risen.stage,'approach');assert(risen.path.length,'A risen zombie walks to its window');
 report.riser=risen.riseAnim;
+// Every zombie gets a walkable route to its window (risers never aim at the
+// upstairs windows they cannot reach).
+{const n=g.enemies.length;g.remaining=200;for(let i=0;i<120;i++)g.spawnEnemy();
+  const spawned=g.enemies.slice(n);assert(spawned.length>100);
+  for(const e of spawned){assert(e.path.length,'Spawn route');const end=e.path.at(-1);assert(Math.hypot(end[0]-e.window.outside[0],end[1]-e.window.outside[1])<40,'The route reaches the window');}
+  for(const e of spawned){e.dead=true;g.emit('removeEnemy',e);}g.enemies.splice(n);report.routes=spawned.length;}
 const windows=new Set(r.windows().map(w=>w.target));
 assert(!windows.has('auto112')&&!windows.has('auto233'),'Door goals start off');
 

@@ -139,7 +139,8 @@ const nodePos=e=>e.origin.split(/\s+/).map(Number);
 function notice(text){$('notice').textContent=text;noticeDue=performance.now()+3500;}
 function cameraPose() {
   if(gameOver?.pose(camera))return;
-  if(coop?.dead&&session){const id=[...coop.remotes.keys()].find(id=>{const s=session.sample(id);return s&&!s.dead;}),s=id&&session.sample(id);
+  if(remotePlayers)remotePlayers.watched=null;
+  if(coop?.dead&&session){const id=[...coop.remotes.keys()].find(id=>{const s=session.sample(id);return s&&!s.dead;}),s=id&&session.sample(id);if(remotePlayers)remotePlayers.watched=id||null;
     if(s){camera.up.set(0,0,1);camera.position.set(s.p[0],s.p[1],s.p[2]+(s.stance==='prone'||s.down?11:s.stance==='crouch'?40:60));camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(s.yaw)*Math.cos(s.pitch),Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch))));return;}}
   const p=game?game.renderPosition(game.player):[0,424,17],d=game?divePresentation(game,game.time-1/120+game.accumulator):null;
   camera.up.set(0,0,1);camera.position.set(p[0],p[1],p[2]+(game?.viewHeight??60)+(d?.cameraOffsetUnits||0)+stepOffset);

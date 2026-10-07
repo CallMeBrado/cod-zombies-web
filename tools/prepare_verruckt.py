@@ -100,6 +100,19 @@ def prepare():
                    if re.match(r'(zapper|elec|pa_|mx_|amb_|door|perks|bottle|zmb_|asylum|announcer|radio|toilet|chair|bounce|betty)', p.stem))
     riese.convert_sounds({a for a in aliases if a}, sounds, output=OUTPUT, search=SEARCH)
 
+    # The courtyard's light shafts (wc_unlit_falloff_add) are unlit, screen
+    # blended (invdestcolor, one), tinted and fade edge-on; the exported world
+    # carries no blend state, which drew them as black slabs.
+    world_path = ZONE / 'web-world' / (ASSET + '.json')
+    for name, info in world['materials'].items():
+        record = find('materials/' + name.lstrip(',') + '.json')
+        native = json.loads(record.read_text()) if record else {}
+        if not native.get('techniqueSet', '').startswith('wc_unlit_falloff_add'): continue
+        constants = {c['name']: c['literal'] for c in native.get('constants', [])}
+        info.update(emissive=True, blend='screen', tint=constants.get('colorTint', [1, 1, 1])[:3],
+                    falloff=[constants.get('falloffBeginColor', [1])[0], constants.get('falloffEndColor', [0])[0]])
+    world_path.write_text(json.dumps(world, separators=(',', ':')))
+
     # ----- the map's spawning and window rules (nazi_zombie_asylum.gsc) -----
     collision = json.loads((ZONE / 'web-world' / (ASSET + '.collision.json')).read_text())
     point = lambda e: list(map(float, e['origin'].split()))

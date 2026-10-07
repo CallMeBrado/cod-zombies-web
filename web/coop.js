@@ -208,7 +208,7 @@ export class Coop {
   }
   // ----- host snapshot ---------------------------------------------------
   snapshot(){
-    const g=this.game,now=g.time,stage={approach:0,barrier:1,enter:2,traverse:3,hunt:4};
+    const g=this.game,now=g.time,stage={approach:0,barrier:1,enter:2,traverse:3,hunt:4,rise:5};
     return {
       time:now,phase:g.phase,round:g.round,remaining:g.remaining,roundIn:Math.max(0,g.roundDue-now),zombieHealth:g.zombieHealth,over:this.over,
       powerup:Object.fromEntries(Object.entries(g.powerup).map(([k,v])=>[k,round1(v-now)])),
@@ -219,6 +219,8 @@ export class Coop {
         if(e.attacking)out.x=e.attack?[e.attack.name,round1(now-e.attack.started)]:1;
         if(e.tear)out.t=[e.tear.name,round1(e.age-(e.tear.started-e.spawnTime))];
         if(e.stage==='traverse')out.v=[e.traverseAnim,Math.round(e.traverseTime*100)/100];
+        // Risers: the climb-out clip and how far into it the host is.
+        if(e.stage==='rise')out.r=[e.riseAnim||null,round1(now-e.spawnTime),round1(e.riseUntil-e.spawnTime)];
         return out;
       }),
       boxes:[...g.boxes].map(([target,b])=>[target,{phase:b.phase,weapon:b.weapon,owner:b.owner??null,index:b.index,timedOut:!!b.timedOut,
@@ -274,12 +276,13 @@ export class Coop {
       present.add(e.i);const prev=before.get(e.i)||e,p=prev.p.map((v,k)=>v+(e.p[k]-v)*t),angle=prev.a+Math.atan2(Math.sin(e.a-prev.a),Math.cos(e.a-prev.a))*t;
       let enemy=this.mirrored.get(e.i);
       if(!enemy){enemy={id:e.i,position:p,previousPosition:p.slice(),angle,stage:'hunt',gait:e.g,speed:37.64,dead:false,age:0,spawnTime:0,path:[],health:1};this.mirrored.set(e.i,enemy);g.enemies.push(enemy);g.emit('spawn',enemy);}
-      enemy.position=p;enemy.previousPosition=p.slice();enemy.angle=angle;enemy.gait=e.g;enemy.stage=['approach','barrier','enter','traverse','hunt'][e.s]||'hunt';enemy.attacking=!!e.x;
+      enemy.position=p;enemy.previousPosition=p.slice();enemy.angle=angle;enemy.gait=e.g;enemy.stage=['approach','barrier','enter','traverse','hunt','rise'][e.s]||'hunt';enemy.attacking=!!e.x;
       // The melee clip and how far into it the host is; a steady start keeps
       // snapshot jitter from restarting the swing.
       if(Array.isArray(e.x)){const started=g.time-e.x[1];if(enemy.attack?.name!==e.x[0]||Math.abs(enemy.attack.started-started)>.3)enemy.attack={name:e.x[0],started};}else enemy.attack=null;
       if(e.t){enemy.tear={name:e.t[0],started:0};enemy.spawnTime=0;enemy.age=e.t[1];}else enemy.tear=null;
       if(e.v){enemy.traverseAnim=e.v[0];enemy.traverseTime=e.v[1];}
+      if(e.r){const started=g.time-e.r[1];if(enemy.riseAnim!==e.r[0]||Math.abs(enemy.spawnTime-started)>.3){enemy.riseAnim=e.r[0];enemy.spawnTime=started;enemy.age=e.r[1];enemy.riseUntil=started+e.r[2];}}
       if(e.d&&!enemy.dead){enemy.dead=true;enemy.deathTime=g.time;enemy.deathHeadshot=!!e.h;enemy.killDirection=e.k;g.emit('kill',enemy);}
     }
     for(const [id,enemy]of this.mirrored)if(!present.has(id)&&!newest.snap.enemies.some(e=>e.i===id)){this.mirrored.delete(id);const i=g.enemies.indexOf(enemy);if(i>=0)g.enemies.splice(i,1);g.emit('removeEnemy',enemy);}

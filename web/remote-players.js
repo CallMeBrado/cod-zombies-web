@@ -24,6 +24,9 @@ export class RemotePlayers {
       const velocity=v.last&&dt>0?[(s.p[0]-v.last[0])/dt,(s.p[1]-v.last[1])/dt]:[0,0];v.last=s.p.slice();
       v.velocity=v.velocity?v.velocity.map((x,i)=>x+(velocity[i]-x)*Math.min(1,dt*10)):velocity;
       v.body.poseRemote(s,dt,time,v.velocity);
+      // While you are dead the camera looks through the watched teammate's
+      // eyes, so their own body is not drawn (it filled the screen).
+      if(id===this.watched&&v.body.root)v.body.root.visible=false;
       // Their gunfire: sound at their position, muzzle flash and recoil. The
       // shot count comes from their newest state (the drawn one is blended).
       const shots=session.players.get(id)?.state?.shots??s.shots;
