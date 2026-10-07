@@ -28,7 +28,17 @@ export class Arthur {
   // ----- clips -------------------------------------------------------------
   duration(name){return this.clips[name]?.duration||1;}
   age(){return this.game.time-this.clipStarted;}
-  play(name){if(name===this.clip)return;this.clip=name;this.clipStarted=this.game.time;this.noteAge=0;}
+  play(name){if(name===this.clip)return;this.clip=name;this.clipStarted=this.game.time;this.noteAge=0;this.clipYaw=this.yaw;}
+  // Root yaw of a clip at time t (the delta rotation): drinking turns him
+  // around to face away from the giver, as do backing into the cell and
+  // bouncing off a wall.
+  turnAt(name,t){
+    const keys=this.clips[name]?.turn;if(!keys)return 0;if(t<=keys[0][0])return keys[0][1];
+    for(let i=1;i<keys.length;i++)if(t<=keys[i][0]){const a=keys[i-1],b=keys[i];return a[1]+(b[1]-a[1])*(t-a[0])/((b[0]-a[0])||1);}
+    return keys.at(-1)[1];
+  }
+  // One-shot clips that carry a turn steer his facing from where they began.
+  applyTurn(){if(!ARTHUR_LOOPS.has(this.clip)&&this.clips[this.clip]?.turn)this.yaw=wrap(this.clipYaw+this.turnAt(this.clip,Math.min(this.age(),this.duration(this.clip))));}
   // Root (tag_origin) motion of a clip at time t, in the clip's local frame:
   // x forward, y left, z up.
   motion(name,t){
@@ -167,10 +177,12 @@ export class Arthur {
       case 'jail_idle':this.position=this.anchored('idle_jail',this.age()%this.duration('idle_jail'));break;
       case 'jail_open':{
         const name=this.clip,t=Math.min(this.age(),this.duration(name));this.position=this.anchored(name,t);
+        this.applyTurn();
         if(this.age()>=this.duration(name)){this.state='jail_cower';this.play(this.gotBooze?'idle_cower_jumpback':'idle_cower');}
         break;}
       case 'jail_cower':if(this.gotBooze&&carrier&&!this.holding)this.state='follow';break;
       case 'drink':
+        this.applyTurn();
         if(this.prop==='booze'&&this.passed('hitground'))this.prop=null;
         if(this.passed('blend')){this.state='aim';this.play('drinkbooze_aim');this.prop=null;}
         break;
@@ -183,7 +195,7 @@ export class Arthur {
       case 'crash':{
         // Played in place from where he hit, with its stumble.
         const a=this.motion(this.clip,this.crashAge),b=this.motion(this.clip,Math.min(this.age(),this.duration(this.clip)));this.crashAge=this.age();
-        const d=rotate([b[0]-a[0],b[1]-a[1],0],this.yaw);if(Math.hypot(d[0],d[1])>.001)this.position=g.collision.step(this.position,[d[0],d[1],-2],HULL).position;
+        const d=rotate([b[0]-a[0],b[1]-a[1],0],this.clipYaw);this.applyTurn();if(Math.hypot(d[0],d[1])>.001)this.position=g.collision.step(this.position,[d[0],d[1],-2],HULL).position;
         if(this.age()>=this.duration(this.clip)){this.state='roam';this.goal=null;}
         break;}
       case 'eat':
@@ -236,10 +248,10 @@ export class Arthur {
     else this.barge();
   }
   // ----- shared state --------------------------------------------------------
-  view(){return {state:this.state,position:this.position.slice(),yaw:this.yaw,clip:this.clip,age:this.age(),prop:this.prop,door:this.door?{clip:this.door.clip,age:this.game.time-this.door.started}:null};}
+  view(){return {state:this.state,position:this.position.slice(),yaw:this.yaw,clipYaw:this.clipYaw,clip:this.clip,age:this.age(),prop:this.prop,door:this.door?{clip:this.door.clip,age:this.game.time-this.door.started}:null};}
   applyView(v){
     const g=this.game;this.state=v.state;this.position=v.position.slice();this.yaw=v.yaw;this.prop=v.prop;
-    if(v.clip!==this.clip){this.clip=v.clip;this.noteAge=v.age;}this.clipStarted=g.time-v.age;
+    if(v.clip!==this.clip){this.clip=v.clip;this.noteAge=v.age;}this.clipStarted=g.time-v.age;this.clipYaw=v.clipYaw??v.yaw;
     this.door=v.door?{clip:v.door.clip,started:g.time-v.door.age}:null;
   }
   saveState(){return {...this.view(),gotBooze:this.gotBooze,protectLeft:Math.max(0,this.protectUntil-this.game.time),charge:this.charge&&{start:this.charge.start,velocityZ:this.charge.velocityZ},crashFrom:this.crashFrom,crashAge:this.crashAge};}

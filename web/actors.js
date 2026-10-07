@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {model,cloneModel,originalAnimation,shadeModel} from './assets.js';
+import {model,cloneModel,originalAnimation,shadeModel,restRelative,t6Clips} from './assets.js';
 import {ZombieHitTrace} from './zombie-hit-trace.js';
 import {SkeletonRagdoll} from './ragdoll.js';
 import {SeveredHead} from './gore.js';
@@ -19,7 +19,7 @@ export class ZombieActors {
     }
   }
   async prepareRig(body,names,count,pool){
-    const clips=new Map(await Promise.all(Object.entries(names).map(async([alias,name])=>{const clip=await originalAnimation(name,body,true);clip.name=alias;return [alias,clip];})));
+    const clips=new Map(await Promise.all(Object.entries(names).map(async([alias,name])=>{const clip=await originalAnimation(name,body,true);if(t6Clips)restRelative(clip,body);clip.name=alias;return [alias,clip];})));
     for(let i=0;i<count;i++){
       const object=cloneModel(body),root=new THREE.Group();root.add(object);
       const materials=[];object.traverse(n=>{if(!n.isMesh)return;n.frustumCulled=false;

@@ -13,6 +13,10 @@ for(const e of m.entities.filter(e=>e.targetname==='initial_spawn_points'))for(c
   g.spawn=e.origin.split(' ').map(Number);g.newGame();g.phase='between';g.roundDue=Infinity;const z=g.player.position[2];
   for(let i=0;i<hz;i++)g.update(1/hz,{});assert(g.player.grounded);assert(Math.abs(g.player.position[2]-z)<.1);assert.equal(g.physicsTicks,120);report.spawns.push({origin:g.spawn,hz,z});
 }
+// Every authored barrier, the start room's hide-pieces ones included, starts
+// with its six native boards.
+{g.newGame();const boarded=g.windows.filter(w=>w.boardEntities.some(e=>e.nativeBoard));assert.equal(boarded.length,35);assert(boarded.every(w=>w.boards===6),'Barriers start boarded');
+ assert(g.windows.some(w=>w.target==='pf643_auto1'&&w.boards===6),'Start room barrier is boarded');report.checks.push('35 native barriers boarded');}
 g.newGame();for(const count of [6,8,13,18,24,27]){g.startRound();assert.equal(g.remaining,count);report.rounds.push(count);}
 g.newGame();g.phase='round';g.invalidateNavigation=()=>{};const r=g.mapRules;
 g.player.position=[-2413,-758,1360.03];assert(g.enabledSpawners().every(e=>e.targetname==='zone_start_spawners'));
@@ -64,6 +68,9 @@ const resume=g.player.position.slice();
   const front=[arthur.position[0]+Math.cos(arthur.yaw)*70,arthur.position[1]+Math.sin(arthur.yaw)*70,arthur.position[2]];g.player.position=front;g.yaw=arthur.yaw+Math.PI;
   assert(arthur.canGift());g.yaw=arthur.yaw;assert(!arthur.canGift(),'The giver must face him');g.yaw=arthur.yaw+Math.PI;
   g.useHeld=true;ar.use(g.interactions.find(e=>e.targetname==='buried_arthur'));g.time+=.76;ar.tickHold();g.useHeld=false;assert.equal(arthur.state,'drink');assert(!ar.carry);
+  // drinkbooze turns him around (its root rotation): he charges away from the giver.
+  for(let i=0;i<120*4&&arthur.state==='drink';i++)step(1);
+  assert(Math.cos(arthur.yaw)*(front[0]-arthur.position[0])+Math.sin(arthur.yaw)*(front[1]-arthur.position[1])<0,'Arthur turns away from the giver before charging');
   g.player.position=[front[0]+200,front[1],front[2]];const points=g.player.points;
   for(let i=0;i<120*12&&!g.opened.has('pf749_auto9');i++)step(1);
   assert(g.opened.has('pf749_auto9'),'Arthur breaks the jail barricade');assert(ar.flags.has('jail_door1'));assert.equal(arthur.state,'crash');assert(g.player.points>points);

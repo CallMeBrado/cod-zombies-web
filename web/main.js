@@ -301,7 +301,9 @@ async function dynamicAssets(entities) {
     if(entity.classname==='script_brushmodel'&&entity.model?.startsWith('*'))object=map.brushMeshes.get(Number(entity.model.slice(1)));
     else if(entity.classname==='script_model')try{object=cloneModel(await model(entity.model));}catch(e){console.warn(e.message);}
     if(!object)continue;
-    if(entity.closedAnim){const clip=await originalAnimation(entity.closedAnim,object,false),mixer=new THREE.AnimationMixer(object);const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();mixer.setTime(clip.duration);}
+    if(entity.closedAnim){const clip=await originalAnimation(entity.closedAnim,object,false),mixer=new THREE.AnimationMixer(object);const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();mixer.setTime(clip.duration);
+      // T6 board clips place each board by root motion (board 1 high, 6 low).
+      if(clip.userData.rootEnd)object.position.fromArray(clip.userData.rootEnd);}
     const group=new THREE.Group();group.position.fromArray(nodePos(entity));
     if(entity.classname==='script_model')shadeModel(object,map.illumination(nodePos(entity)));
     const angles=(entity.angles||'0 0 0').split(/\s+/).map(x=>Number(x)*Math.PI/180);group.rotation.set(angles[2],-angles[0],angles[1],'ZYX');group.add(object);

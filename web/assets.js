@@ -80,7 +80,7 @@ export function shadeModel(object,color) {
   object.traverse(node=>{if(!node.isMesh)return;
     const convert=old=>{const foliage=/tree|pine|foliage|grass/i.test(old.name);const mat=new THREE.MeshBasicMaterial({map:old.map,color:new THREE.Color(...color),vertexColors:!!node.geometry.attributes.color,
       transparent:old.transparent,depthWrite:old.depthWrite,opacity:old.opacity,alphaTest:foliage?.3:old.alphaTest,side:foliage?THREE.DoubleSide:old.side,
-      blending:old.blending,blendSrc:old.blendSrc,blendDst:old.blendDst});mat.name=old.name;
+      blending:old.blending,blendSrc:old.blendSrc,blendDst:old.blendDst,visible:old.visible});mat.name=old.name;
       mat.userData.fixedLight=/zombie.*eye/.test(old.name);if(mat.userData.fixedLight)mat.color.setRGB(1,1,1);
       else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else mat.onBeforeCompile=film;return mat;};
     node.material=Array.isArray(node.material)?node.material.map(convert):convert(node.material);
@@ -147,6 +147,9 @@ export async function model(name) {
             if(kind){material.blending=THREE.CustomBlending;[material.blendSrc,material.blendDst]=factors[kind];}
           }
           if(pass?.cullFace==='none')material.side=THREE.DoubleSide;
+          // The cornea shader only adds wet highlights over the painted eye;
+          // its Mask image (a white disc) drawn as color made eyes glow.
+          if(/eye_cornea/.test(original.techniqueSet||''))material.visible=false;
           const glow=original.textures?.find(t=>t.name==='Glow_Map'),constant=name=>original.constants?.find(c=>c.name===name)?.literal[0];
           const amount=(constant('hdrAmount')??1)*(constant('Emissive_Push')??1);
           if(glow&&amount>0&&material.map){material.userData.glowMap=await diffuse(glow.image);material.userData.glowAmount=amount;}
@@ -546,6 +549,17 @@ export async function loadMap(scene,progress) {
       for(const t of arrayTextures)renderer.initTexture(t);}};
 }
 
+// T6 character clips store bone translations below the root as offsets from
+// the rest pose (lip and brow tracks move a fraction of a unit). Read as
+// absolute positions they fold faces and shoulders. Tags keep their rest place.
+export const t6Clips=mapChoice.game==='black-ops-2';
+export function restRelative(clip,root){
+  const rest=new Map();root.traverse(b=>{if(b.isBone&&!rest.has(b.name))rest.set(b.name,b.position.clone());});
+  clip.tracks=clip.tracks.filter(t=>{const [bone,property]=t.name.split('.');return property!=='position'||!bone.startsWith('tag_');});
+  for(const t of clip.tracks){const [bone,property]=t.name.split('.'),r=rest.get(bone);if(property!=='position'||bone==='j_mainroot'||!r)continue;
+    for(let k=0;k<t.values.length;k+=3){t.values[k]+=r.x;t.values[k+1]+=r.y;t.values[k+2]+=r.z;}}
+  return clip;
+}
 export async function originalAnimation(name,root,shared=false) {
   let data;
   for(const zone of assetZones)try{data=await get(`/data/${zone}/web-anims/${name}.json`,true);break;}catch{}
@@ -574,7 +588,10 @@ export async function originalAnimation(name,root,shared=false) {
       tracks.push(new THREE.VectorKeyframeTrack((shared?bone.name:bone.uuid)+'.position',times,values));
     }
   }
-  const clip=new THREE.AnimationClip(name,Math.max(1/data.fps,data.frames/data.fps),tracks);clip.userData={notifies:data.notifies||[]};return clip;
+  const clip=new THREE.AnimationClip(name,Math.max(1/data.fps,data.frames/data.fps),tracks);
+  // Root motion (tag_origin delta), e.g. where a barrier board ends up.
+  const d=data.delta,last=d?.values?.length?d.values.at(-1).map((v,k)=>d.mins[k]+v*d.size[k]):d?.constant||null;
+  clip.userData={notifies:data.notifies||[],rootEnd:last};return clip;
 }
 
 export class OriginalAudio {

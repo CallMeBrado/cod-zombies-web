@@ -40,7 +40,8 @@ for barrier in [e for e in entities if e.get('classname','').startswith('zbarrie
     if 'MagicBox' in barrier['classname']:
         barrier['classname']='script_model';barrier['model']='p6_anim_zm_magic_box'
         barrier['targetname']=barrier.get('script_noteworthy','').replace('_zbarrier','');continue
-    if 'hide_pieces' in barrier['classname']:continue
+    # The hide-pieces variant (start room, tunnels) is a normal six-board
+    # barrier whose torn boards vanish instead of lying on the ground.
     for i in range(1,7):
         if not barrier.get('zbarrierboardmodel'+str(i)):continue
         entities.append(dict(classname='script_model',targetname=barrier['targetname'],model=barrier['zbarrierboardmodel'+str(i)],origin=barrier['origin'],angles=barrier.get('angles','0 0 0'),closedAnim=barrier['zbarrierboardanim'+str(i)],nativeBoard=str(i)))
@@ -205,7 +206,19 @@ def clip_info(name):
     if delta.get('values'):
         motion=[[round(i/d['fps'],4),*[round(delta['mins'][k]+v[k]*delta['size'][k],3) for k in range(3)]] for i,v in zip(delta['indices'],delta['values'])]
     else:motion=[[0,*[round(x,3) for x in delta.get('constant',[0,0,0])]]]
-    return dict(duration=round(duration,4),motion=motion,notes={n['name']:round(n['time']*duration,4) for n in d.get('notifies',[])})
+    # Root yaw (the delta quaternion): the drink turns him around, as does
+    # backing into the cell. Unwrapped so it can be interpolated.
+    turn=[];rotation=delta.get('rotation')
+    if rotation and rotation.get('values'):
+        last=None
+        for i,v in zip(rotation['indices'] or [0],rotation['values']):
+            z,w=(v[2],v[3]) if rotation.get('full') else (v[0],v[1])
+            yaw=2*math.atan2(z/32767,w/32767)
+            if last is not None:yaw=last+(yaw-last+math.pi)%(2*math.pi)-math.pi
+            turn.append([round(i/d['fps'],4),round(yaw,4)]);last=yaw
+    info=dict(duration=round(duration,4),motion=motion,notes={n['name']:round(n['time']*duration,4) for n in d.get('notifies',[])})
+    if turn and any(abs(y)>.01 for _,y in turn):info['turn']=turn
+    return info
 arthur_clips={n:clip_info('ai_zombie_sloth_'+n) for n in ARTHUR_CLIPS}
 door_clips={n:clip_info(n) for n in ['o_zombie_sloth_idle_jail_2_cower_door','o_zombie_sloth_idle_jail_2_cower_jumpback_door','o_zombie_sloth_cower_2_close_door']}
 manifest['map'].update(jailTargets=['pf749_auto11'],arthurModel='c_zom_buried_sloth_fb',arthurAnimations=['ai_zombie_sloth_'+n for n in ARTHUR_CLIPS],arthurClips=arthur_clips,

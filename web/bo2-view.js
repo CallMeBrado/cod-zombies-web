@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {model,cloneModel,originalAnimation,shadeModel} from './assets.js';
+import {model,cloneModel,originalAnimation,shadeModel,restRelative} from './assets.js';
 import {ARTHUR_LOOPS} from './bo2-arthur.js';
 
 // A clip held at a time the game decides, so the picture follows the host's
@@ -24,7 +24,7 @@ export class BuriedView {
     const m=manifest.map;this.manifest=manifest;this.boxSettings=presentation.box||{floatHeight:40};
     this.object=cloneModel(await model(m.arthurModel));shadeModel(this.object,[.4,.34,.26]);this.root.add(this.object);this.scene.add(this.root);
     this.mixer=new THREE.AnimationMixer(this.object);
-    for(const name of m.arthurAnimations){const action=this.mixer.clipAction(await originalAnimation(name,this.object,true));const loop=ARTHUR_LOOPS.has(name.slice(SLOTH.length));
+    for(const name of m.arthurAnimations){const action=this.mixer.clipAction(restRelative(await originalAnimation(name,this.object,true),this.object));const loop=ARTHUR_LOOPS.has(name.slice(SLOTH.length));
       action.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);action.clampWhenFinished=!loop;this.actions.set(name,action);}
     // The booze jug and candy bowl ride on his right hand (tag_weapon_right).
     this.props={};const hand=this.object.getObjectByName('tag_weapon_right')||this.object.getObjectByName('j_wrist_ri');
