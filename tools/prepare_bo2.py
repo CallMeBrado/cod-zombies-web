@@ -128,8 +128,12 @@ for name,w in weapons.items():
     # native alias names rather than inventing replacement weapon sounds.
     if not w.get('locHead'):w['locHead']=1
 grenade=weapon('frag_grenade_zm');grenade['handsModel']=arms[0]
-gesture_names={'zombie_builder':'zombie_builder_zm','chalk_draw':'chalk_draw_zm','specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight','specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','specialty_longersprint':'zombie_perk_bottle_marathon','specialty_additionalprimaryweapon':'zombie_perk_bottle_three_gun','specialty_nomotionsensor':'zombie_perk_bottle_vulture','knuckle_crack':'zombie_knuckle_crack'}
+# zm_buried fall_down(): the downed player's hand reaches out (death_throe_zm).
+gesture_names={'zombie_builder':'zombie_builder_zm','chalk_draw':'chalk_draw_zm','death_throe':'death_throe_zm','specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight','specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','specialty_longersprint':'zombie_perk_bottle_marathon','specialty_additionalprimaryweapon':'zombie_perk_bottle_three_gun','specialty_nomotionsensor':'zombie_perk_bottle_vulture','knuckle_crack':'zombie_knuckle_crack'}
 gestures={key:dict(weapon(name),name=name,handsModel=arms[0]) for key,name in gesture_names.items() if find('weapons/'+name)}
+# death_throe_zm's gunModel is the engine placeholder viewmodel_default, which
+# no fastfile ships; its clips only move the arms, so use the empty rig.
+if 'death_throe' in gestures:gestures['death_throe']['gunModel']='viewmodel_usa_no_model'
 for e in entities:
     if e.get('targetname')=='weapon_upgrade':
         e['zombie_cost']=str(registry.get(e['zombie_weapon_upgrade'],('',1000))[1]);e['script_ammo_clip']=str(int(e['zombie_cost'])//2)

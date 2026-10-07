@@ -7,7 +7,7 @@
 // player_exit_level() fades to black and the game ends 1.5 s later.
 import * as THREE from 'three';
 
-const INTERMISSION_AT=3,INTERMISSION_TIME=15,EXIT_FADE=1,EXIT_WAIT=1.5,DROP_TIME=.8,PRONE_EYE=11;
+const FALL_TIME=.5,INTERMISSION_AT=3,INTERMISSION_TIME=15,EXIT_FADE=1,EXIT_WAIT=1.5,DROP_TIME=.8,PRONE_EYE=11;
 const vec=s=>String(s||'0 0 0').trim().split(/\s+/).map(Number);
 
 // MoveTo / RotateTo with acceleration and deceleration times: the fraction
@@ -35,8 +35,10 @@ export class GameOverSequence {
     this.element.classList.toggle('black-ops',game!=='waw');
     this.active=false;
   }
-  start({round,eye,yaw,pitch,eyeAbove=60}){
-    this.active=true;this.eyeAbove=eyeAbove;this.done=false;this.time=0;this.eye=eye.slice();this.yaw=yaw;this.pitch=pitch;this.shot=null;this.queue=[];this.gibDue=INTERMISSION_AT+.5+Math.random()*2;
+  // fall: Buried's fall_down() path ({to, roll, bounce, back}); without one
+  // the player drops prone in place (player_fake_death()).
+  start({round,eye,yaw,pitch,eyeAbove=60,fall=null}){
+    this.active=true;this.eyeAbove=eyeAbove;this.fall=fall;this.done=false;this.time=0;this.eye=eye.slice();this.yaw=yaw;this.pitch=pitch;this.shot=null;this.queue=[];this.gibDue=INTERMISSION_AT+.5+Math.random()*2;
     this.element.querySelector('.game-over-rounds').textContent=round<2?'You Survived 1 Round':`You Survived ${round} Rounds`;
     this.element.classList.add('active');this.black.style.opacity='0';this.text.style.opacity='0';
   }
@@ -47,6 +49,7 @@ export class GameOverSequence {
     const before=this.time,after=this.time+=dt,events=[];const crossed=at=>before<at&&after>=at;
     if(before===0)events.push('start');
     if(crossed(1))events.push('music');
+    if(this.fall&&crossed(FALL_TIME))events.push('throe');
     if(crossed(INTERMISSION_AT))events.push('intermission');
     if(after>=this.gibDue&&after<INTERMISSION_AT+INTERMISSION_TIME){events.push('gib');this.gibDue=after+.5+Math.random()*2;}
     if(crossed(INTERMISSION_AT+INTERMISSION_TIME))events.push('exit');
@@ -85,6 +88,11 @@ export class GameOverSequence {
   // Poses the camera: on the ground after the fall, then the intermission shots.
   pose(camera){
     if(!this.active)return false;const t=this.time;camera.up.set(0,0,1);
+    if(t<INTERMISSION_AT&&this.fall){
+      const {position,roll}=this.fallPose(t);camera.position.set(...position);
+      camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(this.yaw)*Math.cos(this.pitch),Math.sin(this.yaw)*Math.cos(this.pitch),Math.sin(this.pitch))));
+      camera.rotateZ(-THREE.MathUtils.degToRad(roll));return true;
+    }
     if(t<INTERMISSION_AT){
       const f=Math.min(1,t/DROP_TIME),ease=1-(1-f)*(1-f),floor=this.eye[2]-this.eyeHeight();
       camera.position.set(this.eye[0],this.eye[1],this.eye[2]+(floor+PRONE_EYE-this.eye[2])*ease);
@@ -104,6 +112,16 @@ export class GameOverSequence {
     camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(yaw)*Math.cos(pitch),Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch))));
     if(angles[2])camera.rotateZ(-THREE.MathUtils.degToRad(angles[2]));
     return true;
+  }
+  // fall_down(): 0.5 s accelerating to the landing (10 above the floor, a
+  // few degrees of roll), then a bounce of 8-11 units back toward the hit
+  // over bounce/50 s easing out, and down again in half that easing in.
+  fallPose(t){
+    const {to,roll,bounce,back}=this.fall,up=bounce/50,down=up/2;
+    if(t<FALL_TIME){const f=(t/FALL_TIME)**2;return {position:this.eye.map((v,k)=>v+(to[k]-v)*f),roll:roll*f};}
+    const top=[to[0]-back[0],to[1]-back[1],to[2]+bounce];let u=t-FALL_TIME;
+    if(u<up){const f=1-(1-u/up)**2;return {position:to.map((v,k)=>v+(top[k]-v)*f),roll};}
+    u-=up;const f=Math.min(1,(u/down)**2);return {position:top.map((v,k)=>v+(to[k]-v)*f),roll};
   }
   eyeHeight(){return this.eyeAbove??60;}
 }
