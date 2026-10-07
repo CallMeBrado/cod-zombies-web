@@ -8,6 +8,10 @@ import {get,loadMap,model,cloneModel,shadeModel,film} from './assets.js';
 // vision/zombie_frontend_menus.vision (r_film*).
 const VISION={saturation:[.8807,.6456,.4070],darkTint:[.9996,.5299,.4596],midTint:[1.2,.765,.5798],lightTint:[1.1576,.9996,.7369],contrast:[1.5,1.5,1.5],midStart:.5,midEnd:.5,preExposure:.46,exposure:.95};
 const vec=s=>String(s||'0 0 0').trim().split(/\s+/).map(Number);
+// Choosing another map reloads the page; the room's last frame is kept for
+// the next page to show at once while the room is rebuilt behind it.
+const STILL='bo1-frontend-still';
+const readStill=()=>{try{return sessionStorage.getItem(STILL);}catch{return null;}};
 function parseEntities(text){
   const out=[];let current=null;
   for(const line of text.split(/\r?\n/)){const t=line.trim();
@@ -29,6 +33,10 @@ export class Bo1Frontend {
   constructor({visible}){
     this.visible=visible;this.ready=false;this.monitors=[];this.clock=new THREE.Clock();
     const canvas=document.createElement('canvas');canvas.id='frontend-view';canvas.setAttribute('aria-hidden','true');document.body.prepend(canvas);this.canvas=canvas;
+    const still=readStill();
+    if(still){const div=document.createElement('div');div.id='frontend-still';div.setAttribute('aria-hidden','true');div.style.backgroundImage=`url("${still}")`;canvas.before(div);this.still=div;
+      canvas.style.opacity='0';document.body.classList.add('frontend-ready');}
+    addEventListener('pagehide',()=>this.saveStill());
     this.renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     this.scene=new THREE.Scene();this.scene.background=new THREE.Color(0);
@@ -68,6 +76,12 @@ export class Bo1Frontend {
     this.renderer.compile(this.scene,this.camera);
     requestAnimationFrame(()=>this.frame());
     document.body.classList.add('frontend-ready');
+    // Fade the live room in over the kept frame.
+    if(this.still){requestAnimationFrame(()=>requestAnimationFrame(()=>{this.canvas.style.opacity='1';setTimeout(()=>{this.still?.remove();this.still=null;},900);}));}
+  }
+  saveStill(){
+    if(!this.ready||!this.visible())return;
+    try{this.renderer.render(this.scene,this.camera);sessionStorage.setItem(STILL,this.canvas.toDataURL('image/jpeg',.85));}catch{}
   }
   // sw4_3d_tv_bink: the screen shows a tile of the cinematic, bright, with
   // static (StaticAmount .2) and rolling scanlines (ScanlineIntensity .1).

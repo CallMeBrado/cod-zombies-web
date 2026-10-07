@@ -112,9 +112,14 @@ const server = http.createServer(async (req, res) => {
     const info = await stat(actual);
     if (!info.isFile()) { res.writeHead(404); res.end(); return; }
     if(path.extname(actual)==='.mp4'){await sendMovie(req,res,actual,info);return;}
+    // Extracted game data revalidates by size and time, so a page reload (a
+    // map change) reuses what the browser already has instead of fetching
+    // every texture and model again.
+    const etag=`"${info.size.toString(36)}-${Math.floor(info.mtimeMs).toString(36)}"`,data=pathname.startsWith('/data/');
+    if(data&&req.headers['if-none-match']===etag){res.writeHead(304,{'ETag':etag,'Cache-Control':'no-cache'});res.end();return;}
     res.writeHead(200, { 'Content-Type': mime[path.extname(actual)] || 'application/octet-stream',
-      'Content-Length': info.size, 'Cache-Control': pathname.startsWith('/vendor/0.186.1/')?'public, max-age=31536000, immutable':'no-store',
-      'X-Content-Type-Options': 'nosniff' });
+      'Content-Length': info.size, 'Cache-Control': pathname.startsWith('/vendor/0.186.1/')?'public, max-age=31536000, immutable':data?'no-cache':'no-store',
+      ...(data?{'ETag':etag}:{}),'X-Content-Type-Options': 'nosniff' });
     res.end(req.method === 'HEAD' ? undefined : await readFile(actual));
   } catch (error) {
     if(res.headersSent){res.destroy(error);return;}
