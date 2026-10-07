@@ -613,7 +613,7 @@ export async function originalAnimation(name,root,shared=false) {
   const clip=new THREE.AnimationClip(name,Math.max(1/data.fps,data.frames/data.fps),tracks);
   // Root motion (tag_origin delta), e.g. where a barrier board ends up.
   const d=data.delta,last=d?.values?.length?d.values.at(-1).map((v,k)=>d.mins[k]+v*d.size[k]):d?.constant||null;
-  clip.userData={notifies:data.notifies||[],rootEnd:last};return clip;
+  clip.userData={notifies:data.notifies||[],rootEnd:last,loop:!!data.loop};return clip;
 }
 
 export class OriginalAudio {

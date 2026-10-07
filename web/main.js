@@ -590,7 +590,7 @@ function frame(time) {
   if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}
   const showWeapon=(state.mode==='playing'||pauseMenu.context==='pause')&&!diveThirdPerson,offhand=grenadeView&&game?grenadeView.update(game.time,showWeapon):0;
   // The Paralyzer's glow lines shift from cold to hot with its heat.
-  if(game)weaponHeat.value=game.weapon.name.startsWith('slowgun')?game.paralyzerHeat/115:0;
+  if(game){const slowgun=game.weapon.name.startsWith('slowgun');weaponHeat.value=slowgun?game.paralyzerHeat/115:0;if(weaponView)weaponView.dialValue=slowgun?game.paralyzerHeat:null;}
   if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,stance:game.player.stance,time:game.time,reloading:!!game.reloadEnd,offhand});}
   if(game)playerBody?.update(game,state.mode==='playing'||pauseMenu.context==='pause');
   if(game&&game.time>lastLight+.3){lastLight=game.time;

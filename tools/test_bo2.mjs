@@ -114,9 +114,11 @@ let traveled=0;g.events.traceShot=(origin,dir,length)=>{traveled+=length;return 
 g.firingNative=true;g.emit('shot',{origin:[...g.player.position.slice(0,2),g.player.position[2]+35],dir:[1,0,0],rays:[]});g.firingNative=false;
 assert.equal(target.health,5000);assert.equal(g.projectiles.length,1);g.updateProjectiles(.1);assert(target.health<5000);assert.equal(g.projectiles.length,0);
 g.giveWeapon('slowgun_zm');g.switching=null;g.events.traceShot=()=>({end:[0,0,0],wall:false});g.enemies=[];
-for(let n=0;n<11;n++){g.time+=.11;g.fire();}assert.equal(g.paralyzerHeat,110,'The heat counter climbs 10 a shot');assert(!g.paralyzerLock);
-for(let n=0;n<2;n++){g.time+=.11;g.fire();}assert(g.paralyzerLock);assert.equal(g.paralyzerHeat,115);assert.equal(g.reload(),false);
-g.paralyzerFiredAt=-100;g.tick(10,{});assert(!g.paralyzerLock);assert(g.paralyzerHeat<=87);
+// Heat is 10% a second of firing, read out of 115 on the gun's counter: it
+// reaches 115 after 10 s, locks, and unlocks once cooled (3%/s) to 100.
+for(let n=0;n<50;n++){g.time+=.1;g.fire();}assert(Math.abs(g.paralyzerHeat-57.5)<1e-6,'5 s of fire reads 57.5');assert(!g.paralyzerLock);
+for(let n=0;n<50;n++){g.time+=.1;g.fire();}assert(g.paralyzerLock);assert.equal(g.paralyzerHeat,115);assert.equal(g.reload(),false);
+g.time+=.3;g.tick(4,{});assert(g.paralyzerLock,'Still locked above 100');g.tick(.4,{});assert(!g.paralyzerLock);assert(g.paralyzerHeat<=100.05&&g.paralyzerHeat>99);
 // Viewmodel notetrack foley ships with the weapons (the Paralyzer's pullout
 // whir), and each chalk piece is drawn by its own <weapon>_chalk_fx.
 assert(m.sounds.fly_paralyzer_pullout,'Paralyzer pullout notetrack sound');

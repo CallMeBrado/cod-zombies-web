@@ -23,7 +23,7 @@ export class BlackOpsHud {
     let slot=0;for(const id of game.mapRules.perks){const image=this.images.get(this.icons[id]);if(image)ctx.drawImage(image,12+slot++*28,379,24,24);}
     ctx.drawImage(this.images.get(this.scorebar),W-125,383,110,18);this.text(game.player.points,W-27,398,21,'right');
     if(game.coopHud)drawCoop(this,ctx,game.coopHud,W,s);
-    this.text(game.weapon.name.startsWith('slowgun')?Math.round(game.paralyzerHeat):game.weapon.clip,W-88,456,32,'right');this.text(game.weapon.name.startsWith('slowgun')?' / 115':'/ '+game.weapon.reserve,W-81,456,19);this.text(game.weaponName(game.weapon.name),W-25,472,10,'right','#aaa');
+    this.text(game.weapon.name.startsWith('slowgun')?Math.floor(game.paralyzerHeat):game.weapon.clip,W-88,456,32,'right');this.text(game.weapon.name.startsWith('slowgun')?' / 115':'/ '+game.weapon.reserve,W-81,456,19);this.text(game.weaponName(game.weapon.name),W-25,472,10,'right','#aaa');
     ctx.drawImage(this.images.get('hud_us_grenade'),W-38,418,13,15);this.text(game.player.grenades,W-43,430,13,'right');
     for(const p of game.scorePopups){const v=scorePopupState(p,game.time);if(v){ctx.globalAlpha=v.alpha;this.text(v.text,W-28+v.x,398+v.y,19,'right',v.color);}}ctx.globalAlpha=1;
     const cx=W/2,cy=240,v=this.crosshair.state(game,ads,fov);

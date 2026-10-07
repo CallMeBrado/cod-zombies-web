@@ -11,6 +11,8 @@ export const BO2_PERKS={...PERKS,
   specialty_additionalprimaryweapon:{name:'Mule Kick',cost:4000,sting:'mx_mule_sting'},
   specialty_nomotionsensor:{name:'Vulture Aid',cost:3000,sting:'mx_vulture_sting'}};
 const pos=e=>e.origin.split(/\s+/).map(Number),distance=(a,b)=>Math.hypot(...a.map((v,k)=>v-b[k]));
+// The Paralyzer's counter reads its heat percentage out of 115.
+const PARALYZER_DIAL=1.15;
 const itemKinds={keys_zm_p6_zm_bu_sloth_key:'key',booze_p6_zm_bu_booze:'booze',candy_p6_zm_bu_sloth_candy_bowl:'candy',chalk_p6_zm_bu_chalk:'chalk'};
 
 // T6 progression is driven by the Buried zone volumes and authored item,
@@ -287,7 +289,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     this.interactions.push({targetname:'buried_arthur',position:this.mapRules.arthur.giftOrigin()});
   }
   newGame(){
-    super.newGame();this.interactions=this.interactions.filter(e=>!e.chalkTarget);this.paralyzerHeat=0;this.paralyzerLock=false;this.paralyzerFiredAt=-100;
+    super.newGame();this.interactions=this.interactions.filter(e=>!e.chalkTarget);this.paralyzerHeat=0;this.paralyzerLock=false;this.paralyzerFiredAt=-100;this.paralyzerHum=false;this.paralyzerDigit=null;
     this.equipmentFlight=null;this.slideVelocity=null;this.projectiles=[];this.nextProjectileId=1;this.recycleHealth=[];
     this.windows.forEach(w=>{if(!w.boardEntities.some(e=>e.nativeBoard))w.boards=0;});
     this.interactions=this.interactions.filter(e=>!e.equipmentId);
@@ -389,10 +391,12 @@ export class BlackOps2Engine extends BlackOpsEngine {
     if(['dead','ready'].includes(this.phase)||this.movementBlocked||this.switching||this.gesture||this.pendingGrenade||this.mapRules.reviveDue||this.paralyzerLock||this.time<this.cooldown)return false;
     if(this.sprinting){this.sprinting=false;this.sprintExitUntil=this.time+.3;return false;}if(this.time<this.sprintExitUntil)return false;
     const definition=this.weapon.definition;
-    this.cooldown=this.time+.1;this.paralyzerFiredAt=this.time;// overheatRate and cooldownRate are per 0.1 s shot: the counter climbs
-    // to its 115 cap in about 1.2 s of firing.
-    this.paralyzerHeat+=definition.overheatRate-(definition.coolWhileFiring?definition.cooldownRate:0);this.shots++;
-    if(this.paralyzerHeat>=115){this.paralyzerHeat=115;this.paralyzerLock=true;}
+    const fireTime=definition.fireTime||.1;this.cooldown=this.time+fireTime;this.paralyzerFiredAt=this.time;
+    // Weapon heat is a percentage: overheatRate and cooldownRate are percent
+    // per second. The gun's counter reads it out of 115, so it climbs to 115
+    // over 10 s of firing and unlocks back at overheatEndVal (87%, 100).
+    this.paralyzerHeat+=(definition.overheatRate-(definition.coolWhileFiring?definition.cooldownRate:0))*fireTime*PARALYZER_DIAL;this.shots++;
+    if(this.paralyzerHeat>=115-1e-6){this.paralyzerHeat=115;this.paralyzerLock=true;}
     const origin=[...this.player.position];origin[2]+=this.viewHeight;
     for(const e of this.enemies){if(e.dead)continue;
       const d=e.position.map((v,k)=>v-origin[k]+(k===2?35:0)),range=Math.hypot(...d),yaw=Math.atan2(d[1],d[0]),pitch=Math.atan2(d[2],Math.hypot(d[0],d[1]));
@@ -434,7 +438,14 @@ export class BlackOps2Engine extends BlackOpsEngine {
     if(this.paralyzerFiring&&this.time-this.paralyzerFiredAt>.15){this.paralyzerFiring=false;this.emit('stopLoop',{id:'paralyzer'});this.emit('sound',{alias:this.data.weapons.slowgun_zm?.loopFireEndSoundPlayer});}
     // Slowed in the air: a fraction of gravity, and a rise or fall bleeds off.
     if(this.time<(this.slowedUntil||0)&&!this.player.grounded)this.player.velocityZ*=Math.exp(-8*dt);
-    if(this.time-this.paralyzerFiredAt>.2){this.paralyzerHeat=Math.max(0,this.paralyzerHeat-dt*10*(this.weapon.definition.cooldownRate||3));if(this.paralyzerHeat<=(this.weapon.definition.overheatEndVal||87))this.paralyzerLock=false;}
+    const slowgun=this.data.weapons.slowgun_zm;
+    if(this.time-this.paralyzerFiredAt>.2){this.paralyzerHeat=Math.max(0,this.paralyzerHeat-dt*(slowgun?.cooldownRate||3)*PARALYZER_DIAL);if(this.paralyzerHeat<=(slowgun?.overheatEndVal||87)*PARALYZER_DIAL+1e-6)this.paralyzerLock=false;}
+    // slowgun_dial_sounds(): the counter ticks as its ones digit turns.
+    // sndParalyzerLoop: the gun hums (fly_paralyzer_loop) while it is out.
+    const held=this.weapon.name.startsWith('slowgun');
+    if(held!==!!this.paralyzerHum){this.paralyzerHum=held;this.emit(held?'loop':'stopLoop',held?{id:'paralyzerHum',alias:'fly_paralyzer_loop'}:{id:'paralyzerHum'});}
+    if(held){const digit=Math.floor(this.paralyzerHeat)%10;if(this.paralyzerDigit!=null&&digit!==this.paralyzerDigit)this.emit('sound',{alias:'wpn_paralyzer_counter_tick'});this.paralyzerDigit=digit;}
+    else this.paralyzerDigit=null;
     for(const e of this.enemies)if(e.paralyzedUntil<this.time){e.paralyzerExposure=Math.max(0,(e.paralyzerExposure||0)-dt*.5);e.paralyzerMultiplier=1;}
     this.updateProjectiles(dt);
   }

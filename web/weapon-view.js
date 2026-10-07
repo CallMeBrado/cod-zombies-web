@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {model,cloneModel,originalAnimation,shadeModel,applyHideTags} from './assets.js';
+const DIAL_AXIS=new THREE.Vector3(0,1,0);
 
 export class WeaponView {
   constructor(scene,audio){this.scene=scene;this.audio=audio;this.version=0;this.root=null;this.actions=new Map();this.current=null;this.ads=0;this.queue=[];this.rigs=new Map();this.sprintBlend=0;}
@@ -62,16 +63,33 @@ export class WeaponView {
   shot(ads) {
     if(!this.root)return;const d=this.weapon.definition;
     this.sprintBlend=0;this.root.position.set(0,0,0);this.root.rotation.set(0,0,0);this.root.scale.setScalar(1);
-    this.play(ads>.8?(this.weapon.clip?d.adsFireAnim:d.adsLastShotAnim):(this.weapon.clip?d.fireAnim:d.lastShotAnim));this.flashTime=.045;
+    // A looping fire cycle (the Paralyzer's spinning gears) keeps turning
+    // while the shots continue instead of restarting on each one.
+    const fire=ads>.8?(this.weapon.clip?d.adsFireAnim:d.adsLastShotAnim):(this.weapon.clip?d.fireAnim:d.lastShotAnim),clip=this.clips.get(fire);
+    if(clip?.userData.loop&&this.current?.getClip()===clip&&this.current.isRunning())this.actionDue=this.actionElapsed+clip.duration;
+    else{this.play(fire);if(clip?.userData.loop)this.current.setLoop(THREE.LoopRepeat,Infinity);}
+    this.flashTime=.045;
     // The weapon's own muzzle flash effect (viewFlashEffect) on tag_flash,
     // made on the first shot once the effect textures are ready.
     if(this.flashFx===undefined&&this.effects?.ready){const name=d.viewFlashEffect,tag=this.object.getObjectByName('tag_flash');
       this.flashFx=name&&tag&&this.effects.has(name)?this.effects.create(name,0):null;if(this.flashFx){this.flashFx.visible=false;tag.add(this.flashFx);}
       const rig=this.rigs.get(this.weapon.name);if(rig)rig.flashFx=this.flashFx;}
-    if(this.flashFx){this.effects.restart(this.flashFx,this.time||0);this.flashFx.visible=true;this.flashFxDue=this.effects.endTime(this.flashFx);this.flashTime=0;}
+    // A looping flash effect (fx_paralyzer_on_view) runs on through a burst.
+    if(this.flashFx){const looping=this.flashFx.userData.fx.emitters.some(e=>e.e.looping);
+      if(looping&&this.flashFx.visible&&(this.time||0)<this.flashFxDue)this.flashFxDue=Math.max(this.flashFxDue,(this.time||0)+Math.max(.15,d.fireTime*1.5));
+      else{this.effects.restart(this.flashFx,this.time||0);this.flashFx.visible=true;this.flashFxDue=looping?(this.time||0)+Math.max(.15,d.fireTime*1.5):this.effects.endTime(this.flashFx);}
+      this.flashTime=0;}
     this.rechamberAt=d.rechamberAnim&&this.weapon.clip>0?Math.max(.12,d.fireTime):0;
   }
   reload({empty,duration}){this.rechamberAt=0;this.play(empty?this.weapon.definition.reloadEmptyAnim:this.weapon.definition.reloadAnim,duration);}
+  // The Paralyzer's counter: tag_control_dial_1-3 are its hundreds, tens and
+  // ones wheels (6 5 4 3 2 1 0 9 8 7 around local Y, 0 at 125°), turned so
+  // the heat reads through the window facing the eye (126°).
+  showDial(value){
+    if(this.dialObject!==this.object){this.dialObject=this.object;this.dialBones=[1,2,3].map(k=>this.object.getObjectByName('tag_control_dial_'+k)).filter(Boolean);}
+    const n=Math.max(0,Math.min(999,Math.floor(value))),digits=[Math.floor(n/100),Math.floor(n/10)%10,n%10];
+    this.dialBones.forEach((bone,k)=>bone.quaternion.setFromAxisAngle(DIAL_AXIS,THREE.MathUtils.degToRad(125-36*digits[k]-126)));
+  }
   offhand(){this.rechamberAt=0;this.flashTime=0;this.play(this.weapon.clip?this.weapon.definition.idleAnim:this.weapon.definition.emptyIdleAnim,0,true);}
   melee({duration,charge=false}={}){const d=this.weapon.definition;this.rechamberAt=0;this.sprintBlend=0;this.meleeRemaining=duration||d.meleeTime||.5;this.knife.visible=true;this.play(charge&&this.clips.has(d.meleeChargeAnim)?d.meleeChargeAnim:d.meleeAnim,this.meleeRemaining);}
   dive({phase,duration=0}){const d=this.weapon.definition,empty=!this.weapon.clip,key=phase[0].toUpperCase()+phase.slice(1),anim=empty&&this.clips.has(d['dtp'+key+'EmptyAnim'])?d['dtp'+key+'EmptyAnim']:d['dtp'+key+'Anim'];this.rechamberAt=0;this.flashTime=0;this.meleeRemaining=0;this.play(anim||({in:d.sprintInAnim,loop:d.sprintLoopAnim,out:d.raiseAnim})[phase],duration,phase==='loop',phase==='in');}
@@ -99,6 +117,7 @@ export class WeaponView {
     this.meleeRemaining=Math.max(0,this.meleeRemaining-dt);this.knife.visible=this.meleeRemaining>0;
     if(this.adsAction){this.adsAction.time=this.adsAction.getClip().duration;this.adsAction.setEffectiveWeight(reloading||this.meleeRemaining>0?0:ads*(1-offhand));}
     this.mixer.update(dt);
+    if(this.dialValue!=null)this.showDial(this.dialValue);
     this.sprintBlend=THREE.MathUtils.clamp(this.sprintBlend+(target?1:-1)*dt/(target?d.sprintInTime||.3:d.sprintOutTime||.3),0,1);
     const blend=this.sprintBlend*this.sprintBlend*(3-2*this.sprintBlend),phase=time*2*Math.PI/(d.sprintLoopTime||.65);
     const bob=moving?(1-ads*.85)*(stance==='prone'?.35:stance==='crouch'?.65:1):0,h=.12*(1-blend)+blend*(d.sprintBobH||6)*.08,v=.12*(1-blend)+blend*(d.sprintBobV||8)*.08;
