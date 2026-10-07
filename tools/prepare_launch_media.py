@@ -12,6 +12,7 @@ MOVIES = {
     'nacht': ('Call of Duty World at War', 'nazi_zombie_prototype_load'),
     'der-riese': ('Call of Duty World at War', 'nazi_zombie_factory_load'),
     'kino': ('Call of Duty Black Ops', 'zombie_theater_load'),
+    'ascension': ('Call of Duty Black Ops', 'zombie_cosmodrome_load'),
     'dead-ops': ('Call of Duty Black Ops', 'zombietron_load'),
     'buried': ('Call of Duty Black Ops II', 'zm_buried_load'),
 }

@@ -41,7 +41,7 @@ if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&
 }
 const files=new Map();
 if(chosen.id==='der-riese')await prepareFactoryPowerNavigation(data,navigation);
-if(blackOps&&!bo2)await prepareKinoDoors();else await prepareGateNavigation(data,chosen,navigation,navigationGame);
+if(blackOps&&!bo2)await prepareKinoDoors(chosen);else await prepareGateNavigation(data,chosen,navigation,navigationGame);
 async function add(relative,required=true){
   relative=relative.replaceAll('\\','/');const resolved=path.resolve(data,relative),inside=path.relative(data,resolved);
   if(inside.startsWith('..')||path.isAbsolute(inside))throw new Error('Asset path escapes local-data.');

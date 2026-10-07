@@ -1,16 +1,22 @@
-"""Prepare Kino's native T5 assets and script-derived browser runtime data on E:."""
+"""Prepare a Black Ops zombies map's native T5 assets and script-derived browser
+runtime data on E:. --map kino (default) or --map ascension."""
 from pathlib import Path
 from zipfile import ZipFile
 from collections import Counter
-import json, re, struct, subprocess, wave, shutil
+import json, re, struct, subprocess, wave, shutil, argparse, sys
 from inspect_game import parse_entities
 from prepare_fidelity import animation
+from bo1_maps import BO1_MAPS
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'local-data'
 GAME = Path(r'E:\SteamLibrary\steamapps\common\Call of Duty Black Ops')
-SEARCH = ['bo1-kino', 'bo1-common', 'bo1-base', 'bo1-english', 'bo1-ui']
-OUTPUT = DATA / 'gameplay/bo1-kino'
+_parser = argparse.ArgumentParser()
+_parser.add_argument('--map', choices=sorted(BO1_MAPS), default='kino')
+M = BO1_MAPS[_parser.parse_known_args(sys.argv[1:] if __name__ == '__main__' else [])[0].map]
+KINO = M['id'] == 'kino'
+SEARCH = M['search']
+OUTPUT = DATA / M['data']
 OUTPUT.mkdir(parents=True, exist_ok=True)
 archives = {}
 for archive in sorted((GAME / 'main').glob('*.iwd')):
@@ -32,8 +38,9 @@ def weapon(name):
     props = dict(zip(values[1::2], values[2::2]))
     return {k: float(v) if re.fullmatch(r'-?\d+(?:\.\d*)?', v) else v for k, v in props.items()}
 
-entities = parse_entities(DATA / 'bo1-kino/maps/zombie_theater.d3dbsp.ents')
-world = json.loads((DATA / 'bo1-kino/web-world/zombie_theater.json').read_text())
+WORLD = DATA / M['zone'] / 'web-world' / M['asset']
+entities = parse_entities(DATA / M['zone'] / 'maps' / (M['asset'] + '.d3dbsp.ents'))
+world = json.loads(WORLD.with_suffix('.json').read_text())
 for name, details in world['materials'].items():
     if details.get('diffuse'): continue
     p=find('materials/'+name.lstrip(',')+'.json')
@@ -42,24 +49,25 @@ for name, details in world['materials'].items():
     details['diffuse']=next((t['image'] for t in material.get('textures',[]) if t['semantic']=='colorMap'),None)
     details['normal']=next((t['image'] for t in material.get('textures',[]) if t['semantic']=='normalMap'),None)
     if not details['diffuse']:raise RuntimeError('Native material has no color texture: '+name)
-(DATA/'bo1-kino/web-world/zombie_theater.json').write_text(json.dumps(world,separators=(',',':')))
-collision = json.loads((DATA / 'bo1-kino/web-world/zombie_theater.collision.json').read_text())
-paths = json.loads((DATA / 'bo1-kino/web-world/zombie_theater.paths.json').read_text())
-script = (DATA / 'bo1-kino/maps/zombie_theater.gsc').read_text()
+WORLD.with_suffix('.json').write_text(json.dumps(world,separators=(',',':')))
+collision = json.loads(WORLD.with_suffix('.collision.json').read_text())
+paths = json.loads(WORLD.with_suffix('.paths.json').read_text())
+script = find('maps/' + M['asset'] + '.gsc').read_text()
 point = lambda e: list(map(float, e['origin'].split()))
 # T5 embeds its traverse markers in the native path graph instead of entities.
 for i, node in enumerate(paths['nodes']):
     if node['type'] != 17: continue
     end = next((paths['nodes'][l['node']] for l in node['links'] if l['negotiation']), None)
     if not end: continue
-    key = 'kino_traverse_' + str(i)
+    key = M['id'] + '_traverse_' + str(i)
     entities += [dict(classname='script_struct', targetname='traverse', target=key,
                      origin=' '.join(map(str, [*node['origin'][:2], node['origin'][2]-16])), angles=f"0 {node['angle']} 0"),
                  dict(classname='script_struct', targetname=key, origin=' '.join(map(str, [*end['origin'][:2], end['origin'][2]-16])))]
 # Preserve native names alongside the adapter names used by the shared renderer.
-core = next(e for e in entities if e.get('targetname') == 'trigger_teleport_pad_0')
-pad = next(e for e in entities if e.get('targetname') == core['target'] and e.get('classname') == 'trigger_use')
-pad['nativeTargetname'] = pad['targetname']; pad['targetname'] = 'trigger_teleport_core'
+if KINO:
+    core = next(e for e in entities if e.get('targetname') == 'trigger_teleport_pad_0')
+    pad = next(e for e in entities if e.get('targetname') == core['target'] and e.get('classname') == 'trigger_use')
+    pad['nativeTargetname'] = pad['targetname']; pad['targetname'] = 'trigger_teleport_core'
 for e in entities:
     if e.get('targetname') == 'use_elec_switch': e.update(nativeTargetname='use_elec_switch', targetname='use_power_switch')
     if e.get('targetname') == 'elec_switch': e.update(nativeTargetname='elec_switch', targetname='power_switch')
@@ -85,7 +93,14 @@ for e in entities:
     v = zone_at([*point(end)[:2], point(end)[2]+25]); goals[e['target']] = dict(zone=v['name'], spawners=v['spawners'])
 connections = re.findall(r'add_adjacent_zone\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"', script)
 names = {e['zombie_weapon_upgrade'] for e in entities if e.get('targetname')=='weapon_upgrade'}
-names |= {'m1911_zm','python_zm','commando_zm','galil_zm','rpk_zm','hk21_zm','famas_zm','spas_zm','thundergun_zm','ray_gun_zm'}
+if KINO:
+    names |= {'m1911_zm','python_zm','commando_zm','galil_zm','rpk_zm','hk21_zm','famas_zm','spas_zm','thundergun_zm','ray_gun_zm'}
+else:
+    # include_weapon( name [, in_box] ): base weapons the map's box can give.
+    # Tactical grenades and launchers the T5 runtime cannot fire yet stay out.
+    UNSUPPORTED = {'zombie_black_hole_bomb','zombie_nesting_dolls','crossbow_explosive_zm','knife_ballistic_zm','m72_law_zm','china_lake_zm','claymore_zm','frag_grenade_zm'}
+    BOX = [n for n,in_box in re.findall(r'^\s*include_weapon\(\s*"([^"]+)"\s*(?:,\s*(true|false))?',script,re.M) if '_upgraded' not in n and in_box!='false' and n not in UNSUPPORTED]
+    names |= {'m1911_zm',*BOX}
 names -= {'claymore_zm','bowie_knife_zm','frag_grenade_zm'}
 base_names = sorted(names)
 weapon_script = (DATA / 'bo1-common/maps/_zombiemode_weapons.gsc').read_text()
@@ -116,6 +131,9 @@ for name, w in weapons.items():
 grenade = weapon('frag_grenade_zm'); grenade['handsModel'] = 'viewmodel_usa_pow_arms'
 gesture_names={'specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight',
                'specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','knuckle_crack':'zombie_knuckle_crack'}
+if not KINO:
+    # PhD Flopper and Stamin-Up (zombie_vending specialty_flakjacket / specialty_longersprint).
+    gesture_names.update(specialty_flakjacket='zombie_perk_bottle_nuke',specialty_longersprint='zombie_perk_bottle_marathon')
 gestures={key:dict(weapon(name),name=name,handsModel='viewmodel_usa_pow_arms') for key,name in gesture_names.items()}
 costs = {n: value[1] for n,value in native_weapons.items()}
 for e in entities:
@@ -141,16 +159,21 @@ for name in ['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zom
              'ai_zombie_attack_v2','ai_zombie_attack_v4','ai_zombie_attack_v6','ai_zombie_attack_forward_v1','ai_zombie_attack_forward_v2',
              'ai_zombie_walk_attack_v1','ai_zombie_walk_attack_v2','ai_zombie_walk_attack_v3','ai_zombie_walk_attack_v4','ai_zombie_run_attack_v1','ai_zombie_run_attack_v2','ai_zombie_run_attack_v3',
              'ai_zombie_attack_v1','ai_zombie_death_v1','ai_zombie_idle_v1','ai_zombie_traverse_v1','ai_zombie_traverse_v2',
+             # level._zombie_rise_anims: risers climb out of the ground.
+             'ai_zombie_traverse_ground_v1_walk','ai_zombie_traverse_ground_v2_walk_altA','ai_zombie_traverse_ground_v1_run','ai_zombie_traverse_ground_climbout_fast',
              'ai_zombie_door_tear_low','ai_zombie_door_tear_high','ai_zombie_door_tear_left','ai_zombie_door_tear_right']:
     p=find('web-anims/'+name+'.json')
     if p: animations[name]=animation(p.relative_to(DATA).parts[0],name)
-presentation = dict(animations=animations, effects={}, actors=dict(body='c_ger_honorguard_body1',head='c_ger_zombie_head1'),
+# Kino's honour guard zombie; Ascension's character\c_zom_cosmo_spetznaz with
+# xmodelalias c_zom_cosmo_headalias's first head.
+actors=dict(body='c_ger_honorguard_body1',head='c_ger_zombie_head1') if KINO else dict(body='c_zom_cosmo_spetznaz_body',head='c_zom_cosmo_head1')
+presentation = dict(animations=animations, effects={}, actors=actors,
                     powerups=dict(full_ammo='zombie_ammocan',insta_kill='zombie_skull',double_points='zombie_x2_icon',nuke='zombie_bomb',carpenter='zombie_carpenter'),
                     box=dict(openAngle=105,openTime=.5,floatHeight=40,riseTime=3,offerTime=12,closeTime=.5,cooldown=3,cycleDelays=[.05]*20+[.1]*10+[.2]*5+[.3]*3))
 import prepare_fidelity
 prepare_fidelity.GAME = GAME
 for name in ['misc/fx_zombie_powerup_on','misc/fx_zombie_powerup_grab','env/light/fx_ray_sun_sm_short',
-             'explosions/fx_grenadeexp_concrete','explosions/fx_grenade_flash']:
+             'explosions/fx_grenadeexp_concrete','explosions/fx_grenade_flash',*([] if KINO else ['maps/zombie/fx_zmb_phdflopper_exp'])]:
     p=find('web-fx/'+name+'.json')
     if p:
         effect=prepare_fidelity.load_effect(p,SEARCH,effect_blending='grenade' in name)
@@ -163,14 +186,14 @@ for z in SEARCH:
     for p in (DATA/z/'model_export').glob('*_lod0.glb'):
         b=p.read_bytes();gltf=json.loads(b[20:20+int.from_bytes(b[12:16],'little')])
         wanted.update(Path(i['uri']).stem.lstrip(',') for i in gltf.get('images',[]) if i.get('uri','').endswith('.dds'))
-art = ['loadscreen_zombie_theater','menu_zombie_theater','scorebar_zom_1','ammocounterback','hud_us_grenade',
+art = ['loadscreen_'+M['asset'],'menu_'+M['asset'],'scorebar_zom_1','specialty_divetonuke_zombies','specialty_marathon_zombies','ammocounterback','hud_us_grenade',
        'specialty_juggernaut_zombies','specialty_fastreload_zombies','specialty_doubletap_zombies','specialty_quickrevive_zombies',*[f'chalkmarks_{i}' for i in range(1,6)],
        'overlay_low_health','hit_direction']
 for name in sorted(wanted | set(art)):
     if find('images/'+name+'.dds') or '$identity' in name: continue
     raw=archive_bytes('images/'+name+'.iwi')
     if raw:
-        p=DATA/'bo1-kino/images'/(name+'.iwi');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw)
+        p=DATA/M['zone']/'images'/(name+'.iwi');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(raw)
         subprocess.run([str(ROOT/'.tools/oat/ImageConverter.exe'),'--no-color',str(p)],check=True,stdout=subprocess.DEVNULL)
 hud=OUTPUT/'hud';hud.mkdir(exist_ok=True)
 for name in art:
@@ -191,6 +214,10 @@ aliases.update(['zmb_vocals_zombie_ambience','zmb_vocals_zombie_sprint','zmb_voc
                 'zmb_vocals_zombie_death','zmb_vocals_zombie_crawler','zmb_zombie_spawn','zmb_attack_whoosh','fly_fall_zombie','evt_player_swiped',
                 # The game_over music state.
                 'mus_zombie_game_over'])
+if not KINO:
+    # Ascension: landers, the rocket, the centrifuge, PhD Flopper and the announcer.
+    aliases.update(p.stem for z in [M['zone'],M['english'],'bo1-cosmodrome-patch'] if (DATA/z/'web-sounds').exists() for p in (DATA/z/'web-sounds').glob('*.json')
+                   if re.match(r'(zmb_lander|zmb_phdflop|evt_cosmo|vox_ann_|zmb_rocket|evt_rocket|zmb_centrifuge|evt_centrifuge|zmb_poweron|zmb_switch_flip|zmb_turn_on|evt_launch|zmb_launch)',p.stem))
 aliases.update(['zmb_vox_ann_maxammo','zmb_vox_ann_instakill','zmb_vox_ann_doublepoints','zmb_vox_ann_nuke','zmb_vox_ann_carpenter','zmb_vox_ann_magicbox'])
 aliases.update(line.split()[-1] for w in gestures.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
 # T5 viewmodel clips name their sounds in notetracks ("sndnt#fly_colt45_mag_in"):
@@ -198,7 +225,7 @@ aliases.update(line.split()[-1] for w in gestures.values() for line in w.get('no
 for name in {v for w in [*weapons.values(),grenade,*gestures.values()] for k,v in w.items() if k.endswith('Anim') and isinstance(v,str) and v}:
     p=find('web-anims/'+name+'.json')
     if p: aliases.update(n['name'][6:] for n in json.loads(p.read_text()).get('notifies',[]) if n['name'].startswith('sndnt#'))
-aliases.update(p.stem for z in ['bo1-kino','bo1-common'] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'zmb_.*(jugg|speed|revive|doubletap|packa|perk|powerup)|mus_theatre|mus_perks',p.stem))
+aliases.update(p.stem for z in [M['zone'],'bo1-common'] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'zmb_.*(jugg|speed|revive|doubletap|packa|perk|powerup|marathon|divetonuke|flopper)|mus_theatre|mus_cosmo|mus_perks',p.stem))
 sounds={};sound_output=OUTPUT/'sounds';sound_output.mkdir(exist_ok=True);cache={}
 def convert_audio(entry):
     filename=entry['file'].replace('\\','/').lstrip(',/')
@@ -250,19 +277,26 @@ if 'mx_zombie_wave_1' not in sounds:
     if alias:sounds['mx_zombie_wave_1']=sounds[alias]
 
 power_doors={e['target'] for e in entities if e.get('script_noteworthy')=='electric_door'}
-power_targets=['theater_curtains','theater_curtains_clip',*power_doors]
+power_targets=(['theater_curtains','theater_curtains_clip'] if KINO else [])+[*power_doors]
 power_targets += [e['targetname'] for e in entities if e.get('classname')=='script_brushmodel' and any(e.get('targetname','').startswith(t) for t in power_doors)]
-manifest = dict(format='bo1-kino-solo-v1',game='black-ops',startWeapon='m1911_zm',variables=variables,weapons=weapons,grenade=grenade,gestures=gestures,entities=entities,sounds=sounds,
+if KINO:
+    map_data=dict(id='kino',negotiationBegin=17,negotiationEnd=18,initialZone='foyer_zone',connections=connections,volumes=volumes,goals=goals,initialBox=initial_box,
+                  boxWeapons=[n for n in base_names if n!='m1911_zm'],powerTargets=sorted(set(power_targets)),
+                  teleportDestination=point(next(e for e in entities if e.get('targetname')=='projroom_teleport_player0')),
+                  teleportReturn=point(next(e for e in entities if e.get('targetname')=='theater_teleport_player0')))
+else:
+    # manage_zones( init_zones ): every listed zone starts enabled.
+    init_zones=re.findall(r'init_zones\[\d+\]\s*=\s*"([^"]+)"',script)
+    map_data=dict(id=M['id'],negotiationBegin=17,negotiationEnd=18,initialZone=init_zones[0],initialZones=init_zones,connections=connections,volumes=volumes,goals=goals,initialBox=initial_box,
+                  boxWeapons=sorted(BOX),powerTargets=sorted(set(power_targets)))
+manifest = dict(format='bo1-'+M['id']+'-solo-v1',game='black-ops',startWeapon='m1911_zm',variables=variables,weapons=weapons,grenade=grenade,gestures=gestures,entities=entities,sounds=sounds,
                 weaponNames={n:n.replace('_upgraded_zm',' (Pack-a-Punch)').replace('_zm','').replace('_',' ').upper() for n in weapons},
-                map=dict(id='kino',negotiationBegin=17,negotiationEnd=18,initialZone='foyer_zone',connections=connections,volumes=volumes,goals=goals,initialBox=initial_box,
-                         boxWeapons=[n for n in base_names if n!='m1911_zm'],powerTargets=sorted(set(power_targets)),
-                         teleportDestination=point(next(e for e in entities if e.get('targetname')=='projroom_teleport_player0')),
-                         teleportReturn=point(next(e for e in entities if e.get('targetname')=='theater_teleport_player0'))),
-                provenance=dict(world='maps/zombie_theater.d3dbsp',rules='maps/zombie_theater.gsc',runtime='Black Ops browser reimplementation using locally installed T5 assets'))
+                map=map_data,
+                provenance=dict(world='maps/'+M['asset']+'.d3dbsp',rules='maps/'+M['asset']+'.gsc',runtime='Black Ops browser reimplementation using locally installed T5 assets'))
 (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
 # Character voice lines are a separate, lazily decoded table (tools/prepare_voice.py).
 import prepare_voice
-prepare_voice.prepare_kino(OUTPUT/'manifest.json')
+prepare_voice.prepare_kino(OUTPUT/'manifest.json',sounds=DATA/M['english']/'web-sounds')
 import prepare_dive
 prepare_dive.prepare()
 import prepare_player_animations

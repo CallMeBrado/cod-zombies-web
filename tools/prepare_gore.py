@@ -62,6 +62,7 @@ def prepare():
         ('gameplay', ['nacht', 'common'], False),
         ('gameplay/der-riese', ['der-riese', 'common', 'nacht'], False),
         ('gameplay/bo1-kino', ['bo1-kino', 'bo1-common', 'bo1-base'], True),
+        ('gameplay/bo1-cosmodrome', ['bo1-cosmodrome-patch', 'bo1-cosmodrome', 'bo1-common', 'bo1-base'], True),
     ]:
         target = DATA / folder / 'presentation.json'
         if not target.exists():
@@ -79,9 +80,13 @@ def prepare():
                     if path.exists():
                         return '/data/' + path.relative_to(DATA).as_posix()
             raise FileNotFoundError('Original blood texture unavailable: ' + material)
-        model = 'char_ger_honorgd_body1_g_behead' if black_ops else 'char_ger_honorgd_zomb_behead'
-        if not any((DATA / z / 'model_export' / (model + '_lod0.glb')).exists() for z in zones):
-            raise FileNotFoundError('Original severed-neck model unavailable: ' + model)
+        # The map zombie body's own beheaded variant (Ascension's Spetsnaz), else
+        # the honour guard's.
+        fallback = 'char_ger_honorgd_body1_g_behead' if black_ops else 'char_ger_honorgd_zomb_behead'
+        candidates = [presentation.get('actors', {}).get('body', '') + '_g_behead', fallback]
+        model = next((m for m in candidates if any((DATA / z / 'model_export' / (m + '_lod0.glb')).exists() for z in zones)), None)
+        if not model:
+            raise FileNotFoundError('Original severed-neck model unavailable: ' + fallback)
         presentation['gore'] = dict(
             neckModel=model, neckMount='body' if black_ops else 'j_spine4',
             headSound=head_sound(folder, zones) if black_ops else 'zombie_head_gib',

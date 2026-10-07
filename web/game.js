@@ -661,6 +661,15 @@ export class SoloGame {
   // meleeAttackDist (64) and facing within 60 degrees plays one random melee
   // clip, turning to its enemy. Only the clip's "fire" notes hurt, through
   // the engine's melee() reach and facing check; missing costs nothing.
+  // divetonuke_explode(): RadiusDamage( origin, 300, 5000, 1000 ) with the
+  // PhD Flopper ground-hit effect and zmb_phdflop_explo.
+  diveToNuke(origin){
+    const center=[origin[0],origin[1],origin[2]+10];
+    for(const e of this.enemies){if(e.dead)continue;const range=distance(center,e.position);if(range>=300)continue;
+      if(this.collision.trace(center,[e.position[0],e.position[1],e.position[2]+35],[0,0,0],1).fraction<.98)continue;
+      this.hitEnemy(e,5000-(5000-1000)*range/300,false,false);}
+    this.emit('effect',{name:'maps/zombie/fx_zmb_phdflopper_exp',position:origin.slice(),duration:2});this.emit('sound',{alias:'zmb_phdflop_explo'});
+  }
   meleeAnims(enemy){const set=this.mapRules?FACTORY_MELEE:NACHT_MELEE;return [...set.stand,...(/walk/.test(enemy.gait)?set.walk:set.run)];}
   meleeDamage(){return 50;}
   inMeleeReach(enemy,player,range,yaw){
@@ -726,6 +735,8 @@ export class SoloGame {
     for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
     this.time+=dt;this.elapsed+=dt;this.expireScorePopups();if(!this.mirror)this.updateBoxes();this.mapRules?.tick();
     input=movementInput(this,input,dt);
+    // A player carried by the map (Ascension's lander) cannot walk.
+    if(this.mapRules?.riding)input={...input,forward:0,side:0,sprint:false,jump:false};
     // The player's own movement passes through tiny props (collision.js).
     this.collision.playerMovement=true;
     if(moveKnifeLunge(this,dt,input))input={...input,forward:0,side:0,sprint:false,jump:false};
@@ -734,7 +745,8 @@ export class SoloGame {
     // A co-op guest takes rounds, zombies, the box and drops from the host.
     if(!this.mirror){
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
-    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<this.maxAlive()){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay)+this.spawnNetFrame();}
+    // A map can hold spawning (Ascension's lander flights clear spawn_zombies).
+    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&!this.mapRules?.spawnPaused&&this.enemies.filter(x=>!x.dead).length<this.maxAlive()){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay)+this.spawnNetFrame();}
     if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead)) {
       this.phase='between';this.roundEndedAt=this.time;this.roundDue=this.time+this.vars.zombie_between_round_time;
       this.emit('sound',{alias:'round_over'});
@@ -1121,7 +1133,7 @@ export class SoloGame {
         g.exploded=true;this.emit('explosion',g);this.emit('sound',{alias:'grenade_explode'});this.emit('sound',{alias:'grenade_explode_bass',volume:.6});
         const damage=(p,height=35)=>{const center=[p[0],p[1],p[2]+height],range=distance(center,g.position);if(range>=d.explosionRadius)return 0;const start=[g.position[0],g.position[1],g.position[2]+4];if(this.collision.trace(start,center,[0,0,0],1).fraction<.98)return 0;return d.explosionOuterDamage+(d.explosionInnerDamage-d.explosionOuterDamage)*(1-range/d.explosionRadius);};
         for(const e of this.enemies)if(!e.dead){const amount=damage(e.position);if(amount)this.hitEnemy(e,amount);}
-        const amount=damage(this.player.position,this.playerHull[2]);if(amount)this.damagePlayer(Math.round(amount));
+        const amount=damage(this.player.position,this.playerHull[2]);if(amount&&!this.mapRules?.perks?.has('specialty_flakjacket'))this.damagePlayer(Math.round(amount));
       }
     }
     this.grenades=this.grenades.filter(g=>!g.exploded);

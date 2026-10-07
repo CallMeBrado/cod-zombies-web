@@ -1,5 +1,7 @@
 const position=e=>e.origin.split(/\s+/).map(Number);
-export const PERKS={specialty_armorvest:{name:'Jugger-Nog',cost:2500,sting:'mx_jugger_sting',family:'jugger'},specialty_fastreload:{name:'Speed Cola',cost:3000,sting:'mx_speed_sting',family:'speed'},specialty_rof:{name:'Double Tap',cost:2000,sting:'mx_doubletap_sting',family:'doubletap'},specialty_quickrevive:{name:'Quick Revive',cost:1500,sting:'mx_revive_sting',family:'revive'}};
+export const PERKS={specialty_armorvest:{name:'Jugger-Nog',cost:2500,sting:'mx_jugger_sting',family:'jugger'},specialty_fastreload:{name:'Speed Cola',cost:3000,sting:'mx_speed_sting',family:'speed'},specialty_rof:{name:'Double Tap',cost:2000,sting:'mx_doubletap_sting',family:'doubletap'},specialty_quickrevive:{name:'Quick Revive',cost:1500,sting:'mx_revive_sting',family:'revive'},
+  // Ascension's Stamin-Up and PhD Flopper (_zombiemode_perks.gsc: 2000 each).
+  specialty_longersprint:{name:'Stamin-Up',cost:2000,sting:'mus_perks_stamin_sting',family:'stamin'},specialty_flakjacket:{name:'PhD Flopper',cost:2000,sting:'mus_perks_phd_sting',family:'phd'}};
 // perksacola struct script_sound -> the level.*_jingle flag it shares with its sting.
 const JINGLES={mx_jugger_jingle:'jugger',mx_speed_jingle:'speed',mx_doubletap_jingle:'doubletap',mx_revive_jingle:'revive',mx_packa_jingle:'packa'};
 // The exported aliases carry no min/max distance, so these ranges are chosen
@@ -18,7 +20,8 @@ export class FactoryRules {
   constructor(game){this.game=game;this.data=game.data.map;this.spawnNetFrame=.05;}
   reset(){this.flags=new Set();this.perks=new Set();this.power=false;this.powerStartedAt=null;this.links=new Set();this.linkPending=null;this.teleportDue=0;this.teleportCooldown=0;this.pap=null;this.machines=null;this.papOn=false;this.pending=[];this.quietPower=false;}
   activeZones(){
-    const active=new Set([this.data.initialZone]);let changed=true;
+    // manage_zones( init_zones ): one or more zones start enabled.
+    const active=new Set(this.data.initialZones||[this.data.initialZone]);let changed=true;
     while(changed){changed=false;for(const [a,b,flag]of this.data.connections)if(this.flags.has(flag)){
       if(active.has(a)&&!active.has(b)){active.add(b);changed=true;}
       if(active.has(b)&&!active.has(a)){active.add(a);changed=true;}
@@ -41,7 +44,7 @@ export class FactoryRules {
     const g=this.game,points=(g.coop?.playerPositions()||[g.player.position]).map(p=>[p[0],p[1],p[2]+25]),enabled=this.activeZones();
     const inside=v=>points.some(point=>v.hulls.some(h=>h.mins.every((m,k)=>point[k]>=m-2)&&h.maxs.every((m,k)=>point[k]<=m+2)&&h.planes.every(pl=>pl[0]*point[0]+pl[1]*point[1]+pl[2]*point[2]<=pl[3]+2)));
     const occupied=new Set(this.data.volumes.filter(v=>enabled.has(v.name)&&inside(v)).map(v=>v.name));
-    if(!occupied.size)occupied.add(this.data.initialZone);
+    if(!occupied.size)occupied.add(this.data.initialZones?.[0]??this.data.initialZone);
     const active=new Set(occupied);
     for(const [a,b,flag]of this.data.connections)if(this.flags.has(flag)){if(occupied.has(a))active.add(b);if(occupied.has(b))active.add(a);}
     const groups=new Set(this.data.volumes.filter(v=>active.has(v.name)&&enabled.has(v.name)).map(v=>v.spawners));

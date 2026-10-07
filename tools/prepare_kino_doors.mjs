@@ -2,10 +2,11 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {CollisionWorld} from '../web/collision.js';
 const read=async p=>JSON.parse(await readFile(new URL('../local-data/'+p,import.meta.url),'utf8'));
-export async function prepareKinoDoors(){
-  const manifest=await read('gameplay/bo1-kino/manifest.json'),navigation=await read('gameplay/bo1-kino/navigation.json');
+// Any T5 map; Kino by default.
+export async function prepareKinoDoors(map={data:'gameplay/bo1-kino',zone:'bo1-kino',asset:'zombie_theater'}){
+  const manifest=await read(map.data+'/manifest.json'),navigation=await read(map.data+'/navigation.json');
   if(navigation.targetNavigation?.version==='kino-doors-v1')return;
-  const game=new BlackOpsEngine(manifest,new CollisionWorld(await read('bo1-kino/web-world/zombie_theater.collision.json'),manifest.entities),await read('bo1-kino/web-world/zombie_theater.paths.json'));
+  const game=new BlackOpsEngine(manifest,new CollisionWorld(await read(map.zone+'/web-world/'+map.asset+'.collision.json'),manifest.entities),await read(map.zone+'/web-world/'+map.asset+'.paths.json'));
   game.prepareSpawnPaths(navigation);const collision=game.collision,disabled=collision.disabled,rows=[];
   try{
     for(const key of game.linkCache.keys()){
@@ -21,7 +22,7 @@ export async function prepareKinoDoors(){
     }
   }finally{collision.disabled=disabled;}
   navigation.targetNavigation={version:'kino-doors-v1',links:rows};
-  await writeFile(new URL('../local-data/gameplay/bo1-kino/navigation.json',import.meta.url),JSON.stringify(navigation));
+  await writeFile(new URL('../local-data/'+map.data+'/navigation.json',import.meta.url),JSON.stringify(navigation));
   console.log(`Prepared ${rows.length} Kino door/barrier edges for every local gate state.`);
 }
 if(process.argv[1]&&import.meta.url.endsWith('/'+process.argv[1].replaceAll('\\','/').split('/').at(-1)))await prepareKinoDoors();

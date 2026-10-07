@@ -42,6 +42,7 @@ import {configureDive,predictedDive} from './dive-config.js';
 import {HurtEffect} from './hurt-effect.js';
 import {ZombieVox,ZOMBIE_VOX} from './zombie-vox.js';
 import {GameOverSequence} from './game-over.js';
+import {AscensionRules} from './bo1-ascension.js';
 const mapChoice=selectedMap();
 const bo2=mapChoice.game==='black-ops-2',blackOps=bo2||mapChoice.game==='black-ops';
 // The original overlay_low_health and hit_direction art (BO2's hit_direction_zm is additive).
@@ -68,7 +69,7 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixe
 renderer.info.autoReset=false;renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*settings.value.renderScale/100);
 const viewScene=new THREE.Scene();
 const viewCamera=new THREE.PerspectiveCamera(worldFov(65),innerWidth/innerHeight,.1,300);
-const hud=new (bo2?BlackOps2Hud:blackOps?BlackOpsHud:OriginalHud)($('hud-art')),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene),blood=new BloodEffects(scene);
+const hud=new (bo2?BlackOps2Hud:blackOps?BlackOpsHud:OriginalHud)($('hud-art'),blackOps&&!bo2?{folder:mapChoice.data}:undefined),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene),blood=new BloodEffects(scene);
 const visuals=new Map(),dynamic=new Map(),dropVisuals=new Map();
 const state={ready:false,mode:'menu',inputMode:'idle',yaw:Math.PI,pitch:0,loading:'idle',fps:0,error:null};
 const launch=new LaunchScreen(mapChoice,()=>settings.value.volume);
@@ -342,6 +343,16 @@ function factoryVisuals(){
     }
   }
 }
+// Map entities the rules move (Ascension's lander, rocket and blast doors):
+// drawn at their placement plus the rules' offset, outside portal culling.
+function updateMovers(){
+  const rules=game.mapRules;if(!rules?.moverOffset)return;
+  for(const target of rules.moverTargets)for(const item of dynamic.get(target)||[]){
+    const offset=rules.moverOffset(item.entity);if(!offset)continue;
+    if(!item.base){item.base=item.object.position.clone();const holder=item.object.parent,i=cellObjects.findIndex(c=>c.holder===holder);if(i>=0){cellObjects.splice(i,1);holder.visible=true;}}
+    item.object.position.set(item.base.x+offset[0],item.base.y+offset[1],item.base.z+offset[2]);
+  }
+}
 function open(e) {
   const targets=e.target.includes('upstairs')?['upstairs_blocker','upstairs_blocker2']:[e.target];
   for(const target of targets)for(const item of dynamic.get(target)||[])item.object.visible=false;
@@ -531,7 +542,7 @@ async function init() {
     shake:e=>{const d=camera.position.distanceTo(new THREE.Vector3(...e.position));if(d<e.radius)shake={until:game.time+e.duration,amplitude:e.amplitude*(1-d/e.radius)};},stopLoop:({id})=>{loops.get(id)?.record?.stop(.05);loops.delete(id);},sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
     explosion:g=>{combatEffects.explosion(g,game.time,g.weapon?game.data.weapons[g.weapon]?.projExplosionEffect:null);}
-  },presentation);
+  },presentation,...(mapChoice.id==='ascension'?[g=>new AscensionRules(g)]:[]));
   if(blackOps)game.character=character;
   actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps||bo2){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();
   await prepared(5,'Compiling graphics…');
@@ -645,7 +656,7 @@ function frame(time) {
   }
   if(game&&!paused&&state.mode==='playing')zombieVox?.update(game.time,game,game.yaw);
   for(const [drop,v]of dropVisuals){if(drop.used||game.time>drop.expires){effects.dispose(v.glow);scene.remove(v.root);dropVisuals.delete(drop);}else updateDrop(drop,v);}
-  if(game&&state.ready){factoryVisuals();updateBoxes();updatePap();updateAudio();}
+  if(game&&state.ready){factoryVisuals();updateMovers();updateBoxes();updatePap();updateAudio();}
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];if(game.time>=b.due){effects.dispose(b.root);bursts.splice(i,1);}else effects.update(b.root,game.time);}
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}

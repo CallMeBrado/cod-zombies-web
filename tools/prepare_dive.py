@@ -9,15 +9,21 @@ import struct
 import tempfile
 import wave
 from zipfile import ZipFile
+from bo1_maps import BO1_MAPS
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'local-data'
 GAME = Path(r'E:\SteamLibrary\steamapps\common\Call of Duty Black Ops')
-ZONES = ['bo1-kino', 'bo1-common', 'bo1-english', 'bo1-base']
 
 
 def prepare():
-    path = DATA / 'gameplay/bo1-kino/manifest.json'
+    for m in BO1_MAPS.values():
+        prepare_map(m)
+
+
+def prepare_map(m):
+    path = DATA / m['data'] / 'manifest.json'
+    ZONES = [m['zone'], 'bo1-common', m['english'], 'bo1-base']
     if not path.exists():
         return
     manifest = json.loads(path.read_text())
@@ -102,14 +108,10 @@ def prepare():
     manifest['diveAudio'] = {'profiles': {'shared': {'launch': 'chr_launch_exert_plr', 'landing': 'chr_land_exert_plr',
                                                    'remoteLaunch': 'chr_launch_exert_npc', 'remoteLanding': 'chr_land_exert_npc'}},
                              'provenance': 'Stock BO1 shared exertion and dive-to-prone foley recordings; no unique character bank inferred.'}
-    manifest['playerBodies'] = [
-        {'name': 'Dempsey', 'body': 'c_usa_dempsey_body'},
-        {'name': 'Nikolai', 'body': 'c_rus_nikolai_body'},
-        {'name': 'Takeo', 'body': 'c_jap_takeo_body'},
-        {'name': 'Richtofen', 'body': 'c_ger_richtofen_body', 'head': 'c_ger_richtofen_head', 'hat': 'c_ger_richtofen_offcap'}]
+    manifest['playerBodies'] = [dict(character) for character in m['bodies']]
     for character in manifest['playerBodies']:
         for key in ['body', 'head', 'hat']:
-            if key in character and not (DATA / 'bo1-kino/model_export' / (character[key] + '_lod0.glb')).exists():
+            if key in character and not any((DATA / z / 'model_export' / (character[key] + '_lod0.glb')).exists() for z in m['search']):
                 raise RuntimeError('Missing character model: ' + character[key])
     prepared = json.dumps(manifest, separators=(',', ':'))
     if prepared != previous:

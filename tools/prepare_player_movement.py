@@ -6,7 +6,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def prepare():
-    path = ROOT / 'local-data/gameplay/bo1-kino/manifest.json'
+    from bo1_maps import BO1_MAPS
+    for m in BO1_MAPS.values():
+        prepare_map(m)
+
+
+def prepare_map(m):
+    path = ROOT / 'local-data' / m['data'] / 'manifest.json'
     if not path.exists():
         return
     manifest = json.loads(path.read_text())
@@ -20,7 +26,7 @@ def prepare():
                 weapon['dtp' + phase.title() + ('Empty' if empty else '') + 'Anim'] = name
                 if name:
                     if not any((ROOT / 'local-data' / zone / 'web-anims' / (name + '.json')).exists()
-                               for zone in ['bo1-kino', 'bo1-common', 'bo1-base']):
+                               for zone in m['search']):
                         raise RuntimeError('Missing native dive clip: ' + name)
                     clips.add(name)
     prepared = json.dumps(manifest, separators=(',', ':'))

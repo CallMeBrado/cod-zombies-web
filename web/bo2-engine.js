@@ -5,7 +5,9 @@ import {Arthur} from './bo2-arthur.js';
 
 export const BO2_CHARACTERS=['Russman','Stuhlinger','Misty','Marlton'];
 export const BO2_ARMS=['c_zom_oldman_viewhands','c_zom_reporter_viewhands','c_zom_farmgirl_viewhands','c_zom_engineer_viewhands'];
-export const BO2_PERKS={...PERKS,
+// Buried's machines: the shared four (PhD Flopper is Ascension's) plus its own.
+const {specialty_flakjacket,...SHARED_PERKS}=PERKS;
+export const BO2_PERKS={...SHARED_PERKS,
   specialty_rof:{...PERKS.specialty_rof,name:'Double Tap II'},
   specialty_longersprint:{name:'Stamin-Up',cost:2000,sting:'mx_stamin_sting'},
   specialty_additionalprimaryweapon:{name:'Mule Kick',cost:4000,sting:'mx_mule_sting'},
@@ -366,6 +368,8 @@ export class BlackOps2Engine extends BlackOpsEngine {
     const name=/sprint/.test(gait.name)?'ai_zombie_traverse_ground_climbout_fast':/run/.test(gait.name)?'ai_zombie_traverse_ground_v1_run':'ai_zombie_traverse_ground_v1_walk',clip=this.presentation.animations?.[name];
     return clip?{riseAnim:name,riseUntil:this.time+clip.duration}:{riseUntil:this.time+1.5};
   }
+  // Buried spawns its own risers (riser_location spawners).
+  get t5Risers(){return false;}
   // Buried's zombie_ai_limit: spawning holds at 24 alive.
   maxAlive(){return 24;}
   tickEnemy(e,dt){

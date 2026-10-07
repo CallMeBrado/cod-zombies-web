@@ -2,7 +2,7 @@
 
 A browser runtime for **Call of Duty Zombies**, with World at War, Black Ops and Black Ops II. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copies of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
 
-World at War has **Nacht der Untoten** and **Der Riese**. Black Ops adds **Kino der Toten** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
+World at War has **Nacht der Untoten** and **Der Riese**. Black Ops adds **Kino der Toten**, **Ascension** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
 
 The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / Buried** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
@@ -126,6 +126,20 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Opens after all three links.
   - Plays the knuckle-crack animation while your gun rolls into the machine.
   - The upgraded gun comes back out with a ticking timer; leave it 15 seconds and it's gone.
+
+### Black Ops: Ascension
+
+Select **Ascension** in the Black Ops map picker, or open `/black-ops/?map=ascension`. It runs on the same T5 engine as Kino with the map's own rules (`web/bo1-ascension.js`), using the installed `zombie_cosmodrome` fastfiles, its patch and English zones.
+
+- Original cosmodrome geometry, lighting, collision, path graph, cosmonaut/scientist/Spetsnaz zombie art (one model in this pass), the crew's Ascension outfits, voice lines, sounds, `mus_cosmo_underscore` and the loading movie.
+- Both start zones (`centrifuge_zone` and `centrifuge_zone2`), all eleven doors and their zone flags, 32 window routes and risers that climb out of each zone's rise structs (`level._zombie_rise_anims`). Zombie routing passes player clip but not monster clip.
+- Power, Quick Revive, Jugger-Nog, Speed Cola, **Stamin-Up** and **PhD Flopper** (dive landings that would hurt explode for 1000–5000 within 300 units; no damage from your own explosives). The box at its eight locations uses the map's `include_weapon` list.
+- **Lunar landers:** the intro ride from the sky to the centrifuge, call boxes (free, after power), 250-point rides from the pad to a random enabled station or back to the centrifuge, the original climb/cruise/descent timings and catwalk waypoint, gates, cleared pads, paused spawning and 30-second cooldowns.
+- **Rocket launch and Pack-a-Punch:** riding from Base Entry, the Catwalk and Storage authorizes the launch panel; the countdown, liftoff and, 10 seconds later, the blast doors slide apart and join the rocket zones.
+
+Not implemented yet: space monkey rounds, the centrifuge and fire traps, the Gersh device, Matryoshka dolls, sickle, crossbow/ballistic knife/launchers in the box, auto-turrets, the rocket lifter and claw animations, fog/vision changes and the easter egg.
+
+Prepare with `npm run extract:ascension` then `npm run prepare:ascension`; verify with `npm run test:ascension`.
 
 ### Black Ops: Kino der Toten preview
 

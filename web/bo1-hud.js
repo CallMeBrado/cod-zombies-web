@@ -3,12 +3,15 @@ import {roundIndicatorState} from './round-hud.js';
 import {scorePopupState} from './score-hud.js';
 import {CrosshairHud} from './crosshair-hud.js';
 import {drawCoop} from './coop-hud.js';
-const icons={specialty_armorvest:'specialty_juggernaut_zombies',specialty_fastreload:'specialty_fastreload_zombies',specialty_rof:'specialty_doubletap_zombies',specialty_quickrevive:'specialty_quickrevive_zombies'};
+const icons={specialty_armorvest:'specialty_juggernaut_zombies',specialty_fastreload:'specialty_fastreload_zombies',specialty_rof:'specialty_doubletap_zombies',specialty_quickrevive:'specialty_quickrevive_zombies',specialty_flakjacket:'specialty_divetonuke_zombies',specialty_longersprint:'specialty_marathon_zombies'};
 export class BlackOpsHud {
   constructor(canvas,options={}){this.folder=options.folder||'gameplay/bo1-kino';this.icons=options.icons||icons;this.scorebar=options.scorebar||'scorebar_zom_1';this.canvas=canvas;this.ctx=canvas.getContext('2d');this.images=new Map();this.crosshair=new CrosshairHud();this.ready=false;this.roundLayer=document.createElement('canvas');this.roundLayer.width=128;this.roundLayer.height=64;}
   async load(){
-    await Promise.all([...Object.values(this.icons),this.scorebar,'hud_us_grenade',...[1,2,3,4,5].map(i=>'chalkmarks_'+i)].map(async name=>{
-      const response=await assetResponse('/data/'+this.folder+'/hud/'+name+'.png');if(!response.ok)throw new Error('Missing Zombies HUD: '+name);
+    // Perk icons are per map (Kino has no Stamin-Up or PhD Flopper); the rest is required.
+    const icons=new Set(Object.values(this.icons));
+    await Promise.all([...icons,this.scorebar,'hud_us_grenade',...[1,2,3,4,5].map(i=>'chalkmarks_'+i)].map(async name=>{
+      const response=await assetResponse('/data/'+this.folder+'/hud/'+name+'.png').catch(()=>null);
+      if(!response?.ok){if(icons.has(name))return;throw new Error('Missing Zombies HUD: '+name);}
       const url=URL.createObjectURL(await response.blob());try{const image=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=reject;img.src=url;});this.images.set(name,image);}finally{URL.revokeObjectURL(url);}
     }));this.ready=true;
   }

@@ -7,7 +7,7 @@ export const DIVE={hold:BO1_INPUT_REFERENCE.stanceHoldSeconds,stanceHold:BO1_INP
 const stance=g=>STANCES[g.player.stance]||STANCES.stand;
 export const playerHull=g=>{if(!g.dive)return stance(g).half;const t=Math.min(1,Math.max(0,(g.time-g.dive.started)/g.dive.config.bodyBlendSeconds)),blend=t*t*(3-2*t);return [14,14,35+(15-35)*blend];};
 export const playerView=g=>{const current=g.viewHeightCurrent??stance(g).view,previous=g.viewHeightPrevious??current;return previous+(current-previous)*Math.min(1,(g.accumulator??1/120)*120);};
-export const playerSpeed=g=>stance(g).speed*(g.data.game==='black-ops-2'&&g.mapRules?.perks.has('specialty_longersprint')?1.07:1);
+export const playerSpeed=g=>stance(g).speed*(['black-ops','black-ops-2'].includes(g.data.game)&&g.mapRules?.perks.has('specialty_longersprint')?1.07:1);
 export const playerBusy=g=>!!g.dive||!!g.diveRecovery||g.time<(g.stanceReadyAt||0);
 export function resetMovement(g){g.player.stance='stand';g.viewHeightCurrent=60;g.viewHeightPrevious=60;g.stanceReadyAt=0;g.stanceChangedAt=0;g.stanceHold=null;g.dive=null;g.diveRecovery=null;g.lastDive=null;g.diveEndedAt=-Infinity;g.nextDiveId=1;g.movementSession=(g.movementSession||0)+1;g.diveConfig??=normalizeDiveConfig(g.data.playerMovement?.dive);g.sprintStartedAt=null;g.groundedAt=undefined;g.jumpStanceBlocked=false;g.sprintStanceBlocked=false;g.lastMoveSpeed=0;g.horizontalVelocity=[0,0];}
 export function restoreMovement(g,s){g.player.stance=Object.hasOwn(STANCES,s)?s:'stand';g.viewHeightCurrent=stance(g).view;g.viewHeightPrevious=g.viewHeightCurrent;g.dive=null;g.diveRecovery=null;g.diveEndedAt=-Infinity;g.stanceHold=null;}
@@ -81,7 +81,8 @@ function land(g,d,at,normal,impactSpeed){
   // Dive fall damage: the height fallen (from the impact speed) between
   // dtp_fall_damage_min_height and _max_height scales 0-100% of health.
   const fallen=impactSpeed*impactSpeed/(2*c.gravity);
-  if(fallen>c.fallDamageMinHeight)g.damagePlayer(Math.round(Math.min(1,(fallen-c.fallDamageMinHeight)/(c.fallDamageMaxHeight-c.fallDamageMinHeight))*(g.mapRules?.maxHealth||100)));
+  // PhD Flopper: a dive that would hurt explodes instead (divetonuke_explode).
+  if(fallen>c.fallDamageMinHeight){if(g.mapRules?.perks?.has('specialty_flakjacket'))g.diveToNuke?.(p.position.slice());else g.damagePlayer(Math.round(Math.min(1,(fallen-c.fallDamageMinHeight)/(c.fallDamageMaxHeight-c.fallDamageMinHeight))*(g.mapRules?.maxHealth||100)));}
 }
 function endDive(g,d){d.report.finalStopDistance=flatDistance(g.player.position,d.origin);d.phase='pause';d.velocity=[0,0];g.diveEndedAt=g.time;}
 // The landing slide: no ground friction for dtp_max_slide_duration, then the

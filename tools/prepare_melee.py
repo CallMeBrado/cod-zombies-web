@@ -7,7 +7,11 @@ DATA = ROOT / 'local-data'
 FIELDS = ['meleeAnim', 'meleeChargeAnim', 'meleeDamage', 'meleeDelay', 'meleeChargeDelay', 'meleeTime', 'meleeChargeTime', 'meleeChargeRange']
 
 def prepare():
-    target = DATA / 'gameplay/bo1-kino/manifest.json'
+    from bo1_maps import BO1_MAPS
+    for m in BO1_MAPS.values():
+        prepare_map(DATA / m['data'] / 'manifest.json')
+
+def prepare_map(target):
     if not target.exists():
         return
     source = next(DATA / z / 'weapons/knife_zm' for z in ['bo1-common', 'bo1-kino', 'bo1-base'] if (DATA / z / 'weapons/knife_zm').exists())

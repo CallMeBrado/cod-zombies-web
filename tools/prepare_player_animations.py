@@ -76,13 +76,16 @@ def update_manifest(path, values):
 
 
 def prepare():
-    kino = ROOT / 'local-data/gameplay/bo1-kino/manifest.json'
-    if kino.exists():
+    from bo1_maps import BO1_MAPS
+    for m in BO1_MAPS.values():
+        manifest = ROOT / 'local-data' / m['data'] / 'manifest.json'
+        if not manifest.exists():
+            continue
         common = GAME / 'zone/Common'
-        copy_clips(CACHE, CLIPS, ROOT / 'local-data/bo1-kino/web-anims',
+        copy_clips(CACHE, CLIPS, ROOT / 'local-data' / m['zone'] / 'web-anims',
                    lambda: export(CACHE, [common / 'common.ff', common / 'common_zombie.ff'], 'pb-anim-extract.log'))
-        update_manifest(kino, {'playerAnimations': CLIPS})
-        print(f'Prepared {len(CLIPS)} Black Ops third-person player animations')
+        update_manifest(manifest, {'playerAnimations': CLIPS})
+        print(f'Prepared {len(CLIPS)} Black Ops third-person player animations ({m["id"]})')
     waw = [(ROOT / 'local-data' / folder / 'manifest.json', bodies) for folder, bodies in WAW_BODIES.items()]
     if any(path.exists() for path, _ in waw):
         zone = WAW / 'zone/english'

@@ -57,7 +57,7 @@ export class KinoRules extends FactoryRules {
       if(!p||(!this.power&&!(quick&&solo))||g.gesture||quick&&solo&&this.revivesUsed>=3)return true;
       if(!g.spendPoints(quick&&solo?500:p.cost)){g.voiceEvent('denied','perk');return true;}
       // give_perk() threads perk_vox(), which waits 1.5 s after the drink.
-      g.startGesture(id,()=>{this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;g.laterDialog(1.5,'perk',id);});g.emit('sound',{alias:p.sting});return true;
+      g.startGesture(id,()=>{this.perks.add(id);if(id==='specialty_armorvest')g.player.health=this.maxHealth;g.laterDialog(1.5,'perk',id);});g.emit('sound',{alias:p.sting});return true;
     }
     if(tag==='trigger_teleport_pad_0'){
       if(!this.power||g.time<this.teleportCooldown||this.teleportDue)return true;
@@ -243,9 +243,36 @@ export class BlackOpsEngine extends TestingGame {
   canSave(){return !this.burstRemaining&&super.canSave();}
   saveState(){return {...super.saveState(),character:this.character};}
   loadState(s){const character=this.character;super.loadState(s);this.character=Number.isInteger(s.character)?s.character:character;}
+  // zombie_think(): a "riser" spawner rises at one of its zone's rise structs
+  // (<spawners>_rise) through level._zombie_rise_anims; a "zombie_chaser"
+  // goes straight for the players instead of a barrier.
+  get t5Risers(){return true;}
+  spawnEnemy(){
+    const spawners=this.enabledSpawners(),pick=spawners[Math.floor(Math.random()*spawners.length)];
+    if(this.t5Risers&&pick&&(pick.script_string==='riser'||pick.script_string==='zombie_chaser')){
+      const spots=pick.script_string==='riser'?this.entities.filter(e=>e.targetname===pick.targetname+'_rise'):[pick];
+      for(const spot of spots.slice().sort(()=>Math.random()-.5)){
+        const p=spot.origin.split(' ').map(Number);let at;
+        for(const height of [80,32]){try{at=this.settleFeet([p[0],p[1],p[2]+height]);break;}catch{}}
+        if(!at||!(this.walkableLink(at,this.player.position)||this.path(at,this.player.position,true).length))continue;
+        const gait=this.zombieGait(),riser=pick.script_string==='riser';
+        const enemy={id:this.nextId++,position:at,previousPosition:at.slice(),health:this.zombieHealth,window:this.windows[0],stage:riser?'rise':'hunt',...(riser?this.riseClip(gait):{}),path:[],attackDue:0,navDue:0,
+          angle:Number((spot.angles||'0 0 0').split(' ')[1])*Math.PI/180,dead:false,age:0,spawnTime:this.time,gait:gait.name,speed:gait.speed};
+        this.enemies.push(enemy);this.remaining--;this.emit('spawn',enemy);return;
+      }
+    }
+    super.spawnEnemy();
+  }
+  // do_zombie_rise(): walkers rise on version 1 or 2, runners and sprinters on 1.
+  riseClip(gait){
+    const walk=!/run|sprint/.test(gait.name),name=/sprint/.test(gait.name)?'ai_zombie_traverse_ground_climbout_fast':/run/.test(gait.name)?'ai_zombie_traverse_ground_v1_run':
+      Math.random()<.5?'ai_zombie_traverse_ground_v1_walk':'ai_zombie_traverse_ground_v2_walk_altA',clip=this.presentation.animations?.[name];
+    return clip?{riseAnim:name,riseUntil:this.time+clip.duration}:{riseUntil:this.time+1.5};
+  }
   tickEnemy(enemy,dt){
     // Solo: the zombies wait while the only player is away or reviving.
     if(!this.coop&&(this.mapRules.projectionUntil||this.mapRules.reviveDue)){if(!enemy.dead)enemy.age+=dt;return;}
+    if(enemy.stage==='rise'&&!enemy.dead){enemy.age+=dt;if(this.time>=enemy.riseUntil){enemy.stage='hunt';enemy.navDue=0;}return;}
     this.attackingEnemy=enemy;try{super.tickEnemy(enemy,dt);}finally{this.attackingEnemy=null;}
   }
   hitEnemy(enemy,damage,head=false,melee=false){
