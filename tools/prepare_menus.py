@@ -164,6 +164,19 @@ def bo2():
     if table.is_file():
         for row in csv.reader(table.open(encoding='utf-8')):
             if len(row) > 17 and row[0].startswith('zm_') and row[16]: places[row[0]] = {'longitude': float(row[16]), 'latitude': float(row[17]), 'signpost': row[4], 'name': row[3]}
+    # Each location's name, place and description in the zombies lobby
+    # (en_ui_zm / en_patch_ui_zm localized strings).
+    strings = {}
+    for f in (DATA / 'bo2-menu-strings').rglob('*.str') if (DATA / 'bo2-menu-strings').exists() else []:
+        ref = None
+        for line in f.read_text(encoding='utf-8', errors='replace').splitlines():
+            if line.startswith('REFERENCE'): ref = line.split(None, 1)[1].strip()
+            elif line.startswith('LANG_ENGLISH') and ref: strings.setdefault(ref, line.split(None, 1)[1].strip().strip('"')); ref = None
+    text = {'zm_transit': ('ZMUI_ZCLASSIC_ZM_TRANSIT_CAPS', None, 'ZMUI_CLASSIC_DESC_TRANSIT'), 'zm_nuked': ('ZMUI_NUKED_LOC', 'ZMUI_NUKED_CAPS', 'ZMUI_DESC_MAP_NUKED'),
+            'zm_highrise': ('ZMUI_ZCLASSIC_ZM_HIGHRISE_CAPS', None, 'ZMUI_CLASSIC_DESC_ROOFTOP'), 'zm_prison': ('ZMUI_ZCLASSIC_ZM_PRISON_CAPS', 'ZMUI_PRISON_LOC_CAPS', 'ZMUI_CLASSIC_DESC_PRISON'),
+            'zm_buried': ('ZMUI_ZCLASSIC_ZM_BURIED_CAPS', None, 'ZMUI_CLASSIC_DESC_PROCESSING'), 'zm_tomb': ('ZMUI_ZCLASSIC_ZM_TOMB_CAPS', 'ZMUI_TOMB_LOC_CAPS', 'ZMUI_CLASSIC_DESC_TOMB')}
+    for map_id, (title, where, description) in text.items():
+        if map_id in places: places[map_id].update(title=strings.get(title), location=strings.get(where) if where else None, description=strings.get(description))
     return {'sounds': sounds, 'art': art, 'places': places}
 
 
@@ -188,6 +201,10 @@ def extract():
     if not (DATA / 'bo2-ui-sounds' / 'soundbank').exists():
         for zone in ['code_post_gfx_zm', 'patch_ui_zm']:
             subprocess.run([str(UNLINKER), '--no-color', '--search-path', f'{BO2 / "zone/all"};{BO2 / "sound"}', '--include-assets', 'soundbank', '-o', str(DATA / 'bo2-ui-sounds'), str(BO2 / 'zone/all' / (zone + '.ff'))],
+                           cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, check=True)
+    if not (DATA / 'bo2-menu-strings').exists():
+        for zone in ['en_ui_zm', 'en_patch_ui_zm']:
+            subprocess.run([str(UNLINKER), '--no-color', '--include-assets', 'localize', '-o', str(DATA / 'bo2-menu-strings'), str(BO2 / 'zone/english' / (zone + '.ff'))],
                            cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, check=True)
     if not (DATA / 'bo1-frontend' / 'web-world' / 'frontend.json').exists():
         subprocess.run(['python', '-B', str(ROOT / 'tools/extract_bo1.py'), '--map', 'frontend'], cwd=ROOT, check=True)

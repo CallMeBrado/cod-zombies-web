@@ -731,9 +731,19 @@ const menuAudio=new MenuAudio(bo2?'bo2':blackOps?'bo1':'waw',{volume:()=>setting
 setInterval(()=>menuAudio.music(state.lobbyReady&&inLobby()&&!document.hidden),250);
 const frontend=blackOps&&!bo2&&mapChoice.engine!=='dead-ops'?new Bo1Frontend({visible:inLobby}):null;
 if(frontend)menuAudio.ready.then(menu=>menu?.world&&frontend.load(menu)).catch(error=>console.warn('Black Ops frontend unavailable:',error));
-// Black Ops II: the zombies menu's space backdrop and location globe.
+// Black Ops II: the zombies menu's space backdrop and location globe. The
+// map panel shows whichever location the globe is turned to, playable or not.
+function showBo2Location(info){
+  pauseMenu.setText('selected-map-title',info.title);
+  const description=$('map-description');let where=document.querySelector('.bo2-location');
+  if(!where){where=document.createElement('span');where.className='bo2-location';description.before(where);}
+  where.textContent=info.location||'';where.hidden=!info.location;
+  description.textContent=info.description;
+  if(!info.playable){const note=document.createElement('span');note.className='bo2-unavailable';note.textContent='NOT AVAILABLE IN THIS BUILD';description.append(note);}
+  pauseMenu.text?.paint();
+}
 let bo2Menu=null;
-if(bo2)menuAudio.ready.then(menu=>{if(menu?.art?.globe_map_zm)bo2Menu=new Bo2Menu(menu,{maps:BO2_MAPS,sounds:menuAudio,visible:inLobby,onChoose:map=>lobby.choose(map)});}).catch(error=>console.warn('Black Ops II menu unavailable:',error));
+if(bo2)menuAudio.ready.then(menu=>{if(menu?.art?.globe_map_zm)bo2Menu=new Bo2Menu(menu,{maps:BO2_MAPS,sounds:menuAudio,visible:inLobby,onChoose:map=>lobby.choose(map),onShow:showBo2Location});}).catch(error=>console.warn('Black Ops II menu unavailable:',error));
 async function bootLobby(){
   // Only menu artwork, fonts and the save catalogue are needed before Start.
   saves.prepare().then(()=>{$('resume-save').hidden=pauseMenu.context==='pause'||!saves.count();}).catch(error=>{state.savesError=error.message;});

@@ -96,6 +96,11 @@ body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] #map-list{displa
 body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] #menu-maps{display:block}
 body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .map-detail{position:absolute;left:calc(var(--unit)*40);top:auto;bottom:calc(var(--unit)*70);width:min(30vw,calc(var(--unit)*210));background:linear-gradient(90deg,#000000c8,#00000060);padding:calc(var(--unit)*10);border-left:2px solid var(--bo-accent)}
 body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .map-detail img{display:none}
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] #selected-map-title,body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] #map-description{position:static;width:auto;max-width:100%;overflow-wrap:break-word}
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .map-detail{box-sizing:border-box}
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .bo2-location{display:block;margin:calc(var(--unit)*-6) 0 calc(var(--unit)*8);font:calc(var(--unit)*10)/1.2 Arial,sans-serif;letter-spacing:calc(var(--unit)*.6);color:var(--bo-accent)}
+.bo2-location{display:none}
+body[data-game=black-ops-2] .bo2-unavailable{display:block;margin-top:calc(var(--unit)*6);font:700 calc(var(--unit)*10)/1.2 Arial,sans-serif;letter-spacing:calc(var(--unit)*.6);color:#9a9089}
 @media(prefers-reduced-motion:reduce){.bo2-layer,.bo2-pin-marker{animation:none!important}.bo2-globe{transition:none}}
 /* BO2 lobby layout: menu options on the left; the map name and the players
    (with other lobbies) in the right column; the globe is the picture. */

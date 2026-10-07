@@ -32,8 +32,8 @@ void main(){
 }`;
 
 export class Bo2Menu {
-  constructor(menu,{maps,onChoose,sounds,view=()=>document.body.dataset.menuView,visible}){
-    Object.assign(this,{menu,maps,onChoose,sounds,view,visible});
+  constructor(menu,{maps,onChoose,onShow=()=>{},sounds,view=()=>document.body.dataset.menuView,visible}){
+    Object.assign(this,{menu,maps,onChoose,onShow,sounds,view,visible});
     this.lon=-40;this.lat=-12;this.spin=null;this.mode='home';this.current=null;
     const art=menu.art,root=document.createElement('div');root.id='bo2-backdrop';root.setAttribute('aria-hidden','true');
     const layer=(cls,name)=>{const d=document.createElement('div');d.className='bo2-layer '+cls;if(name&&art[name])d.style.backgroundImage=`url("${art[name]}")`;root.append(d);return d;};
@@ -49,7 +49,10 @@ export class Bo2Menu {
       const sign=art[place.signpost]?`<img src="${art[place.signpost]}" alt="">`:'';
       pin.innerHTML=`<span class="bo2-pin-marker"></span>${sign}<span class="bo2-pin-name">${NAMES[id]}</span>${playable?'':'<span class="bo2-pin-note">NOT AVAILABLE</span>'}`;
       pin.addEventListener('click',()=>this.pick(id));
-      this.pins.append(pin);return {id,lon:-place.longitude,lat:place.latitude,pin,playable};
+      this.pins.append(pin);
+      // The lobby's own name, place and description for the location (en_ui_zm).
+      const info={title:place.title||NAMES[id],location:place.location||null,description:place.description||'',playable:!!playable};
+      return {id,lon:-place.longitude,lat:place.latitude,pin,playable,info};
     });
     // GamepadButton / MapRotationInput: step to the previous or next location.
     const cycle=document.createElement('div');cycle.className='bo2-cycle';
@@ -84,8 +87,9 @@ export class Bo2Menu {
     const place=this.places.find(p=>p.id===id);if(!place)return;
     if(this.current!==id){this.sounds.play('mapSwitch');this.rotateTo(place);this.current=id;}
     const accept=document.getElementById('map-accept');if(accept)accept.disabled=!place.playable;
-    if(!place.playable){this.sounds.play('deny');this.flash(place);return;}
-    this.onChoose(place.playable);
+    if(place.playable)this.onChoose(place.playable);
+    this.onShow(place.info);
+    if(!place.playable){this.sounds.play('deny');this.flash(place);}
   }
   step(dir){const i=this.places.findIndex(p=>p.id===this.current),next=this.places[(Math.max(0,i)+dir+this.places.length)%this.places.length];this.pick(next.id);}
   flash(place){place.pin.classList.remove('denied');void place.pin.offsetWidth;place.pin.classList.add('denied');}
@@ -94,7 +98,7 @@ export class Bo2Menu {
     this.spin={fromLon:this.lon,toLon:this.lon+delta,fromLat:this.lat,toLat:Math.max(-50,Math.min(50,place.lat)),start:performance.now(),duration:Math.max(.5,duration*Math.abs(delta)/180+.4)*1000};
     this.sounds.play('spinStart');
   }
-  select(mapId){const id=this.maps.find(m=>m.id===mapId)?.asset;const place=this.places.find(p=>p.id===id);if(place&&this.current!==id){this.current=id;this.rotateTo(place);}}
+  select(mapId){const id=this.maps.find(m=>m.id===mapId)?.asset;const place=this.places.find(p=>p.id===id);if(!place)return;this.onShow(place.info);if(this.current!==id){this.current=id;this.rotateTo(place);}}
   frame(now){
     requestAnimationFrame(t=>this.frame(t));
     const dt=Math.min(.1,(now-this.last)/1000);this.last=now;
