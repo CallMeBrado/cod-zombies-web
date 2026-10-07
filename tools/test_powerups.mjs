@@ -25,7 +25,7 @@ for(const [id,data,zone,asset]of [['nacht','gameplay','nacht','nazi_zombie_proto
     for(const w of g.windows.slice(0,5))w.boards=0;g.windows[6].boards=3;const points=g.player.points;sounds.length=0;
     g.pickup(g.addDrop('carpenter',g.player.position));assert(loops.has('carpenter'));
     for(let i=0;i<200&&g.carpenter;i++){g.time+=.05;g.updateCarpenter();}
-    assert(g.windows.every(w=>w.boards===6),'The carpenter rebuilds every board');assert.equal(g.player.points,points+200);
+    assert(g.windows.every(w=>w.boards===w.maxBoards),'The carpenter rebuilds every board');assert.equal(g.player.points,points+200);
     assert(!loops.has('carpenter'));assert(sounds.includes('carp_end')&&sounds.includes('carp_vox'));
   }
   report[id]={powerups:types};

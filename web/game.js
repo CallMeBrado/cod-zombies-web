@@ -6,6 +6,12 @@ import {ACTOR_CONTENTS} from './collision.js';
 import {chooseKnifeLunge,moveKnifeLunge,knifeHitValid,meleeValue} from './knife-lunge.js';
 import {resetMovement,restoreMovement,playerHull,playerView,playerSpeed,playerBusy,changeStance,stanceButton,releaseStance,movementFrame,movementInput,movementEnd,moveDive,stanceSpread} from './player-movement.js';
 export const PHYSICS_STEP=1/120;
+// A window's barrier: six boards, or every chunk of a stone wall (Verrückt's
+// and Der Riese's wall breaks have fifteen).
+function barrierPieces(pieces){
+  const chunks=pieces.filter(b=>b.script_sound==='break_stone');
+  return chunks.length>6?{boards:chunks.length,maxBoards:chunks.length,boardEntities:chunks}:{boards:6,maxBoards:6,boardEntities:pieces.slice(0,6)};
+}
 // treasure_chest_weapon_spawn(): the bear appears, flies off 0.5 + 2 s later
 // and rises 500 units over 4 s before the box leaves.
 export const BOX_TEDDY_SECONDS=6.5;
@@ -26,9 +32,9 @@ const lerp=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
 // _zombiemode.gsc run cycles; clips a map did not ship are skipped (Nacht has
 // four walks and walk_fast "runs"; Der Riese adds walk_v6-v8 and run_v2/v4).
 export const ZOMBIE_GAITS={
-  walk:['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zombie_walk_v4','ai_zombie_walk_v6','ai_zombie_walk_v7','ai_zombie_walk_v8'],
+  walk:['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zombie_walk_v4','ai_zombie_walk_v6','ai_zombie_walk_v7','ai_zombie_walk_v8','ai_zombie_walk_v9'],
   run:['ai_zombie_walk_fast_v1','ai_zombie_walk_fast_v2','ai_zombie_walk_fast_v3','ai_zombie_run_v2','ai_zombie_run_v4'],
-  sprint:['ai_zombie_sprint_v1','ai_zombie_sprint_v2']};
+  sprint:['ai_zombie_sprint_v1','ai_zombie_sprint_v2','ai_zombie_sprint_v4','ai_zombie_sprint_v5']};
 // Zombies move by the clip's own root motion, so feet match the ground.
 export function gaitSpeed(clip){const motion=clip?.motion;return motion?.length>1&&clip.duration?Math.hypot(motion.at(-1)[1]-motion[0][1],motion.at(-1)[2]-motion[0][2])/clip.duration:37.64;}
 // Distinct movement speeds of the gait clips a map ships, for route checks.
@@ -81,7 +87,7 @@ export class SoloGame {
         }return entry;
       };
       return {outside:ground(vec(e.origin)),begin:ground(vec(begin.origin)),entry:landing(end?vec(end.origin):lerp(vec(e.origin),vec(begin.origin),3)),
-        angle:vec(begin.angles)[1]*Math.PI/180,target:e.target,boards:6,boardEntities:this.entities.filter(b=>b.targetname===e.target&&b.script_noteworthy!=='clip').slice(0,6)};
+        angle:vec(begin.angles)[1]*Math.PI/180,target:e.target,...barrierPieces(this.entities.filter(b=>b.targetname===e.target&&b.script_noteworthy!=='clip'))};
     });
     collision.disabled=floorDisabled;
     this.interactions=this.entities.filter(e=>['weapon_upgrade','zombie_door','zombie_debris','treasure_chest_use','weapon_cabinet_use','use_power_switch','zombie_vending','zombie_vending_upgrade','trigger_teleport_core'].includes(e.targetname)||/^trigger_teleport_pad_\d$/.test(e.targetname)).map(e=>({...e,position:vec(e.origin)}));
@@ -109,7 +115,7 @@ export class SoloGame {
     this.activeBox=this.data.map?.initialBox??null;this.boxUses=0;this.boxMoves=0;this.mazeChests=false;
     this.mapRules?.reset();
     this.yaw=Math.PI;this.pitch=0;this.ads=0;this.spreadBloom=0;this.moving=false;this.shots=0;this.hits=0;this.nextId=1;this.elapsed=0;
-    this.windows.forEach(w=>{w.boards=6;w.traverser=null;w.attackers=[];this.emit('barrier',w);});
+    this.windows.forEach(w=>{w.boards=w.maxBoards;w.traverser=null;w.attackers=[];this.emit('barrier',w);});
     this.emit('reset');this.emit('weapon',this.weapon);
   }
   get weapon(){return this.inventory[this.slot];}
@@ -141,7 +147,7 @@ export class SoloGame {
   startRound() {
     // round_spawning(): solo adds the map's solo bonus, co-op (players-1) per-player sets.
     const players=this.coop?.playerCount()||1,factor=players>1?players-1:this.mapRules?.soloAiFactor??0;
-    this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai,this.vars.zombie_ai_per_player,factor);
+    this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=this.mapRules?.roundCount?.(this.round,players)??roundCount(this.round,this.vars.zombie_max_ai,this.vars.zombie_ai_per_player,factor);
     this.spawnDue=this.time+this.spawnLead();this.phase='round';this.barrierReward=0;this.player.grenades=Math.min(4,this.player.grenades+2);
     this.emit('round',this.round);this.emit('sound',{alias:'chalk'});
   }
@@ -390,6 +396,7 @@ export class SoloGame {
   }
   holdsSpot(enemy){return !!enemy&&!enemy.dead&&enemy.stage==='barrier'&&enemy.window?.attackers?.[enemy.spot]===enemy;}
   spawnEnemy() {
+    if(this.mapRules?.spawnEnemy?.())return;
     // round_spawning picks a random enabled spawner (not by player distance);
     // the zombie then takes one of the windows nearest that spawner.
     const available=new Set(this.availableWindows()),options=[];
@@ -453,6 +460,8 @@ export class SoloGame {
   }
   tickEnemy(enemy,dt) {
     if(enemy.dead)return;enemy.age+=dt;enemy.attacking=false;
+    // do_zombie_rise(): the riser climbs out, then heads for its window.
+    if(enemy.stage==='rise'){if(this.time>=enemy.riseUntil){enemy.stage=enemy.afterRise||'hunt';enemy.navDue=0;}return;}
     if(enemy.stage==='approach') {
       if(this.advancePath(enemy,dt,enemy.window.outside)){enemy.stage='barrier';enemy.angle=enemy.window.angle;enemy.tear=null;}
     } else if(enemy.stage==='barrier') {
@@ -475,7 +484,7 @@ export class SoloGame {
       }
       if(enemy.tear){
         const elapsed=this.time-enemy.tear.started;
-        if(!enemy.tear.removed&&elapsed>=enemy.tear.hit){enemy.tear.removed=true;if(enemy.window.boards>0){enemy.window.boards--;this.emit('barrier',enemy.window);this.emit('sound',{alias:'remove_boards',volume:.3});}}
+        if(!enemy.tear.removed&&elapsed>=enemy.tear.hit){enemy.tear.removed=true;if(enemy.window.boards>0){const piece=enemy.window.boardEntities[enemy.window.boards-1];enemy.window.boards--;this.emit('barrier',enemy.window);this.emit('sound',{alias:piece?.script_sound||'remove_boards',volume:.3,position:piece?vec(piece.origin):undefined});}}
         if(elapsed>=enemy.tear.duration)enemy.tear=null;
       }
       if(!enemy.tear&&enemy.window.boards>0){
@@ -940,7 +949,7 @@ export class SoloGame {
       const sound=first?(d.firstRaiseSoundPlayer||d.raiseSoundPlayer):d.raiseSoundPlayer;if(sound)this.emit('sound',{alias:sound});
     }else this.switching=null;
   }
-  nearWindow(){return this.windows.filter(w=>w.boards<6&&distance(w.entry,this.player.position)<115).sort((a,b)=>distance(a.entry,this.player.position)-distance(b.entry,this.player.position))[0];}
+  nearWindow(){return this.windows.filter(w=>w.boards<w.maxBoards&&distance(w.entry,this.player.position)<115).sort((a,b)=>distance(a.entry,this.player.position)-distance(b.entry,this.player.position))[0];}
   nearInteraction(){return this.interactions.filter(e=>!this.opened.has(e.target)&&(!this.mapRules||this.mapRules.visible(e))&&distance(e.position,[...this.player.position.slice(0,2),this.player.position[2]+35])<100).sort((a,b)=>distance(a.position,this.player.position)-distance(b.position,this.player.position))[0];}
   prompt() {
     const useKey=this.events.bindingName?.('use')||'E';
@@ -988,8 +997,8 @@ export class SoloGame {
     if(this.opened.has(e.target))return;
     this.opened.add(e.target);this.collision.disabled.add(e.target);
     this.mapRules?.onOpen(e);
-    if(e.target.includes('upstairs')){this.opened.add('upstairs_blocker');this.opened.add('upstairs_blocker2');this.collision.disabled.add('upstairs_blocker');this.collision.disabled.add('upstairs_blocker2');}
-    this.invalidateNavigation(e.target.includes('upstairs')?[e.target,'upstairs_blocker','upstairs_blocker2']:[e.target]);
+    if(!this.mapRules&&e.target.includes('upstairs')){this.opened.add('upstairs_blocker');this.opened.add('upstairs_blocker2');this.collision.disabled.add('upstairs_blocker');this.collision.disabled.add('upstairs_blocker2');}
+    this.invalidateNavigation(!this.mapRules&&e.target.includes('upstairs')?[e.target,'upstairs_blocker','upstairs_blocker2']:[e.target]);
     this.emit('open',e);this.message('Passage opened');
   }
   // The weapons the box may offer this player: none they hold (or hold
@@ -1005,12 +1014,12 @@ export class SoloGame {
     this.emit('sound',{alias:'lid_open'});this.emit('sound',{alias:'music_box'});this.updateBoxes();
   }
   rebuild(w) {
-    if(w.boards>=6||this.time<this.rebuildDue||w.traverser&&!w.traverser.dead)return;
+    if(w.boards>=w.maxBoards||this.time<this.rebuildDue||w.traverser&&!w.traverser.dead)return;
     // A co-op guest repairs through the host, which pays its points.
     if(this.coop?.guest){this.rebuildDue=this.time+1;this.coop.toHost({type:'rebuild',target:w.target});this.emit('sound',{alias:'repair_boards'});return;}
     const wasOpen=w.boards===0;w.boards++;this.rebuildDue=this.time+1;this.collision.disabled.delete(w.target);
     if(wasOpen)this.invalidateNavigation([w.target]);
-    this.emit('sound',{alias:'repair_boards'});
+    this.emit('sound',{alias:w.boardEntities[w.boards-1]?.script_sound==='break_stone'?'rebuild_barrier_piece':'repair_boards'});
     const repairer=this.coop?.shooter()||this;
     if((repairer.barrierReward||0)<Math.min(500,50*this.round)){this.awardPoints(10*(this.powerup.double_points?2:1));repairer.barrierReward=(repairer.barrierReward||0)+10;}
     this.emit('barrier',w);
@@ -1022,7 +1031,7 @@ export class SoloGame {
         box.weapon=box.names[Math.floor(Math.random()*box.names.length)];box.nextAt+=settings.cycleDelays[box.index++];
         if(box.index===settings.cycleDelays.length){
           box.offeredAt=box.nextAt;
-          if(this.boxJoker()){box.phase='teddy';box.weapon=null;box.due=box.offeredAt+BOX_TEDDY_SECONDS;this.boxUses=0;this.boxMoves++;this.refundBox(box);break;}
+          if(this.boxJoker()){box.phase='teddy';box.weapon=null;box.due=box.offeredAt+(this.mapRules?.boxSequence?.teddy??BOX_TEDDY_SECONDS);this.boxUses=0;this.boxMoves++;this.refundBox(box);break;}
           box.phase='offered';box.due=box.offeredAt+settings.offerTime;break;
         }
       }
@@ -1031,21 +1040,27 @@ export class SoloGame {
       // treasure_chest_move(): the bear rises and flies off (weapon_fly_away),
       // the box plays its leave animation, and 12 s later the box arrives at
       // the next location.
+      // WaW (treasure_chest_move): the bear flies, the box lifts and poofs,
+      // and show_magic_box brings it back elsewhere (the rules' boxSequence).
+      const seq=this.mapRules?.boxSequence;
       if(box.phase==='teddy'){
-        if(!box.laughed&&this.time>=box.offeredAt+.5){box.laughed=true;this.emit('sound',{alias:'zmb_laugh_richtofen'});}
-        if(this.time>=box.due){box.phase='leaving';box.laughed=false;box.started=this.time;box.due=this.time+12.1;this.emit('sound',{alias:'zmb_box_move',position:box.entity.position});}
+        if(!box.laughed&&this.time>=box.offeredAt+(seq?.laughAt??.5)){box.laughed=true;this.emit('sound',{alias:seq?.laugh||'zmb_laugh_richtofen'});}
+        if(this.time>=box.due){box.phase='leaving';box.laughed=false;box.poofed=false;box.started=this.time;box.due=this.time+(seq?.leave??12.1);
+          for(const alias of seq?.leaveSounds||['zmb_box_move'])this.emit('sound',{alias,position:box.entity.position});}
       }
+      if(box.phase==='leaving'&&seq?.poof&&!box.poofed&&this.time>=box.started+seq.poofAt){box.poofed=true;this.emit('sound',{alias:seq.poof,position:box.entity.position});}
       if(box.phase==='leaving'&&this.time>=box.due){
         box.phase='closed';const next=this.nextBox(box.entity.target),arriving=this.boxes.get(next);this.activeBox=next;
-        if(arriving){arriving.phase='arriving';arriving.started=this.time;arriving.due=this.time+(this.data.map?.boxClips?.arrive||4.9);this.emit('sound',{alias:'zmb_box_poof',position:arriving.entity.position});this.emit('boxMoved',next);}
+        if(arriving){arriving.phase='arriving';arriving.started=this.time;arriving.due=this.time+(seq?.arrive??this.data.map?.boxClips?.arrive??4.9);this.emit('sound',{alias:seq?.arriveSound||'zmb_box_poof',position:arriving.entity.position});this.emit('boxMoved',next);}
       }
-      if(box.phase==='arriving'&&this.time>=box.due){box.phase='closed';this.emit('sound',{alias:'zmb_box_poof_land',position:box.entity.position});}
+      if(box.phase==='arriving'&&this.time>=box.due){box.phase='closed';this.emit('sound',{alias:seq?.landSound||'zmb_box_poof_land',position:box.entity.position});}
     }
   }
   // _zm_magicbox treasure_chest_weapon_spawn(): no teddy for the first four
   // uses; 15% for uses 4-7; certain at 8 before the box has ever moved; after
   // a move, 30% for uses 8-12 and 50% from 13. Only maps whose box moves.
   boxJoker(){
+    if(this.mapRules?.boxJoker)return this.mapRules.boxJoker();
     if(!this.data.map?.boxMoves||this.boxes.size<2)return false;
     const used=this.boxUses,random=Math.floor(Math.random()*100);let chance=-1;
     if(used>=4){chance=used+20;if(this.boxMoves===0&&used>=8)chance=100;
@@ -1060,6 +1075,7 @@ export class SoloGame {
   // The next box location: any other location, the maze's only once a player
   // has reached the maze (zm_buried_classic.gsc maze_box_trigger).
   nextBox(current){
+    if(this.mapRules?.nextBox)return this.mapRules.nextBox(current);
     const maze=new Set(this.mazeChests?[]:this.data.map?.mazeChests||[]),options=[...this.boxes.keys()].filter(t=>t!==current&&!maze.has(t));
     return options.length?options[Math.floor(Math.random()*options.length)]:current;
   }
@@ -1160,7 +1176,7 @@ export class SoloGame {
   // then carp_end and 200 points.
   updateCarpenter(){
     const c=this.carpenter;if(!c||this.time<c.next)return;c.next=this.time+.05;
-    const window=this.windows.filter(w=>w.boards<6).sort((a,b)=>distance(a.entry,c.origin)-distance(b.entry,c.origin))[0];
+    const window=this.windows.filter(w=>w.boards<w.maxBoards).sort((a,b)=>distance(a.entry,c.origin)-distance(b.entry,c.origin))[0];
     if(window){window.boards++;this.emit('barrier',window);return;}
     this.carpenter=null;this.emit('stopLoop',{id:'carpenter'});this.emit('sound',{alias:'carp_end',position:c.origin,near:150,far:1400});this.changePoints(200);
   }

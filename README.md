@@ -2,7 +2,7 @@
 
 A browser runtime for **Call of Duty Zombies**, with World at War, Black Ops and Black Ops II. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copies of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
 
-World at War has **Nacht der Untoten** and **Der Riese**. Black Ops adds **Kino der Toten**, **Ascension** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
+World at War has **Nacht der Untoten**, **Verrückt** and **Der Riese**. Black Ops adds **Kino der Toten**, **Ascension** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
 
 The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / Buried** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
@@ -127,6 +127,39 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Plays the knuckle-crack animation while your gun rolls into the machine.
   - The upgraded gun comes back out with a ticking timer; leave it 15 seconds and it's gone.
 
+### World at War: Verrückt
+
+Select **Verrückt** in the World at War map picker, or open `/world-at-war/?map=verruckt`. It runs on the WaW engine with the map's own rules (`web/waw-verruckt.js`), using the installed `nazi_zombie_asylum` fastfile, its patch and localized zone.
+
+- **Start:** solo players start on a random side of the asylum (north or south of the power door), as `spawn_point_override` does.
+- **Spawning:** rounds 1 and 2 hold six zombies solo.
+  - Doors and debris add their own spawner groups.
+  - The courtyard, upstairs and corner volumes switch spawners and windows on while you are inside them, checked every second (`manage_zone`).
+  - Door-gated windows open with their door.
+  - Courtyard risers (75%) climb out of the 32 `zombie_rise` spots and walk to one of the three windows nearest them.
+- **Barriers:** the three stone wall breaks have 15 chunks each, with the stone break and rebuild sounds.
+- **Power:**
+  - The power switch is free. The lever flips and the electric traps come on.
+  - About 6 seconds later, the perks power up and the middle divider slides open.
+- **Perks:** Jugger-Nog, Speed Cola and Double Tap. WaW Quick Revive does not revive you solo.
+- **Electric traps:**
+  - Both traps cost 1000. Their lever swings, then the current runs for 25 seconds, followed by a 25-second cooldown and the PA warning.
+  - Zombies caught in the current die without paying points.
+  - Players are downed, or take 50 damage with Jugger-Nog.
+- **Mystery box:**
+  - Starts in the power room and costs 950.
+  - The teddy bear can appear from the fifth use (uses + 3%), refunding the 950. The bear rises, the box lifts and vanishes, and rubble is left behind.
+  - The box returns only in areas you have opened.
+- **Not implemented yet:**
+  - Bouncing Betties.
+  - Ray Gun, Panzerschreck, flamethrower, rifle grenades and molotovs; the box offers the hitscan guns.
+  - The toilet and dentist-chair easter eggs.
+  - The lamps and zapper lights changing with power.
+  - Burning trap deaths.
+  - The intro text.
+
+Prepare with `npm run extract:verruckt` then `npm run prepare:verruckt`; verify with `npm run test:verruckt`.
+
 ### Black Ops: Ascension
 
 Select **Ascension** in the Black Ops map picker, or open `/black-ops/?map=ascension`. It runs on the same T5 engine as Kino with the map's own rules (`web/bo1-ascension.js`), using the installed `zombie_cosmodrome` fastfiles, its patch and English zones.
@@ -200,7 +233,7 @@ npm run test:bo2
 | **Sound ranges** | The extracted sound definitions have no min/max distances, so hearing ranges are chosen per sound type. |
 | **Saves** | Can't save mid-drink, during Pack-a-Punch, with a grenade in hand or during a burst. Save after the action finishes. |
 | **Multiplayer** | Online co-op for up to four players on the same server: a shared pre-game lobby, the host runs the match, and downed teammates enter last stand (30 s bleedout, revivable, back next round). Solo has no last stand: going down ends the game. Teammates' grenades and original muzzle-flash effects aren't shown yet. |
-| **Other maps** | Verrückt, Shi No Numa and additional Black Ops / Black Ops II maps haven't been started. |
+| **Other maps** | Shi No Numa and additional Black Ops / Black Ops II maps haven't been started. |
 | **Setup automation** | Der Riese extraction isn't scripted yet; see [Setup](#setup). |
 
 ---

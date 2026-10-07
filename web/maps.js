@@ -1,5 +1,6 @@
 export const MAPS=Object.freeze([
   {id:'nacht',title:'Nacht der Untoten',zone:'nacht',asset:'nazi_zombie_prototype',data:'gameplay',image:'loadscreen_zombie1',description:'You drove them deep into the heart of the Reich. You thought they were dead. You were wrong.'},
+  {id:'verruckt',title:'Verrückt',zone:'verruckt',asset:'nazi_zombie_asylum',data:'gameplay/verruckt',image:'loadscreen_zombie_asylum',assetZones:['verruckt-patch','verruckt','common','nacht'],description:'Fight through a haunted asylum split in two. Restore power to reunite the halves, buy the first perks and use the electric traps.'},
   {id:'der-riese',title:'Der Riese',zone:'der-riese',asset:'nazi_zombie_factory',data:'gameplay/der-riese',image:'loadscreen_zombie_factory',description:'The Giant is rising. Battle the undead at the secret research facility. Restore power and link the teleporters to unlock Pack-a-Punch.'}
 ]);
 export const BO1_MAPS=Object.freeze([

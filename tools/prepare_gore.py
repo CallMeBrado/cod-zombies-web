@@ -61,6 +61,7 @@ def prepare():
     for folder, zones, black_ops in [
         ('gameplay', ['nacht', 'common'], False),
         ('gameplay/der-riese', ['der-riese', 'common', 'nacht'], False),
+        ('gameplay/verruckt', ['verruckt-patch', 'verruckt', 'common', 'nacht'], False),
         ('gameplay/bo1-kino', ['bo1-kino', 'bo1-common', 'bo1-base'], True),
         ('gameplay/bo1-cosmodrome', ['bo1-cosmodrome-patch', 'bo1-cosmodrome', 'bo1-common', 'bo1-base'], True),
     ]:

@@ -39,12 +39,15 @@ WAW_BODIES = {
         ('char_usa_marine_player_body2_1', 'char_usa_marine_head2_2', 'char_usa_raider_helm2', 'char_usa_raider_gear3'),
         ('char_usa_marine_player_body1_1', 'char_usa_marine_head3_3', 'char_usa_raider_helm2', 'char_usa_raider_gear2'),
         ('char_usa_marine_player_body2_1', 'char_usa_marine_head4_4', 'char_usa_raider_helm1', 'char_usa_raider_gear3')])],
+    # Verrückt's players are Nacht's four marines.
+    'gameplay/verruckt': None,
     'gameplay/der-riese': [
         {'name': 'Dempsey', 'body': 'char_usa_marine_polonsky_zomb'},
         {'name': 'Nikolai', 'body': 'char_rus_guard_chernova_zomb'},
         {'name': 'Takeo', 'body': 'char_jap_impinf_officer_body_zomb', 'head': 'char_jap_impinf_officer_head', 'hat': 'char_jap_impinf_officer_hat_zomb'},
         {'name': 'Richtofen', 'body': 'char_ger_ansel_body_zomb', 'head': 'char_ger_ansel_head_zomb', 'hat': 'char_ger_waffen_officercap1_zomb'}],
 }
+WAW_BODIES['gameplay/verruckt'] = WAW_BODIES['gameplay']
 
 
 def export(output, zones, log_name):

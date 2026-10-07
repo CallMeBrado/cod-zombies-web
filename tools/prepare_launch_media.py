@@ -11,6 +11,7 @@ GAMES = Path(r'E:\SteamLibrary\steamapps\common')
 MOVIES = {
     'nacht': ('Call of Duty World at War', 'nazi_zombie_prototype_load'),
     'der-riese': ('Call of Duty World at War', 'nazi_zombie_factory_load'),
+    'verruckt': ('Call of Duty World at War', 'nazi_zombie_asylum_load'),
     'kino': ('Call of Duty Black Ops', 'zombie_theater_load'),
     'ascension': ('Call of Duty Black Ops', 'zombie_cosmodrome_load'),
     'dead-ops': ('Call of Duty Black Ops', 'zombietron_load'),

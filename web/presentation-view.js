@@ -22,11 +22,14 @@ export function createBoxView(lid,origin,templates,effects,yawOffset=90){
   return {lid,origin:position,closed:lid.object.quaternion.clone(),weaponRoot,choices,glow};
 }
 export function updateBoxView(v,box,time,settings,effects){
-  const elapsed=time-box.started,closing=box.phase==='closing',open=box.phase==='cycling'||box.phase==='offered';
-  const blend=closing?1-THREE.MathUtils.smoothstep(time-box.closedAt,0,settings.closeTime):open?THREE.MathUtils.smoothstep(elapsed,0,settings.openTime):0;
+  // WaW's moving box keeps its lid open under the bear and closes it as the
+  // box leaves (treasure_chest_move: lid close on weapon_fly_away_end).
+  const leaving=settings.teddyOpen&&box.phase==='leaving',closing=box.phase==='closing'||leaving,closedAt=leaving?box.started:box.closedAt;
+  const elapsed=time-box.started,open=box.phase==='cycling'||box.phase==='offered'||settings.teddyOpen&&box.phase==='teddy';
+  const blend=closing?1-THREE.MathUtils.smoothstep(time-closedAt,0,settings.closeTime):open?THREE.MathUtils.smoothstep(elapsed,0,settings.openTime):0;
   v.lid.object.quaternion.copy(v.closed).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),THREE.MathUtils.degToRad(settings.openAngle)*blend));
-  v.weaponRoot.visible=open||closing&&box.timedOut&&time-box.closedAt<.3;v.glow.visible=open;
-  const rise=closing?1-THREE.MathUtils.smoothstep(time-box.closedAt,0,.3):THREE.MathUtils.smoothstep(elapsed,0,settings.riseTime);
+  v.weaponRoot.visible=open&&box.phase!=='teddy'||closing&&box.timedOut&&time-box.closedAt<.3;v.glow.visible=open;
+  const rise=closing?1-THREE.MathUtils.smoothstep(time-closedAt,0,.3):THREE.MathUtils.smoothstep(elapsed,0,settings.riseTime);
   v.weaponRoot.position.z=v.origin[2]+settings.floatHeight*rise;
   for(const [name,object]of v.choices)object.visible=name===box.weapon;
   if(v.glow.visible)effects.update(v.glow,time-box.started);

@@ -130,7 +130,7 @@ export class Coop {
       case 'teleported':{if(!this.host)return;const r=g.mapRules;if(r&&r.teleporterLinked!==undefined){r.teleporterLinked=false;r.teleportCooldown=g.time+90;g.emit('power');}return;}
       case 'boxTake':{if(!this.host)return;const box=g.boxes.get(msg.target),settings=g.presentation.box||{cooldown:3};
         if(box?.phase==='offered'&&box.owner===from){box.phase='closing';box.closedAt=g.time;box.due=g.time+settings.cooldown;box.timedOut=false;g.emit('sound',{alias:'lid_close'});}return;}
-      case 'rebuild':{if(!this.host)return;const w=g.windows.find(x=>x.target===msg.target);if(!w||w.boards>=6||w.traverser&&!w.traverser.dead)return;
+      case 'rebuild':{if(!this.host)return;const w=g.windows.find(x=>x.target===msg.target);if(!w||w.boards>=w.maxBoards||w.traverser&&!w.traverser.dead)return;
         this.withCredit(from,()=>{const wasOpen=w.boards===0;w.boards++;g.collision.disabled.delete(w.target);if(wasOpen)g.invalidateNavigation([w.target]);g.emit('barrier',w);
           const repairer=this.shooter()||g;if((repairer.barrierReward||0)<Math.min(500,50*g.round)){g.awardPoints(10*(g.powerup.double_points?2:1));repairer.barrierReward=(repairer.barrierReward||0)+10;}});return;}
       case 'use':{if(!this.host)return;const e=g.interactions[msg.index];if(e&&this.worldUse(e))this.withCredit(from,()=>g.mapRules.use(e));return;}

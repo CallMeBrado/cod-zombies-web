@@ -36,3 +36,4 @@ def patch(manifest_path, weapon_dir, output, search):
 if __name__ == '__main__':
     print(patch(DATA/'gameplay/manifest.json', DATA/'nacht/weapons', DATA/'gameplay', ['nacht', 'common']))
     print(patch(DATA/'gameplay/der-riese/manifest.json', DATA/'der-riese/weapons', DATA/'gameplay/der-riese', ['der-riese', 'common', 'nacht']))
+    print(patch(DATA/'gameplay/verruckt/manifest.json', DATA/'verruckt/weapons', DATA/'gameplay/verruckt', ['verruckt-patch', 'verruckt', 'common', 'nacht']))
