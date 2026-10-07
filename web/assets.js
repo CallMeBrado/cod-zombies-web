@@ -97,7 +97,7 @@ export function shadeModel(object,color,vision=null) {
       blending:old.blending,blendSrc:old.blendSrc,blendDst:old.blendDst,visible:old.visible});mat.name=old.name;
       mat.userData.fixedLight=/zombie.*eye/.test(old.name);if(mat.userData.fixedLight)mat.color.setRGB(1,1,1);
       else if(old.userData.heatGlow)heatGlowing(mat,old.userData.heatGlow);
-      else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else if(vision){mat.onBeforeCompile=shader=>film(shader,vision);mat.customProgramCacheKey=()=>'vision';}else mat.onBeforeCompile=film;return mat;};
+      else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else if(vision){mat.onBeforeCompile=shader=>film(shader,vision);mat.customProgramCacheKey=()=>'vision';}else mat.onBeforeCompile=shader=>film(shader);return mat;};
     node.material=Array.isArray(node.material)?node.material.map(convert):convert(node.material);
   });
 }
@@ -217,7 +217,7 @@ export function applyHideTags(root,tags){
 }
 // source: another world to load than the selected map (the Black Ops
 // frontend behind its menu), with that world's own vision.
-export async function loadMap(scene,progress,source={zone:source.zone,asset:source.asset,vision:null}) {
+export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:mapChoice.asset,vision:null}) {
   const world=await get('/data/'+source.zone+'/web-world/'+source.asset+'.json',true);
   const bullets=new BulletTrace();
   const [vb,ib]=await Promise.all([get('/data/'+source.zone+'/web-world/'+world.vertices),get('/data/'+source.zone+'/web-world/'+world.indices)]);
