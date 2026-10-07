@@ -203,7 +203,7 @@ ZOMBIE_SOUND=re.compile(r'zmb_vocals_zombie_|zmb_attack_whoosh$|fly_step_(?:zomb
 def variants(name,entries):
     if not ZOMBIE_SOUND.match(name):return entries[:2]
     seen={};[seen.setdefault(e['url'],e) for e in entries];return list(seen.values())[:12]
-required.update(['fly_step_zombie','fly_step_zombie_sweetner','fly_step_crawler'])
+required.update(['fly_step_zombie','fly_step_zombie_sweetner','fly_step_crawler','mus_zombie_game_over'])
 required.update(f'vox_plr_{i}_exert_pain_medium_{j}' for i in range(4) for j in range(4))
 sounds={name:variants(name,entries) for name,entries in aliases.items() if name in required or re.match(r'(?:zmb_|zombie_|evt_|wpn_knife|wpn_grenade|mus_perks)',name)}
 for name,native in remap.items():

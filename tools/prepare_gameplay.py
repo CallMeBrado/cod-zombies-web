@@ -51,6 +51,8 @@ def prepare(game=GAME):
     aliases.update(w['meleeSwipeSoundPlayer'] for w in weapons.values() if w['meleeSwipeSoundPlayer'])
     # Zombie animation notetracks: vocals, swipes and footsteps.
     aliases.update(ZOMBIE_SOUNDS)
+    # end_game(): the game-over song (add_sound end_of_game).
+    aliases.add('mx_game_over')
     hud = DATA / 'gameplay/hud'
     hud.mkdir(parents=True, exist_ok=True)
     # _gameskill.gsc's red overlay and the engine's damage direction arrow.

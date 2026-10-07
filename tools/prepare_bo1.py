@@ -188,7 +188,9 @@ remap = dict(mx_splash_screen='mus_zombie_splash_screen',mx_zombie_wave_1='mus_t
              perks_power_on='zmb_perks_power_on',packa_rollers_loop='zmb_perks_packa_loop',packa_weap_upgrade='zmb_perks_packa_upgrade',packa_weap_ready='zmb_perks_packa_ready',ticktock_loop='zmb_perks_packa_ticktock',packa_deny='zmb_perks_packa_deny')
 aliases.update(remap.values());aliases.update(['evt_teleporter_activate_start','evt_teleporter_activate_finish','evt_teleporter','wpn_knife_pull_plr','zmb_perks_packa_upgrade'])
 aliases.update(['zmb_vocals_zombie_ambience','zmb_vocals_zombie_sprint','zmb_vocals_zombie_attack','zmb_vocals_zombie_teardown','zmb_vocals_zombie_taunt','zmb_vocals_zombie_behind',
-                'zmb_vocals_zombie_death','zmb_vocals_zombie_crawler','zmb_zombie_spawn','zmb_attack_whoosh','fly_fall_zombie','evt_player_swiped'])
+                'zmb_vocals_zombie_death','zmb_vocals_zombie_crawler','zmb_zombie_spawn','zmb_attack_whoosh','fly_fall_zombie','evt_player_swiped',
+                # The game_over music state.
+                'mus_zombie_game_over'])
 aliases.update(['zmb_vox_ann_maxammo','zmb_vox_ann_instakill','zmb_vox_ann_doublepoints','zmb_vox_ann_nuke','zmb_vox_ann_carpenter','zmb_vox_ann_magicbox'])
 aliases.update(line.split()[-1] for w in gestures.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
 # T5 viewmodel clips name their sounds in notetracks ("sndnt#fly_colt45_mag_in"):

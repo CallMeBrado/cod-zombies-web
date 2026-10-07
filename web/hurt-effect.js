@@ -32,7 +32,7 @@ export class HurtEffect {
     this.arc=new Image();this.arc.src=hudBase+arc+'.png';
     this.canvas=canvas;this.ctx=canvas.getContext('2d');this.reset();
   }
-  reset(){this.red=null;this.blur=null;this.arcs=[];this.wasRed=false;this.overlay.style.opacity='0';this.view.style.filter='';this.drawn=false;}
+  reset(){this.red=null;this.blur=null;this.arcs=[];this.wasRed=false;this.overlay.style.opacity='0';this.view.style.filter='';this.ctx?.clearRect(0,0,this.canvas.width,this.canvas.height);this.drawn=false;}
   hit({from,health,max},time,position){
     const ratio=max?health/max:1,entered=ratio<=RED&&!this.wasRed;
     this.blur=entered?{start:time,amount:3.6,duration:2}:{start:time,amount:3,duration:.8};

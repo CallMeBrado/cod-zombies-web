@@ -41,6 +41,7 @@ import {divePresentation} from './player-movement.js';
 import {configureDive,predictedDive} from './dive-config.js';
 import {HurtEffect} from './hurt-effect.js';
 import {ZombieVox,ZOMBIE_VOX} from './zombie-vox.js';
+import {GameOverSequence} from './game-over.js';
 const mapChoice=selectedMap();
 const bo2=mapChoice.game==='black-ops-2',blackOps=bo2||mapChoice.game==='black-ops';
 // The original overlay_low_health and hit_direction art (BO2's hit_direction_zm is additive).
@@ -50,7 +51,7 @@ const characterNames=bo2?BO2_CHARACTERS:CHARACTERS,characterArms=bo2?BO2_ARMS:CH
 // Black Ops solo plays a random one of the four characters (player_set_viewmodel);
 // ?character=0-3 picks one. A save keeps its character.
 const characterParam=new URLSearchParams(location.search).get('character');
-let zombieVox=null;
+let zombieVox=null,gameOver=null,gameOverStats=null;
 let character=blackOps?(/^[0-3]$/.test(characterParam||'')?Number(characterParam):Math.floor(Math.random()*4)):0,voice=null;
 
 const $=id=>document.getElementById(id);
@@ -134,6 +135,7 @@ const nodePos=e=>e.origin.split(/\s+/).map(Number);
 
 function notice(text){$('notice').textContent=text;noticeDue=performance.now()+3500;}
 function cameraPose() {
+  if(gameOver?.pose(camera))return;
   if(coop?.dead&&session){const id=[...coop.remotes.keys()].find(id=>{const s=session.sample(id);return s&&!s.dead;}),s=id&&session.sample(id);
     if(s){camera.up.set(0,0,1);camera.position.set(s.p[0],s.p[1],s.p[2]+(s.stance==='prone'||s.down?11:s.stance==='crouch'?40:60));camera.lookAt(camera.position.clone().add(new THREE.Vector3(Math.cos(s.yaw)*Math.cos(s.pitch),Math.sin(s.yaw)*Math.cos(s.pitch),Math.sin(s.pitch))));return;}}
   const p=game?game.renderPosition(game.player):[0,424,17],d=game?divePresentation(game,game.time-1/120+game.accumulator):null;
@@ -265,6 +267,36 @@ async function enterPlay(fromMatch=false) {
   }catch(error){console.error(error);state.error=error.message;menu('Unable to start audio',error.message,'Try again');}
   finally{$('play').disabled=false;}
 }
+// end_game(): the downed player falls, GAME OVER fades in with the
+// game-over music, and the intermission cameras tour the map before the
+// end-of-game menu. Any key or click after the first second skips ahead.
+const GAME_OVER_MUSIC=bo2||blackOps?'mus_zombie_game_over':'mx_game_over';
+function startGameOver(stats){
+  if(gameOver?.active||state.mode==='dead')return;
+  gameOverStats=stats;state.mode='gameover';paused=true;controls.reset();mouse.reset();document.body.classList.remove('playing');document.body.classList.add('game-over');
+  gameOver??=new GameOverSequence({entities:game.entities,game:blackOps?'black-ops':'waw'});
+  gameOver.start({round:stats.round,eye:camera.position.toArray(),yaw:state.yaw,pitch:state.pitch,eyeAbove:game.viewHeight??60});
+  if(document.pointerLockElement)document.exitPointerLock();
+}
+function gameOverEvent(event){
+  if(event==='start'){
+    // The zombies left standing stop where they are.
+    for(const e of game.enemies)if(!e.dead&&!e.attack){e.gait='ai_zombie_idle_v1';e.attacking=false;}
+    // Black Ops switches to the game_over music state (SILENCE beneath it);
+    // Der Riese sets its end_of_game music state.
+    if(blackOps||mapChoice.id==='der-riese'){audio?.stopSession(true);audio?.play(GAME_OVER_MUSIC,1);}
+  }
+  // Nacht plays end_of_game a second after GAME OVER appears.
+  if(event==='music'&&!blackOps&&mapChoice.id!=='der-riese'){audio?.stopSession(true);audio?.play(GAME_OVER_MUSIC,1);}
+  // intermission(): players get their health back, ending the red overlay.
+  if(event==='intermission')hurt.reset();
+  // zombie_game_over_death(): one at a time, each zombie loses its head.
+  if(event==='gib'){const e=game.enemies.find(x=>!x.dead&&x.kind!=='ghost');if(e){e.dead=true;e.deathHeadshot=true;e.deathTime=game.time;e.killDirection=[Math.random()-.5,Math.random()-.5,.2];game.emit('kill',e);}}
+  if(event==='end')finishGameOver();
+}
+function finishGameOver(){if(!gameOver?.active)return;gameOver.stop();document.body.classList.remove('game-over');death(gameOverStats);}
+addEventListener('keydown',e=>{if(!gameOver?.active)return;e.stopImmediatePropagation();if(!e.repeat&&gameOver.time>1)finishGameOver();});
+addEventListener('pointerdown',e=>{if(!gameOver?.active)return;e.stopImmediatePropagation();e.preventDefault();if(gameOver.time>1)finishGameOver();},true);
 function death(stats) {
   state.mode='dead';paused=true;controls.reset();mouse.reset();presence.setStatus('lobby');if(coop){coopEnded=true;session?.stop();}
   audio?.stopSession(true);deathFxTime=0;grenadeView?.reset();
@@ -333,7 +365,7 @@ function resetVisuals() {
   buriedView?.reset();
   deathFxTime=0;
   grenadeView?.reset();
-  state.yaw=game?.data.map?Number(game.entities.find(e=>e.targetname==='initial_spawn_points').angles.split(' ')[1])*Math.PI/180:Math.PI;state.pitch=0;factoryVisuals();kickPitch=0;kickYaw=0;damageFlash=0;hurt.reset();zombieVox?.reset();controls.reset();aimBlend=0;mouse.reset();lastLight=-1;cameraPose();
+  state.yaw=game?.data.map?Number(game.entities.find(e=>e.targetname==='initial_spawn_points').angles.split(' ')[1])*Math.PI/180:Math.PI;state.pitch=0;factoryVisuals();kickPitch=0;kickYaw=0;damageFlash=0;hurt.reset();zombieVox?.reset();gameOver?.stop();document.body.classList.remove('game-over');controls.reset();aimBlend=0;mouse.reset();lastLight=-1;cameraPose();
 }
 function traceEnemy(origin,direction,max,all=false) {
   raycaster.set(new THREE.Vector3(...origin),new THREE.Vector3(...direction));raycaster.far=max;
@@ -474,7 +506,7 @@ async function init() {
       // (and BO2 the character's pain exert, at most every 1.5-3 s).
       if(e.from){kickPitch+=THREE.MathUtils.degToRad(-1.5-Math.random());kickYaw+=THREE.MathUtils.degToRad((Math.random()-.5)*2);
         if(blackOps)audio.play('evt_player_swiped',1);
-        if(bo2&&game.time>=exertDue){exertDue=game.time+1.5+Math.random()*1.5;audio.play('vox_plr_'+character+'_exert_pain_medium_'+Math.floor(Math.random()*4),1);}}},death,
+        if(bo2&&game.time>=exertDue){exertDue=game.time+1.5+Math.random()*1.5;audio.play('vox_plr_'+character+'_exert_pain_medium_'+Math.floor(Math.random()*4),1);}}},death:startGameOver,
     sound:s=>audio.play(s.alias,s.volume??1,{position:s.position,near:s.near,far:s.far,exclusive:s.exclusive}),gesture,
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
     // Weapon switch: hold the old gun's putaway, then draw the new gun.
@@ -574,6 +606,7 @@ function frame(time) {
   const dt=Math.max(0,Math.min((time-frameTime)/1000,.1));frameTime=time;
   gamepads.poll(dt);controllerHud.update(game,state.mode==='playing');
   if(!state.ready||state.mode==='loading'){requestAnimationFrame(frame);return;}
+  if(gameOver?.active)for(const event of gameOver.update(dt))gameOverEvent(event);
   if(!paused)mouse.update(time);
   if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){kickPitch+=(Math.random()-.5)*shake.amplitude*.04;kickYaw+=(Math.random()-.5)*shake.amplitude*.04;}}cameraPose();if(game)game.ads=aimBlend;
   // Aiming ends a sprint at once; the sights rise while the player slows.
@@ -593,7 +626,7 @@ function frame(time) {
   if(Math.abs(camera.fov-fov)>.01){camera.fov=fov;camera.updateProjectionMatrix();}cameraPose();
   for(const v of visuals.values()) {
     if(v.enemy.dead&&game.time-v.enemy.deathTime>5){actors.release(v.enemy.id);continue;}
-    actors.updateOne(v,paused?0:dt,game.renderPosition(v.enemy));
+    actors.updateOne(v,paused&&!gameOver?.active?0:dt,game.renderPosition(v.enemy));
   }
   if(game&&!paused&&state.mode==='playing')zombieVox?.update(game.time,game,game.yaw);
   for(const [drop,v]of dropVisuals){if(drop.used||game.time>drop.expires){effects.dispose(v.glow);scene.remove(v.root);dropVisuals.delete(drop);}else updateDrop(drop,v);}
@@ -610,7 +643,7 @@ function frame(time) {
     const color=map.illumination(game.player.position);weaponView?.object?.traverse(n=>{if(n.isMesh&&n.material.color&&!n.material.userData.fixedLight)n.material.color.setRGB(...color.map(v=>Math.max(.09,v*1.5)));});
     for(const v of visuals.values())actors.light(v);
   }
-  if(game)hurt.update(game.time,{health:game.player.health,max:game.mapRules?.maxHealth||100,viewYaw:game.yaw});
+  if(game)hurt.update(game.time+deathFxTime,{health:game.player.health,max:game.mapRules?.maxHealth||100,viewYaw:game.yaw});
   map?.updateVisibility(camera);applyCellCulling();
   renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
   if(game&&state.mode==='playing'&&time>=hudDue){

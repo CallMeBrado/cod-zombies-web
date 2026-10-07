@@ -98,3 +98,16 @@ body[data-menu-context=start][data-menu-view=home] #waw-brand{display:flex;flex-
 .toast-check{display:grid;place-items:center;width:calc(var(--unit)*26);height:calc(var(--unit)*26);border-radius:50%;background:#4f8f3d;color:#fff;font:bold calc(var(--unit)*16)/1 Arial,sans-serif}
 #save-toast-title{font-size:calc(var(--unit)*18);color:#bff0a8}#save-toast-detail{font-size:calc(var(--unit)*10);color:#d9d9d9;margin-top:calc(var(--unit)*2)}
 @media(max-width:600px) and (orientation:portrait){#menu-saves{inset:90px 4vw 60px}#overlay .save-slot .slot-main{grid-template-columns:96px minmax(0,1fr)}.slot-gear{white-space:normal}}
+
+/* end_game(): GAME OVER (fontScale 3) and the rounds survived (fontScale 2),
+   10 above and 20 below centre in World at War, 130 and 100 above it in Black Ops. */
+#game-over{position:fixed;inset:0;pointer-events:none;z-index:30;display:none}
+#game-over.active{display:block}
+#game-over .game-over-black{position:absolute;inset:0;background:#000;opacity:0}
+#game-over .game-over-text{position:absolute;inset:0;color:#fff;text-align:center;text-shadow:0 0 .2em #000,0 .08em .12em #000;opacity:0}
+#game-over .game-over-title,#game-over .game-over-rounds{position:absolute;left:0;right:0;transform:translateY(-50%);font-weight:700;letter-spacing:.04em}
+#game-over .game-over-title{top:calc(50% - 10 * 100vh / 480);font-size:calc(3 * 2.6vh)}
+#game-over .game-over-rounds{top:calc(50% + 20 * 100vh / 480);font-size:calc(2 * 2.6vh)}
+#game-over.black-ops .game-over-title{top:calc(50% - 130 * 100vh / 480)}
+#game-over.black-ops .game-over-rounds{top:calc(50% - 100 * 100vh / 480)}
+body.game-over #overlay,body.game-over footer,body.game-over #fps-counter{display:none}

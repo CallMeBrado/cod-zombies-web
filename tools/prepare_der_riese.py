@@ -221,6 +221,8 @@ def prepare():
     aliases.update(line.split()[-1] for w in weapons.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
     # Zombie notetrack sounds and the scripted death_vocals / behind_vocals.
     aliases.update(['amb_vocals','sprint_vocals','attack_vocals','attack_whoosh','step_zombie','step_sweetner','crawl_vocals','crawl_vocals_slow','board_vocals','taunt_vocals','death_vocals','behind_vocals'])
+    # end_game(): setmusicstate("end_of_game").
+    aliases.add('mx_game_over')
     aliases.update(['switch_flip','bridge_lower','bridge_hit','mx_jugger_jingle','mx_speed_jingle','mx_doubletap_jingle','mx_revive_jingle','mx_packa_jingle','teleport_in','teleport_out','packa_door_2'])
     convert_sounds(aliases, sounds)
     labels=['Colt M1911','Kar98k','Gewehr 43','M1A1 Carbine','M1 Garand','Thompson','BAR','Double barrel','Trench gun','MP40','.357 Magnum','STG-44','MG42','FG42','Type 100','PPSh-41','Browning M1919']
