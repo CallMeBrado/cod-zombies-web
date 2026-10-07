@@ -53,7 +53,8 @@ export class Bo2Menu {
     });
     // GamepadButton / MapRotationInput: step to the previous or next location.
     const cycle=document.createElement('div');cycle.className='bo2-cycle';
-    for(const [dir,label] of [[-1,'◀'],[1,'▶']]){const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.menuSound='none';b.setAttribute('aria-label',dir<0?'Previous location':'Next location');b.addEventListener('click',()=>this.step(dir));cycle.append(b);}
+    for(const dir of [-1,1]){const b=document.createElement('button');b.type='button';b.className=dir<0?'bo2-prev':'bo2-next';b.dataset.menuSound='none';b.setAttribute('aria-label',dir<0?'Previous location':'Next location');
+      b.innerHTML=`<svg viewBox="0 0 24 48" aria-hidden="true"><polyline points="${dir<0?'18,4 6,24 18,44':'6,4 18,24 6,44'}"/></svg>`;b.addEventListener('click',()=>this.step(dir));cycle.append(b);}
     this.pins.append(cycle);
     addEventListener('keydown',e=>{if(this.mode!=='select'||!this.visible()||e.target.closest?.('input,select,textarea'))return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();this.step(e.key==='ArrowLeft'?-1:1);}});
     document.body.prepend(root);this.root=root;
@@ -118,6 +119,8 @@ export class Bo2Menu {
   // while it faces the viewer.
   placePins(){
     const r=this.canvas.getBoundingClientRect(),radius=Math.min(r.width,r.height)/2*.86,cx=r.left+r.width/2,cy=r.top+r.height/2,select=this.mode==='select';
+    // The location arrows sit either side of the globe.
+    const key=`${cx|0},${cy|0},${radius|0}`;if(key!==this.globeKey){this.globeKey=key;const st=document.body.style;st.setProperty('--bo2-globe-x',cx+'px');st.setProperty('--bo2-globe-y',cy+'px');st.setProperty('--bo2-globe-r',radius+'px');}
     const lon=this.lon*Math.PI/180,lat=this.lat*Math.PI/180;
     for(const place of this.places){
       const a=place.lon*Math.PI/180,b=place.lat*Math.PI/180;

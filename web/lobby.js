@@ -16,6 +16,8 @@ export class ZombiesLobby {
       const url=new URL(location.href);url.searchParams.set('map',this.selection.id);location.assign(url.href);
     };
     this.render();
+    addEventListener('resize',()=>this.layout());
+    if(typeof ResizeObserver!=='undefined'){const watch=new ResizeObserver(()=>this.layout());for(const el of [document.querySelector('#menu-home .map-info'),$('lobby-players')])if(el)watch.observe(el);}
   }
   choose(map){this.selection=map;this.render();}
   render(){
@@ -27,6 +29,18 @@ export class ZombiesLobby {
     this.menu.setText('map-accept','SELECT MAP');this.menu.text?.paint();
   }
   ready(){this.localStatus='READY';this.renderPlayers();}
+  // The players panel grows with teammates and other lobbies, and the map
+  // text with its messages: panels sharing a column stack instead of
+  // covering each other (each game's menu places them differently).
+  layout(){
+    const info=document.querySelector('#menu-home .map-info'),box=$('lobby-players'),actions=document.querySelector('#menu-home .pause-actions');if(!box||!actions)return;
+    for(const el of [box,actions])el.style.top='';
+    if(document.body.dataset.menuContext!=='start'||!box.offsetHeight)return;
+    const gap=innerHeight/480*12;
+    const stack=(upper,lower)=>{if(!upper?.offsetHeight)return;const u=upper.getBoundingClientRect(),l=lower.getBoundingClientRect();
+      if(u.left<l.right&&l.left<u.right&&l.top<u.bottom+gap&&l.bottom>u.top){const parent=(lower.offsetParent||document.body).getBoundingClientRect();lower.style.top=Math.round(u.bottom+gap-parent.top)+'px';}};
+    stack(info,box);stack(box,actions);stack(info,actions);
+  }
   // This browser's lobby (LobbyPresence): just this player unless they joined
   // someone, or chose to share theirs; the other open lobbies on this map.
   setShared(state){this.shared=state;this.renderPlayers();}
@@ -60,6 +74,7 @@ export class ZombiesLobby {
       }
     }
     box.replaceChildren(box.querySelector('.lobby-players-heading'),...rows,...extra);
+    this.layout();
     if(document.body.dataset.menuContext==='start')$('menu-copy').textContent=players.length>1?`Lobby · ${players.length} of ${state.max} players`:'Solo Zombies';
     this.menu.text?.paint();
   }
