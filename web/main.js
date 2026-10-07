@@ -471,7 +471,7 @@ async function init() {
     // Earthquake(): strength falls off with distance from the source.
     shake:e=>{const d=camera.position.distanceTo(new THREE.Vector3(...e.position));if(d<e.radius)shake={until:game.time+e.duration,amplitude:e.amplitude*(1-d/e.radius)};},stopLoop:({id})=>{loops.get(id)?.record?.stop(.05);loops.delete(id);},sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
-    explosion:g=>{combatEffects.explosion(g,game.time);}
+    explosion:g=>{combatEffects.explosion(g,game.time,g.weapon?game.data.weapons[g.weapon]?.projExplosionEffect:null);}
   },presentation);
   if(blackOps)game.character=character;
   actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps||bo2){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();

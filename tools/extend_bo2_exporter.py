@@ -108,6 +108,21 @@ text=text.replace('webName.find("o_zombie_") == 0;', 'webName.find("o_zombie_") 
 # Root rotation (delta quaternion) as well as root translation: Arthur's
 # drink-and-aim clip turns him around before he charges.
 if '"rotation"' not in text:text=text.replace('            if(t.m_constant)delta["constant"]=*t.m_constant;\n        }','            if(t.m_constant)delta["constant"]=*t.m_constant;\n        }\n        if(commonParts.m_delta_track && commonParts.m_delta_track->m_quat) {\n            const auto& q=*commonParts.m_delta_track->m_quat; json values=json::array();\n            for(const auto& f:q.m_frames)values.push_back(f.value);\n            for(const auto& f:q.m_frames2)values.push_back(f.value);\n            if(delta.is_null())delta=json::object();\n            delta["rotation"]={{"indices",q.m_indices},{"values",values},{"full",!q.m_frames.empty()}};\n        }')
+# Weapon effects for Buried's projectiles: the Ray Gun and Mark II impacts
+# and trails, rocket and grenade-launcher trails.
+dumper=SOURCE/'Game/T6/WebWorld/WebWorldDumperT6.cpp'
+if dumper.exists():
+    dtext=dumper.read_text()
+    if 'name.find("raygun")' not in dtext:
+        dtext=dtext.replace('&& name.find("fx_grenade_smoke_w") == std::string::npos','&& name.find("raygun") == std::string::npos && name.find("fx_trail_rpg") == std::string::npos && name.find("fx_trail_grenade") == std::string::npos\n            && name.find("fx_grenade_smoke_w") == std::string::npos')
+        dumper.write_text(dtext)
+# Each particle's random spawn angles (pitch, yaw, roll ranges) turn its local
+# velocity: they spread a grenade's sparks into a burst instead of a column.
+if dumper.exists():
+    dtext=dumper.read_text()
+    if '{"angles"' not in dtext:
+        dtext=dtext.replace('{"radius",range(e.spawnOffsetRadius)},','{"radius",range(e.spawnOffsetRadius)},{"angles",json::array({range(e.spawnAngles[0]),range(e.spawnAngles[1]),range(e.spawnAngles[2])})},')
+        dumper.write_text(dtext)
 # Buried's catwalk and floor collapse play authored fxanim clips.
 if 'webName.find("fxanim_")' not in text:text=text.replace('webName.find("o_zmb_") == 0;', 'webName.find("o_zmb_") == 0 || webName.find("fxanim_") == 0;')
 template.write_text(text)

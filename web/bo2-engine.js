@@ -442,6 +442,8 @@ export class BlackOps2Engine extends BlackOpsEngine {
           if(r<d.explosionRadius&&this.collision.trace(p.position,player,[0,0,0],1).fraction>.98)this.damagePlayer(Math.min(100,d.explosionOuterDamage+(d.explosionInnerDamage-d.explosionOuterDamage)*(1-r/d.explosionRadius)));
           super.emit('explosion',p);super.emit('sound',{alias:d.projExplosionSound||'grenade_explode',position:p.position});
         }
+        // Non-explosive projectiles (Ray Gun Mark II) still burst where they stop.
+        else if(d.projExplosionEffect&&(ray?.wall||ray?.hit))super.emit('explosion',p);
         super.emit('buriedProjectileRemove',p.id);
       }
     }this.projectiles=this.projectiles.filter(p=>!p.done);

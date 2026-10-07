@@ -6,7 +6,7 @@ import {ARTHUR_LOOPS} from './bo2-arthur.js';
 // state (and its saves) instead of drifting on its own clock.
 class Posed {
   constructor(object){this.object=object;this.mixer=new THREE.AnimationMixer(object);this.actions=new Map();this.current=null;}
-  async add(name,shared=false){this.actions.set(name,this.mixer.clipAction(await originalAnimation(name,this.object,shared)));}
+  async add(name,shared=false){this.actions.set(name,this.mixer.clipAction(restRelative(await originalAnimation(name,this.object,shared),this.object)));}
   duration(name){return this.actions.get(name)?.getClip().duration||0;}
   pose(name,time){
     const action=this.actions.get(name);if(!action)return;
@@ -40,7 +40,7 @@ export class BuriedView {
     await this.prepareBoxes(manifest);
     for(const [kind,d]of Object.entries(manifest.equipment)){
       const object=cloneModel(await model(d.model));shadeModel(object,[.4,.34,.26]);
-      const clips=new Map();for(const name of [d.animation,d.launchAnimation].filter(Boolean))clips.set(name,await originalAnimation(name,object,false));this.templates.set(kind,{object,clips});
+      const clips=new Map();for(const name of [d.animation,d.launchAnimation].filter(Boolean))clips.set(name,restRelative(await originalAnimation(name,object,false),object));this.templates.set(kind,{object,clips});
     }
     for(const d of Object.values(manifest.weapons))if(d.weaponType==='projectile'&&d.projectileModel&&!this.projectileTemplates.has(d.projectileModel)){
       const object=cloneModel(await model(d.projectileModel));shadeModel(object,[1,1,1]);

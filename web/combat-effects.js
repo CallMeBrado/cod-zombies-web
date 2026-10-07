@@ -18,12 +18,18 @@ export class CombatEffects {
   prepareGrenades(template,effects){
     this.effects=effects;
     for(const slot of this.grenades){this.scene.remove(slot.mesh);slot.mesh=clone(template);slot.mesh.visible=false;this.scene.add(slot.mesh);}
-    for(let i=0;i<4;i++){const root=new THREE.Group();root.add(effects.create('explosions/grenadeexp_concrete',0),effects.create('explosions/fx_grenade_flash',0));root.visible=false;this.scene.add(root);this.explosions.push({root,due:0,born:0});}
+    for(let i=0;i<4;i++)this.explosions.push(this.blast(['explosions/grenadeexp_concrete','explosions/fx_grenade_flash']));
+    this.weaponBlasts=new Map();
     const geometries=new Set(),materials=new Set();for(const root of [...this.impacts.map(v=>v.mesh),...this.grenades.map(v=>v.mesh),...this.explosions.map(v=>v.root)])root.traverse(n=>{if(n.isMesh){geometries.add(n.geometry);for(const m of [n.material].flat())materials.add(m);}});this.resourceCounts={geometries:geometries.size,materials:materials.size};
   }
-  explosion(grenade,time){
+  // An effect's local X is its forward; explosions are played facing up.
+  blast(names){const root=new THREE.Group();root.rotation.y=-Math.PI/2;for(const name of names)root.add(this.effects.create(name,0));root.visible=false;this.scene.add(root);return {root,due:0,born:0};}
+  // A weapon's own impact effect (the Ray Gun's green burst), else the grenade.
+  explosion(grenade,time,effect=null){
     if(!this.explosions.length)return;
-    const slot=this.explosions[this.nextExplosion++%this.explosions.length];slot.born=time;slot.root.position.fromArray(grenade.position);slot.root.position.z+=4;slot.root.visible=true;
+    let pool=this.explosions;
+    if(effect&&this.effects.has(effect)){if(!this.weaponBlasts.has(effect))this.weaponBlasts.set(effect,{slots:[this.blast([effect]),this.blast([effect])],next:0});pool=this.weaponBlasts.get(effect).slots;}
+    const slot=pool===this.explosions?this.explosions[this.nextExplosion++%this.explosions.length]:pool[this.weaponBlasts.get(effect).next++%pool.length];slot.born=time;slot.root.position.fromArray(grenade.position);slot.root.position.z+=4;slot.root.visible=true;
     for(const root of slot.root.children)this.effects.restart(root,time);
     slot.due=Math.max(...slot.root.children.map(root=>this.effects.endTime(root)));
   }
@@ -37,8 +43,8 @@ export class CombatEffects {
   update(time,interpolation=1){
     for(const v of this.impacts){if(!v.mesh.visible)continue;if(time>=v.due){v.mesh.visible=false;continue;}const age=time-v.born;v.mesh.scale.setScalar(v.radius*Math.exp(age*7));v.mesh.material.opacity=.7*Math.exp(-age*9);}
     for(const v of this.grenades){if(!v.grenade)continue;if(v.grenade.exploded){v.grenade=null;v.mesh.visible=false;}else{const g=v.grenade,p=g.previousPosition||g.position;v.mesh.visible=!g.held;v.mesh.position.set(...g.position.map((x,i)=>p[i]+(x-p[i])*interpolation));const age=time-(g.spawned||0);v.mesh.rotation.set(age*7,age*4,age*3);}}
-    for(const v of this.explosions){if(!v.root.visible)continue;if(time>=v.due){v.root.visible=false;continue;}for(const root of v.root.children)this.effects.update(root,time);}
+    for(const v of [...this.explosions,...[...(this.weaponBlasts?.values()||[])].flatMap(b=>b.slots)]){if(!v.root.visible)continue;if(time>=v.due){v.root.visible=false;continue;}for(const root of v.root.children)this.effects.update(root,time);}
   }
-  reset(){for(const v of this.impacts)v.mesh.visible=false;for(const v of this.grenades){v.mesh.visible=false;v.grenade=null;}for(const v of this.explosions)v.root.visible=false;this.next=0;this.nextExplosion=0;}
+  reset(){for(const v of this.impacts)v.mesh.visible=false;for(const v of this.grenades){v.mesh.visible=false;v.grenade=null;}for(const v of [...this.explosions,...[...(this.weaponBlasts?.values()||[])].flatMap(b=>b.slots)])v.root.visible=false;this.next=0;this.nextExplosion=0;}
   diagnostics(){return {impactCapacity:this.impacts.length,activeImpacts:this.impacts.filter(v=>v.mesh.visible).length,activeGrenades:this.grenades.filter(v=>v.grenade).length,explosionCapacity:this.explosions.length,activeExplosions:this.explosions.filter(v=>v.root.visible).length,originalGrenade:!!this.effects,...(this.resourceCounts||{geometries:1,materials:this.impacts.length+1})};}
 }

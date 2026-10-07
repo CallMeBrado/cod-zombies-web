@@ -551,11 +551,16 @@ export async function loadMap(scene,progress) {
 
 // T6 character clips store bone translations below the root as offsets from
 // the rest pose (lip and brow tracks move a fraction of a unit). Read as
-// absolute positions they fold faces and shoulders. Tags keep their rest place.
+// absolute positions they fold faces and shoulders, and pile a prop's parts
+// (the start room's floor boards) at its origin. Character tags keep their
+// rest place; a prop's tag_animate root still moves.
 export const t6Clips=mapChoice.game==='black-ops-2';
+// World at War's effect element types run 2 tail, 3 line, 4 trail; Black
+// Ops (T5/T6) insert a rotated sprite before them.
+export const t4Effects=!['black-ops','black-ops-2'].includes(mapChoice.game);
 export function restRelative(clip,root){
   const rest=new Map();root.traverse(b=>{if(b.isBone&&!rest.has(b.name))rest.set(b.name,b.position.clone());});
-  clip.tracks=clip.tracks.filter(t=>{const [bone,property]=t.name.split('.');return property!=='position'||!bone.startsWith('tag_');});
+  clip.tracks=clip.tracks.filter(t=>{const [bone,property]=t.name.split('.');return property!=='position'||!bone.startsWith('tag_')||bone==='tag_animate';});
   for(const t of clip.tracks){const [bone,property]=t.name.split('.'),r=rest.get(bone);if(property!=='position'||bone==='j_mainroot'||!r)continue;
     for(let k=0;k<t.values.length;k+=3){t.values[k]+=r.x;t.values[k+1]+=r.y;t.values[k+2]+=r.z;}}
   return clip;

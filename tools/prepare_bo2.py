@@ -152,7 +152,7 @@ for alias,board in [('high',6),('low',1),('left',3),('right',4)]:
 presentation=dict(animations=animations,effects={},actors=dict(body='c_zom_zombie_buried_miner_body1',head='c_zom_zombie_buried_male_head1'),powerups=dict(full_ammo='zombie_ammocan',insta_kill='zombie_skull',double_points='zombie_x2_icon',nuke='zombie_bomb',carpenter='zombie_carpenter'),box=dict(openAngle=105,openTime=.5,floatHeight=40,riseTime=3,offerTime=12,closeTime=.5,cooldown=3,cycleDelays=[.05]*20+[.1]*10+[.2]*5+[.3]*3))
 for z in reversed(SEARCH):
     for p in (DATA/z/'web-fx').rglob('*.json'):
-        effect=load_effect(p,SEARCH,effect_blending='grenade' in p.name)
+        effect=load_effect(p,SEARCH,effect_blending=True)
         if 'grenadeexp_concrete' in effect['name']:effect['name']='explosions/grenadeexp_concrete'
         presentation['effects'][effect['name']]=effect
 
