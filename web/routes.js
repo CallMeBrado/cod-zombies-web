@@ -5,7 +5,7 @@ export function pageRoute(url){
     return {template:'home.html',game:null};
   }
   if(['/world-at-war','/world-at-war/','/world-at-war/index.html'].includes(url.pathname))return {template:'index.html',game:'world-at-war'};
-  if(['/black-ops','/black-ops/','/black-ops/index.html'].includes(url.pathname))return {template:'bo1.html',game:'black-ops'};
+  if(['/black-ops','/black-ops/','/black-ops/index.html'].includes(url.pathname))return {template:url.searchParams.get('map')==='dead-ops'?'doa.html':'bo1.html',game:'black-ops'};
   if(['/black-ops-2','/black-ops-2/','/black-ops-2/index.html'].includes(url.pathname))return {template:'bo2.html',game:'black-ops-2'};
   return null;
 }

@@ -52,6 +52,7 @@ async function diffuse(name) {
   throw new Error('Original texture unavailable: '+name);
 }
 function film(shader) {
+  if(mapChoice.engine==='dead-ops')return;
   if(mapChoice.game==='black-ops-2'){
     shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
       float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
@@ -59,7 +60,7 @@ function film(shader) {
       gl_FragColor.rgb=outgoingLight;
       #include <tonemapping_fragment>`);return;
   }
-  if(mapChoice.game==='black-ops'){
+  if(mapChoice.game==='black-ops'&&mapChoice.engine!=='dead-ops'){
     // Kino's own zombie_theater.vision saturation, contrast and tint values.
     shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
       float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
@@ -380,6 +381,7 @@ export async function loadMap(scene,progress) {
   const toolMaterial=/^w(?:p)?c\/(shadowcaster|caulk|hdrportal|nodraw|clip|trigger|hint|skip|portal)/i;
   world.surfaces.forEach((s,i)=>{
     if(toolMaterial.test(s.material))return;
+    if(mapChoice.engine==='dead-ops'&&/\$default3d|clip|trigger/.test(s.material))return;
     const id=surfaceToModel.get(i)||0;
     if(id===0){
       const {map,normal,layer,info}=maps.get(s.material),d=arrayLayer(map,'d'),n=normal?arrayLayer(normal,'n'):null,l=layer?arrayLayer(layer,'d'):null;
@@ -617,7 +619,8 @@ export async function originalAnimation(name,root,shared=false) {
 }
 
 export class OriginalAudio {
-  constructor(sounds,unlockedContext=null){
+  constructor(sounds,unlockedContext=null,requiredAliases=['mx_splash_screen','mx_zombie_wave_1','chalk']){
+    this.requiredAliases=requiredAliases;
     this.sounds=sounds;this.context=null;this.unlockedContext=unlockedContext;this.buffers=new Map();this.loading=null;this._volume=.5;
     this.sources=new Set();this.history=[];this.session=null;
   }
@@ -632,7 +635,7 @@ export class OriginalAudio {
         try{this.buffers.set(url,await decoder.decodeAudioData(await get(url)));}
         catch(e){console.warn('Original audio decode failed',url,e.message);}
       }));
-      for(const alias of ['mx_splash_screen','mx_zombie_wave_1','chalk']) {
+      for(const alias of this.requiredAliases) {
         if(!this.sounds[alias]?.some(s=>this.buffers.has(s.url)))throw new Error(`Missing original startup audio: ${alias}`);
       }
     })();

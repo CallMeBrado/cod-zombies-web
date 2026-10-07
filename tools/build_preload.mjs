@@ -17,6 +17,9 @@ import {prepareKinoDoors} from './prepare_kino_doors.mjs';
 import {prepareGateNavigation} from './prepare_gate_navigation.mjs';
 import {navigationStamp} from './navigation_stamp.mjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url))),data=path.join(root,'local-data');
+if(process.argv[process.argv.indexOf('--map')+1]==='dead-ops'){
+  await import('./build_doa.mjs');process.exit(0);
+}
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_launch_media.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Loading movie preparation failed.')));});
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_gore.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Native gore preparation failed.')));});
 await new Promise((resolve,reject)=>{const child=spawn('python',['-B',path.join(root,'tools/prepare_melee.py')],{cwd:root,stdio:'inherit'});child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error('Native knife preparation failed.')));});

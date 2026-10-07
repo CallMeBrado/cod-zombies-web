@@ -10,7 +10,7 @@ const read=async p=>JSON.parse(await readFile(new URL('../local-data/'+p,import.
 const box=(mins,maxs,contents=1)=>({mins,maxs,contents,planes:[]});
 const arena=extra=>new CollisionWorld({models:[{brushes:[]}],brushes:[box([-1000,-1000,-128],[1000,1000,0]),...extra]},[]);
 const report=[];
-for(const map of [...MAPS,...BO1_MAPS]){
+for(const map of [...MAPS,...BO1_MAPS].filter(m=>m.engine!=='dead-ops')){
   const m=await read(map.data+'/manifest.json'),presentation=await read(map.data+'/presentation.json'),native=new CollisionWorld(await read(map.zone+'/web-world/'+map.asset+'.collision.json'),m.entities),events=[];
   const g=new (map.game==='black-ops'?BlackOpsEngine:SoloGame)(m,native,await read(map.zone+'/web-world/'+map.asset+'.paths.json'),{melee:e=>events.push(e),meleeImpact:e=>events.push({impact:e})},presentation);
   g.tickEnemy=()=>{};

@@ -13,7 +13,7 @@ const box=(mins,maxs)=>({mins,maxs,contents:1,planes:[]});
 const floor=extra=>new CollisionWorld({models:[{brushes:[]}],brushes:[box([-10000,-10000,-128],[10000,10000,0]),...extra]},[]);
 const close=(a,b)=>assert(Math.abs(a-b)<1e-7,`${a} != ${b}`);
 const results=[];
-for(const map of [...MAPS,...BO1_MAPS]){
+for(const map of [...MAPS,...BO1_MAPS].filter(m=>m.engine!=='dead-ops')){
   const m=await read(map.data+'/manifest.json'),native=new CollisionWorld(await read(map.zone+'/web-world/'+map.asset+'.collision.json'),m.entities),events=[];
   const g=new (map.game==='black-ops'?BlackOpsEngine:SoloGame)(m,native,await read(map.zone+'/web-world/'+map.asset+'.paths.json'),{dive:e=>events.push(e)},await read(map.data+'/presentation.json'));
   const reset=(extra=[])=>{g.collision=native;g.newGame();g.start();g.roundDue=Infinity;g.ambientDue=Infinity;g.collision=floor(extra);g.player.position=[0,0,0];g.player.previousPosition=[0,0,0];g.player.grounded=true;g.aim(0,0);events.length=0;};

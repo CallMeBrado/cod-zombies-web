@@ -1,0 +1,24 @@
+body[data-engine=dead-ops] #hud,body[data-engine=dead-ops] footer{display:none!important}
+body[data-engine=dead-ops] #viewport{cursor:crosshair}
+body[data-engine=dead-ops] #lobby-players{display:none}
+body[data-engine=dead-ops] #overlay{background-color:#030609b8}
+body[data-engine=dead-ops].playing #overlay{display:none}
+#doa-hud{position:fixed;inset:0;pointer-events:none;display:none;font:700 clamp(13px,1.35vw,22px)/1.2 'Arial Narrow',Arial,sans-serif;color:#ffdb65;text-shadow:0 2px 3px #000,0 0 6px #000;z-index:4}
+.playing #doa-hud{display:block}
+.doa-score{position:absolute;left:3%;top:3%;display:grid;gap:7px;min-width:180px}
+.doa-score strong{font-size:clamp(24px,3vw,44px);letter-spacing:2px}
+.doa-lives{display:flex;align-items:center;gap:9px}
+.doa-lives img{width:32px;height:32px;object-fit:contain;filter:drop-shadow(0 1px 2px #000)}
+.doa-round{position:absolute;top:3%;right:3%;text-align:right;display:grid;gap:6px}
+.doa-round strong{font-size:clamp(20px,2.4vw,36px)}
+.doa-controls{position:absolute;left:3%;bottom:4%;color:#eee;font-size:clamp(11px,1vw,16px)}
+.doa-weapon{position:absolute;right:3%;bottom:4%;text-align:right;color:#eee}
+.doa-meter{height:5px;background:#292013;box-shadow:0 1px 3px #000;margin-top:6px;width:160px}
+.doa-meter span{display:block;background:#ffc83b;height:100%}
+#doa-notice{position:absolute;top:18%;left:15%;right:15%;text-align:center;font-size:clamp(16px,2.1vw,32px);letter-spacing:2px}
+#doa-fate{position:fixed;inset:0;background:#030709d9;z-index:12;display:grid;place-content:center;text-align:center;gap:18px;color:#ffe27c}
+#doa-fate[hidden]{display:none}
+#doa-fate h2{font-size:36px;letter-spacing:4px;margin:0}
+#doa-fate button{font:700 19px Arial,sans-serif;color:#ffdd77;background:#191b1c;border:1px solid #8d793e;padding:14px 30px;cursor:pointer}
+#doa-fate button:hover,#doa-fate button:focus-visible{background:#5d4e24;outline:2px solid #ffdc73}
+.doa-flash{position:fixed;inset:0;pointer-events:none;background:#fff;opacity:0;z-index:3}

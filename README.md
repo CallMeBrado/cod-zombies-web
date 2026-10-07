@@ -2,7 +2,7 @@
 
 A browser runtime for **Call of Duty Zombies**, with World at War, Black Ops and Black Ops II. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copies of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
 
-World at War has **Nacht der Untoten** and **Der Riese**. The Black Ops browser preview adds **Kino der Toten**, using the installed game's original T5 map and assets.
+World at War has **Nacht der Untoten** and **Der Riese**. Black Ops adds **Kino der Toten** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
 
 The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / Buried** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
@@ -43,6 +43,22 @@ The collection opens each game's own themed lobby: **World at War** at `/world-a
 ---
 
 ## Feature status
+
+### Dead Ops Arcade (Black Ops)
+
+Select **Dead Ops Arcade** in the Black Ops map picker, or open `/black-ops/?map=dead-ops`. It has a separate overhead arcade engine; Kino retains its first-person engine. This implementation runs solo.
+
+- Original `zombietron` world, all ten arena environments in their four-round order, character and enemy models, animations, seven arcade weapons, treasure/pickup models, HUD icons, 183 sound aliases and arena music. The original loading movie and audio play when Start Game is clicked, with streamed download progress and ready-only skip.
+- WASD movement and mouse aiming/shooting; Space or the sprint binding spends a speed boost and the grenade binding (G by default) spends a nuke. Standard/mapped controllers use the left stick to move, right stick to aim and shoot, Jump to boost and Grenade to nuke, with controller button labels.
+- Script-derived spawn groups, 32-enemy cap, one-hit life loss, respawn protection, extra lives, treasure multipliers, timed weapons (10 seconds of firing, consuming one fifth as quickly while idle), support pickups, exits, four fates, a round-40 Silverback encounter and repeating arena laps. Physical corpses and original pickup effects use bounded pools.
+- BO1 pause/settings screens, testing menu with weapon/round selection, and shared named server saves, including the live enemies, bullets, treasures, timers, lives and chosen fate.
+- Arena navigation is built on the host from native collision and includes only floor routes connected to the playable arena; floors and actors use fixed 120 Hz physics with interpolated rendering.
+
+This is a browser reconstruction of Dead Ops, not execution of the native T5 binary. Online arcade co-op, the original scripted tutorial/intro, bonus-room layouts, arena-specific hazards/challenges and the full original Silverback AI are not implemented yet; special enemy behaviors, support weapons and the Room of Fate presentation are simplified. The full ten-arena asset pack is approximately 437 MiB compressed on its first download and stays in the browser's ordinary versioned cache.
+
+Prepare with `npm run extract:doa` followed by `npm run prepare:doa`; verify with `npm run test:doa`. Extracted assets, navigation and packs stay under `local-data` and `.cache` on E: and are excluded from Git.
+
+When rebuilding the local exporter from source, run `python -B tools/extend_doa_exporter.py` before `tools/build_exporter.ps1` so the shared T5 canine clips are exported into `bo1-doa-common` too.
 
 The game is a JavaScript reimplementation. The original game scripts (`.gsc`) are not executed; their rules, numbers and timings are ported by hand and checked against the extracted scripts.
 

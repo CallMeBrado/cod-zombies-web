@@ -56,8 +56,8 @@ const server = http.createServer(async (req, res) => {
     if(page?.redirect){res.writeHead(302,{'Location':page.redirect,'Cache-Control':'no-store'});res.end();return;}
     if(page?.template){
       const build=await currentBuild();
-      const map=page.game==='black-ops-2'?BO2_MAPS[0]:page.game==='black-ops'?BO1_MAPS[0]:MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||MAPS[0];
-      const preview=page.game==='black-ops'&&build.maps[map.id]?.navigationVersion!=='kino-ground-v2';
+      const map=page.game==='black-ops-2'?BO2_MAPS[0]:page.game==='black-ops'?BO1_MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||BO1_MAPS[0]:MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||MAPS[0];
+      const preview=page.game==='black-ops'&&map.id==='kino'&&build.maps[map.id]?.navigationVersion!=='kino-ground-v2';
       const preloadConfig=page.game&&!preview?encodeURIComponent(JSON.stringify((build.maps[map.id]?.packs||[]).map(({url,bytes})=>({url,bytes})))):'';
       const html=build.files.get(preview?'bo1-progress.html':page.template).toString('utf8').replaceAll('__BUILD__',build.id).replaceAll('__PRELOAD__',preloadConfig);
       sendBuffer(req,res,Buffer.from(html),'text/html');return;
@@ -84,7 +84,7 @@ const server = http.createServer(async (req, res) => {
       folder = path.join(root, 'local-data'); relative = pathname.slice(6);
       // Publish game assets, while keeping extraction reports, logs and process files local.
       const assetFolder = path.relative(folder, path.resolve(folder, relative)).split(path.sep)[0];
-      if (!['gameplay', 'nacht', 'der-riese', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
+      if (!['gameplay', 'nacht', 'der-riese', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo1-doa','bo1-doa-patch','bo1-doa-english','bo1-doa-common','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
         res.writeHead(404); res.end('File not found.'); return;
       }
     } else if (pathname.startsWith('/vendor/')) {

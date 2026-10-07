@@ -120,6 +120,7 @@ export class GamepadControls {
         if(edges.includes('aim')&&this.settings.value.aimMode==='toggle')this.toggledAim=!this.toggledAim;this.aiming=this.settings.value.aimMode==='toggle'?this.toggledAim:held('aim');
         if(edges.includes('sprint'))this.sprinting=!this.sprinting;const forward=-left.y;if(forward<.15||held('fire')||this.aiming)this.sprinting=false;
         const move=r.waitForSticks?{x:0,y:0,magnitude:0}:left;
+        this.onSticks?.(move,r.waitForSticks?{x:0,y:0,magnitude:0}:right);
         this.state={forward:-move.y,side:move.x,movementScale:move.magnitude,sprint:this.sprinting,jump:edges.includes('jump'),use:held('interact'),fire:held('fire')};
         if(right.magnitude&&!r.waitForSticks){const curve=Math.pow(right.magnitude,1.6)/right.magnitude,speed=this.settings.value.sensitivity*.65*(1+this.aimBlend()*(this.settings.value.adsSensitivity-1));this.look(-right.x*curve*speed*Math.min(.1,dt),-right.y*curve*speed*Math.min(.1,dt)*(this.settings.value.invertY?-1:1));}
         for(const a of ['pause','fire','interact','melee','grenade','nextWeapon','stance','equipment'])if(edges.includes(a)){this.action(a);if(this.mode()!==mode)break;}

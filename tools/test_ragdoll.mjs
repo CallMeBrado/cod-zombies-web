@@ -23,7 +23,7 @@ async function nativeRig(map,presentation){
 const box=(mins,maxs,contents=1)=>({mins,maxs,contents,planes:[]});
 const arena=extra=>new CollisionWorld({models:[{brushes:[]}],brushes:[box([-1000,-1000,-128],[1000,1000,0]),...extra]},[]);
 const report=[];
-for(const map of [...MAPS,...BO1_MAPS]){
+for(const map of [...MAPS,...BO1_MAPS].filter(m=>m.engine!=='dead-ops')){
   const manifest=await read(map.data+'/manifest.json'),presentation=await read(map.data+'/presentation.json');
   let reference;
   for(const hz of [30,60,240]){

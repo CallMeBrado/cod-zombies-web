@@ -73,7 +73,7 @@ let mode='menu',resumes=0,backs=0;const menu={view:'home',context:'start',tabs:[
 // Verify actual movement in both engines, not just the controller's input object.
 const read=async p=>JSON.parse(await readFile(new URL('../local-data/'+p,import.meta.url),'utf8'));
 const results=[];
-for(const map of [...MAPS,...BO1_MAPS]){
+for(const map of [...MAPS,...BO1_MAPS].filter(m=>m.engine!=='dead-ops')){
   const manifest=await read(map.data+'/manifest.json'),native=new CollisionWorld(await read(map.zone+'/web-world/'+map.asset+'.collision.json'),manifest.entities),g=new (map.game==='black-ops'?BlackOpsEngine:SoloGame)(manifest,native,await read(map.zone+'/web-world/'+map.asset+'.paths.json'),{},await read(map.data+'/presentation.json'));
   const reset=()=>{g.collision=native;g.newGame();g.start();g.roundDue=Infinity;g.ambientDue=Infinity;g.collision=new CollisionWorld({models:[{brushes:[]}],brushes:[{mins:[-2000,-2000,-128],maxs:[2000,2000,0],contents:1,planes:[]}]},[]);g.player.position=[0,0,0];g.player.previousPosition=[0,0,0];g.player.grounded=true;g.aim(0,0);};
   reset();for(let i=0;i<120;i++)g.update(1/120,{forward:1});const keyboard=g.player.position[0];assert(keyboard>0);

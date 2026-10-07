@@ -19,7 +19,7 @@ let reference;for(const hz of [30,60,240]){
 }
 for(const contents of [1,0x10000]){const root=new THREE.Group(),head=new SeveredHead(root),world=arena([box([30,-100,0],[40,100,160],contents)]);head.start([0,0,65],[1,0,0]);for(let i=0;i<240;i++)head.update(1/60,world);if(contents===1)assert(head.p.x+8<=30.1,'Head cannot fly through solid cover');else assert(head.p.x>40,'Invisible movement clips do not catch detached heads');}
 
-for(const map of [...MAPS,...BO1_MAPS]){
+for(const map of [...MAPS,...BO1_MAPS].filter(m=>m.engine!=='dead-ops')){
   const m=await read(map.data+'/manifest.json'),presentation=await read(map.data+'/presentation.json');for(const url of [presentation.gore.burst,presentation.gore.drops,...presentation.gore.decals])assert((await readFile(new URL('../local-data/'+url.slice(6),import.meta.url))).toString('ascii',0,4)==='DDS ','Native gore texture exists');
   assert(m.sounds[presentation.gore.headSound]?.length,'Native head-gib sound is prepared');for(const entry of m.sounds[presentation.gore.headSound]){const sound=await readFile(new URL('../local-data/'+entry.url.slice(6),import.meta.url));assert.equal(sound.toString('ascii',0,4),'RIFF');assert.equal(sound.toString('ascii',8,12),'WAVE');}
   const collision=new CollisionWorld(await read(map.zone+'/web-world/'+map.asset+'.collision.json'),m.entities),scene=new THREE.Scene(),actors=new ZombieActors(scene,{illumination:()=>[1,1,1]},presentation);actors.collision=collision;
