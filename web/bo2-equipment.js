@@ -19,7 +19,7 @@ export class BuriedEquipment {
     if(b?.complete){if(this.placed.some(x=>x.kind===b.kind)){g.message('Retrieve your placed '+this.name(b.kind)+' first');return true;}this.held={kind:b.kind,health:g.data.equipment[b.kind].health};g.message(this.name(b.kind)+' · '+(g.events.bindingName?.('equipment')||'5')+' to place');return true;}
     if(this.building||part?.kind!=='part'||b&&b.kind!==part.equipment)return true;
     // buildable_place_think(): hold use for 3 s with the builder hands.
-    this.building={bench:e.targetname,kind:part.equipment,piece:part.itemId,started:g.time,due:g.time+3};g.startHoldGesture('zombie_builder');return true;
+    this.building={bench:e.targetname,kind:part.equipment,piece:part.itemId,started:g.time,due:g.time+3};g.startHoldGesture('zombie_builder');g.emit('loop',{id:'buildable',alias:'zmb_buildable_loop',position:g.player.position.slice(),near:120,far:900});return true;
   }
   place(){
     const g=this.game;if(!this.held||g.movementBlocked||g.gesture||g.pendingGrenade||['dead','ready'].includes(g.phase))return false;
@@ -43,8 +43,8 @@ export class BuriedEquipment {
   remove(item){this.placed=this.placed.filter(x=>x!==item);this.game.interactions=this.game.interactions.filter(e=>e.equipmentId!==item.id);this.game.emit('buriedEquipmentRemove',item.id);}
   tick(dt){
     const g=this.game,b=this.building;
-    if(b&&!g.useHeld&&g.time-b.started>.1&&!g.mirror){this.building=null;g.endHoldGesture();}
-    else if(b&&g.time>=b.due){g.endHoldGesture();const bench=this.benches.get(b.bench)||{kind:b.kind,pieces:[]};bench.pieces.push(b.piece);bench.complete=bench.pieces.length===g.data.equipment[b.kind].parts;this.benches.set(b.bench,bench);this.rules.carry=null;this.building=null;g.emit('sound',{alias:bench.complete?'zmb_buildable_complete':'zmb_buildable_piece_add'});g.message(bench.complete?this.name(b.kind)+' ready':'Part added · '+bench.pieces.length+'/'+g.data.equipment[b.kind].parts);}
+    if(b&&!g.useHeld&&g.time-b.started>.1&&!g.mirror){this.building=null;g.endHoldGesture();g.emit('stopLoop',{id:'buildable'});}
+    else if(b&&g.time>=b.due){g.endHoldGesture();g.emit('stopLoop',{id:'buildable'});const bench=this.benches.get(b.bench)||{kind:b.kind,pieces:[]};bench.pieces.push(b.piece);bench.complete=bench.pieces.length===g.data.equipment[b.kind].parts;this.benches.set(b.bench,bench);this.rules.carry=null;this.building=null;g.emit('sound',{alias:bench.complete?'zmb_buildable_complete':'zmb_buildable_piece_add'});g.message(bench.complete?this.name(b.kind)+' ready':'Part added · '+bench.pieces.length+'/'+g.data.equipment[b.kind].parts);}
     for(const item of this.placed){
       const d=g.data.equipment[item.kind],hunters=g.enemies.filter(e=>!e.dead&&e.kind!=='ghost'&&e.stage==='hunt');
       if(item.kind==='turbine')item.health-=dt; // power radius 335, native battery health 1200

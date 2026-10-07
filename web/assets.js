@@ -82,6 +82,7 @@ export function shadeModel(object,color) {
       transparent:old.transparent,depthWrite:old.depthWrite,opacity:old.opacity,alphaTest:foliage?.3:old.alphaTest,side:foliage?THREE.DoubleSide:old.side,
       blending:old.blending,blendSrc:old.blendSrc,blendDst:old.blendDst,visible:old.visible});mat.name=old.name;
       mat.userData.fixedLight=/zombie.*eye/.test(old.name);if(mat.userData.fixedLight)mat.color.setRGB(1,1,1);
+      else if(old.userData.heatGlow)heatGlowing(mat,old.userData.heatGlow);
       else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else mat.onBeforeCompile=film;return mat;};
     node.material=Array.isArray(node.material)?node.material.map(convert):convert(node.material);
   });
@@ -94,6 +95,20 @@ function glowing(mat,map,amount){
   mat.onBeforeCompile=shader=>{
     shader.uniforms.t6Glow={value:map};shader.uniforms.t6GlowAmount={value:amount};
     shader.fragmentShader='uniform sampler2D t6Glow; uniform float t6GlowAmount;\n'+shader.fragmentShader.replace('#include <opaque_fragment>','outgoingLight+=texture2D(t6Glow,vMapUv).rgb*t6GlowAmount;\n#include <opaque_fragment>');
+    film(shader);
+  };
+}
+// T6 ember-glow weapon materials (the Paralyzer, Ray Gun Mark II): the lines
+// of EmberGlow_Reveal_Map glow in Cold_Color, shifting toward Hot_Color as the
+// weapon heats (weaponHeat, 0-1, set each frame from the held weapon). Its
+// authored HDR strength (Emissiver_Amount 20) blooms in the game; here the
+// colour is normalised so the lines stay bright without washing out white.
+export const weaponHeat={value:0};
+function heatGlowing(mat,{map,cold,hot,amount}){
+  mat.customProgramCacheKey=()=>'t6-heat-glow';
+  mat.onBeforeCompile=shader=>{
+    Object.assign(shader.uniforms,{t6Glow:{value:map},t6Cold:{value:new THREE.Vector3(...cold)},t6Hot:{value:new THREE.Vector3(...hot)},t6Heat:weaponHeat,t6GlowAmount:{value:amount}});mat.userData.t6Uniforms=shader.uniforms;
+    shader.fragmentShader='uniform sampler2D t6Glow; uniform vec3 t6Cold,t6Hot; uniform float t6Heat,t6GlowAmount;\n'+shader.fragmentShader.replace('#include <opaque_fragment>','vec3 t6c=mix(t6Cold,t6Hot,clamp(t6Heat,0.,1.));outgoingLight+=texture2D(t6Glow,vMapUv).rgb*t6c/max(max(t6c.r,t6c.g),max(t6c.b,.001))*t6GlowAmount;\n#include <opaque_fragment>');
     film(shader);
   };
 }
@@ -153,6 +168,8 @@ export async function model(name) {
           const glow=original.textures?.find(t=>t.name==='Glow_Map'),constant=name=>original.constants?.find(c=>c.name===name)?.literal[0];
           const amount=(constant('hdrAmount')??1)*(constant('Emissive_Push')??1);
           if(glow&&amount>0&&material.map){material.userData.glowMap=await diffuse(glow.image);material.userData.glowAmount=amount;}
+          const reveal=original.textures?.find(t=>t.name==='EmberGlow_Reveal_Map'),literal=name=>original.constants?.find(c=>c.name===name)?.literal;
+          if(reveal&&material.map&&literal('Cold_Color'))material.userData.heatGlow={map:await diffuse(reveal.image),cold:literal('Cold_Color').slice(0,3),hot:(literal('Hot_Color')||literal('Cold_Color')).slice(0,3),amount:8};
         }
       }));
       // OAT converts model geometry and root bones to Y up. Restore T4's Z up.

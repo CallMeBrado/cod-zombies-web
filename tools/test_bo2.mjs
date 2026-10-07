@@ -30,7 +30,9 @@ const key=g.interactions.find(e=>e.buriedItem==='key');r.use(key);assert.equal(r
 g.gesture=null;g.useHeld=true;r.use(g.interactions.find(e=>e.targetname==='buried_jail'));assert.equal(g.gesture.key,'zombie_builder');assert(g.movementBlocked);
 g.useHeld=false;g.time+=.2;r.tickHold();assert(!r.hold);assert.equal(r.carry.kind,'key');assert(!r.arthur.cellOpen);g.gesture=null;
 g.useHeld=true;r.use(g.interactions.find(e=>e.targetname==='buried_jail'));g.time+=3.01;r.tickHold();assert(r.arthur.cellOpen);assert(g.opened.has('pf749_auto11'));assert(!r.carry);assert.equal(r.arthur.state,'jail_open');g.useHeld=false;
-const chalk=g.interactions.find(e=>e.buriedItem==='chalk'&&e.zombie_weapon_upgrade==='870mcs_zm');r.use(chalk);const place=g.interactions.find(e=>e.targetname==='buried_chalk_place');const points=g.player.points;r.use(place);assert.equal(g.player.points,points+1000);assert.equal(r.chalk.get(place.target),'870mcs_zm');assert(g.interactions.some(e=>e.chalkTarget===place.target));report.checks.push('cell key, Arthur release, chalk placement and wall buy');
+const chalk=g.interactions.find(e=>e.buriedItem==='chalk'&&e.zombie_weapon_upgrade==='870mcs_zm');r.use(chalk);const place=g.interactions.find(e=>e.targetname==='buried_chalk_place');const points=g.player.points;
+// Drawing is a 3 s hold with the chalk hands.
+g.gesture=null;g.useHeld=true;r.use(place);assert.equal(g.gesture.key,'chalk_draw');assert(!r.chalk.has(place.target));g.time+=3.01;r.tickHold();g.useHeld=false;g.gesture=null;assert.equal(g.player.points,points+1000);assert.equal(r.chalk.get(place.target),'870mcs_zm');assert(g.interactions.some(e=>e.chalkTarget===place.target));report.checks.push('cell key, Arthur release, chalk placement and wall buy');
 g.gesture=null;g.switching=null;g.phase='between';g.roundDue=g.time+10;const save=g.saveState();g.loadState(save);assert.equal(g.mapRules.chalk.get(place.target),'870mcs_zm');assert(g.mapRules.arthur.cellOpen);assert(g.interactions.some(e=>e.chalkTarget===place.target));report.checks.push('Buried-specific save round trip');
 // Native material data the renderer needs: each compiled blend surface keeps
 // its second layer, and decals, grates and glass keep their blend states.
@@ -79,7 +81,7 @@ const resume=g.player.position.slice();
   // He walks off to a roam node he can reach (the street, past the broken
   // jail barricade) rather than pressing into a wall toward one behind a door.
   const crashed=arthur.position.slice();step(120*25);
-  assert(Math.hypot(arthur.position[0]-crashed[0],arthur.position[1]-crashed[1])>150,'Arthur roams out of the jail');assert(arthur.position[2]>-10,'Arthur stays on the floor');
+  assert(Math.hypot(arthur.position[0]-crashed[0],arthur.position[1]-crashed[1])>150,'Arthur roams out of the jail');{const at=arthur.position;assert(g.collision.trace([at[0],at[1],at[2]+8],[at[0],at[1],at[2]-24],[0,0,0]).fraction<1,'Arthur stays on the floor');}
   // Candy: he eats, then runs down and kills zombies near the giver, for 45 s.
   const candy=g.interactions.find(e=>e.buriedItem==='candy'&&ar.itemVisible(e));ar.use(candy);arthur.give('candy');ar.carry=null;
   step(Math.ceil(arthur.duration('eatcandy')*120)+2);assert.equal(arthur.state,'protect');
@@ -112,7 +114,8 @@ let traveled=0;g.events.traceShot=(origin,dir,length)=>{traveled+=length;return 
 g.firingNative=true;g.emit('shot',{origin:[...g.player.position.slice(0,2),g.player.position[2]+35],dir:[1,0,0],rays:[]});g.firingNative=false;
 assert.equal(target.health,5000);assert.equal(g.projectiles.length,1);g.updateProjectiles(.1);assert(target.health<5000);assert.equal(g.projectiles.length,0);
 g.giveWeapon('slowgun_zm');g.switching=null;g.events.traceShot=()=>({end:[0,0,0],wall:false});g.enemies=[];
-for(let n=0;n<130;n++){g.time+=.11;g.fire();}assert(g.paralyzerLock);assert.equal(g.paralyzerHeat,115);assert.equal(g.reload(),false);
+for(let n=0;n<11;n++){g.time+=.11;g.fire();}assert.equal(g.paralyzerHeat,110,'The heat counter climbs 10 a shot');assert(!g.paralyzerLock);
+for(let n=0;n<2;n++){g.time+=.11;g.fire();}assert(g.paralyzerLock);assert.equal(g.paralyzerHeat,115);assert.equal(g.reload(),false);
 g.paralyzerFiredAt=-100;g.tick(10,{});assert(!g.paralyzerLock);assert(g.paralyzerHeat<=87);
 report.checks.push('delayed Ray Gun projectile/splash and Paralyzer overheat/cooling');
 // The factory's one-way chute must land on supported floor and remain

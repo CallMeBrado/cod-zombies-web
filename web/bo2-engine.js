@@ -81,7 +81,7 @@ export class BuriedRules extends KinoRules {
     if(e.zombie_weapon_upgrade==='tazer_knuckles_zm')return this.meleeUpgrade==='tazer_knuckles_zm'?'Galvaknuckles purchased':key+' · Buy Galvaknuckles · 6000 points';
     if(e.targetname==='buried_jail')return this.hold?.kind==='key'?'Unlocking…':this.carry?.kind==='key'?'Hold '+key+' · Unlock':'Find the cell key';
     if(e.targetname==='buried_arthur')return this.hold?.kind==='gift'?'Giving…':'Hold '+key+' · Give Arthur '+(this.carry?.kind==='candy'?'candy':'booze');
-    if(e.targetname==='buried_chalk_place')return this.carry?.kind==='chalk'?key+' · Draw '+g.weaponName(this.carry.weapon):'Pick up weapon chalk at the gunsmith';
+    if(e.targetname==='buried_chalk_place')return this.hold?.kind==='chalk'?'Drawing…':this.carry?.kind==='chalk'?'Hold '+key+' · Draw '+g.weaponName(this.carry.weapon):'Pick up weapon chalk at the gunsmith';
     if(e.targetname==='buried_bank_deposit')return key+' · Deposit 1,000 points · Balance '+this.bank;
     if(e.targetname==='buried_bank_withdraw')return key+' · Withdraw 1,000 points · Fee 100 · Balance '+this.bank;
     if(e.targetname==='buried_weapon_locker')return key+' · '+(this.weaponLocker?'Swap with '+g.weaponName(this.weaponLocker.name):'Store current weapon');
@@ -103,7 +103,7 @@ export class BuriedRules extends KinoRules {
     const g=this.game,tag=e.targetname;
     if(e.buriedItem||e.buriedPart){
       if(this.carry||!this.visible(e))return true;this.carry={kind:e.buriedPart?'part':e.buriedItem,equipment:e.buriedPart,weapon:e.zombie_weapon_upgrade,itemId:e.itemId};this.collected.add(e.itemId);
-      g.emit('buriedItem',{id:e.itemId,visible:false});g.emit('sound',{alias:e.buriedItem==='booze'?'zmb_booze_pickup':'cha_ching'});g.message('Picked up '+(this.carry.weapon?g.weaponName(this.carry.weapon)+' chalk':this.carry.kind));return true;
+      g.emit('buriedItem',{id:e.itemId,visible:false});g.emit('sound',{alias:{booze:'zmb_booze_pickup',candy:'zmb_candy_pickup',chalk:'zmb_chalk_grab'}[e.buriedItem]||'zmb_buildable_pickup'});g.message('Picked up '+(this.carry.weapon?g.weaponName(this.carry.weapon)+' chalk':this.carry.kind));return true;
     }
     if(g.mirror&&(e.buriedBench||tag==='buried_jail'||tag==='buried_arthur'))return true;
     if(e.buriedBench)return this.equipment.use(e);
@@ -118,17 +118,17 @@ export class BuriedRules extends KinoRules {
     // the builder hands (zombie_builder_zm), and the cell opens.
     if(tag==='buried_jail'){
       if(this.carry?.kind!=='key'||this.hold||this.arthur.cellOpen)return true;
-      this.hold={kind:'key',started:g.time,due:g.time+3};g.startHoldGesture('zombie_builder');return true;
+      this.hold={kind:'key',started:g.time,due:g.time+3};g.startHoldGesture('zombie_builder');g.emit('loop',{id:'buildable',alias:'zmb_jail_buildable',position:g.player.position.slice(),near:120,far:900});return true;
     }
     // The sloth gift trigger: a 0.75 s hold, each facing the other.
     if(tag==='buried_arthur'){
       if(this.hold||!this.arthur.canGift())return true;
-      this.hold={kind:'gift',started:g.time,due:g.time+.75};this.arthur.holding=true;return true;
+      this.hold={kind:'gift',started:g.time,due:g.time+.75};this.arthur.holding=true;g.emit('loop',{id:'buildable',alias:'zmb_buildable_loop',position:g.player.position.slice(),near:120,far:900});return true;
     }
     if(tag==='buried_chalk_place'){
-      if(this.carry?.kind!=='chalk'||this.chalk.has(e.target))return true;
-      const name=this.carry.weapon;this.chalk.set(e.target,name);this.installChalk(e,name);this.carry=null;
-      g.changePoints(this.chalk.size===6?2000:1000);g.emit('sound',{alias:'cha_ching'});g.emit('buriedChalk',{target:e.target,weapon:name});g.message(g.weaponName(name)+' wall buy drawn');return true;
+      if(this.carry?.kind!=='chalk'||this.chalk.has(e.target)||this.hold)return true;
+      this.hold={kind:'chalk',place:e,started:g.time,due:g.time+3,dustDue:g.time};g.startHoldGesture('chalk_draw');
+      g.emit('loop',{id:'buildable',alias:'zmb_chalk_loop',position:e.position.slice(),near:120,far:900});return true;
     }
     if(tag==='buried_barricade')return true;
     if(tag==='buried_bank_deposit'){if(this.bank<250000&&g.spendPoints(1000)){this.bank+=1000;g.message('Bank balance: '+this.bank);}return true;}
@@ -147,6 +147,10 @@ export class BuriedRules extends KinoRules {
     }
     return super.use(e);
   }
+  drawChalk(e){
+    const g=this.game,name=this.carry.weapon;this.chalk.set(e.target,name);this.installChalk(e,name);this.carry=null;
+    g.changePoints(this.chalk.size===6?2000:1000);g.emit('sound',{alias:'zmb_chalk_complete',position:e.position.slice()});g.emit('buriedChalk',{target:e.target,weapon:name});g.message(g.weaponName(name)+' wall buy drawn');
+  }
   installChalk(e,name){
     const existing=this.game.interactions.find(x=>x.chalkTarget===e.target);if(existing)return;
     this.game.interactions.push({...e,targetname:'weapon_upgrade',chalkTarget:e.target,zombie_weapon_upgrade:name,zombie_cost:String(this.game.data.wallCosts[name]||1000),script_ammo_clip:String(Math.floor((this.game.data.wallCosts[name]||1000)/2))});
@@ -156,9 +160,12 @@ export class BuriedRules extends KinoRules {
   tickHold(){
     const g=this.game,h=this.hold;if(!h)return;
     // The press lands between ticks; the held state follows on the next one.
-    const cancel=!g.useHeld&&g.time-h.started>.1||g.phase==='dead'||(h.kind==='key'?this.carry?.kind!=='key':!this.arthur.canGift()||!this.arthur.carrier());
+    const cancel=!g.useHeld&&g.time-h.started>.1||g.phase==='dead'||(h.kind==='key'?this.carry?.kind!=='key':h.kind==='chalk'?this.carry?.kind!=='chalk':!this.arthur.canGift()||!this.arthur.carrier());
+    if(h.kind==='chalk'&&!cancel&&g.time>=h.dustDue){h.dustDue=g.time+.1;g.emit('chalkDust',h.place.target);}
     if(cancel||g.time>=h.due){
-      this.hold=null;this.arthur.holding=false;g.endHoldGesture();if(cancel)return;
+      this.hold=null;this.arthur.holding=false;g.endHoldGesture();g.emit('stopLoop',{id:'buildable'});if(cancel)return;
+      if(h.kind==='chalk'){this.drawChalk(h.place);return;}
+      g.emit('sound',{alias:'zmb_buildable_complete'});
       if(h.kind==='key'){this.carry=null;this.openCell();}
       else{const item=this.carry;this.carry=null;this.itemRespawn.set(item.itemId,g.time+60);this.arthur.give(item.kind);}
     }
@@ -382,7 +389,9 @@ export class BlackOps2Engine extends BlackOpsEngine {
     if(['dead','ready'].includes(this.phase)||this.movementBlocked||this.switching||this.gesture||this.pendingGrenade||this.mapRules.reviveDue||this.paralyzerLock||this.time<this.cooldown)return false;
     if(this.sprinting){this.sprinting=false;this.sprintExitUntil=this.time+.3;return false;}if(this.time<this.sprintExitUntil)return false;
     const definition=this.weapon.definition;
-    this.cooldown=this.time+.1;this.paralyzerFiredAt=this.time;this.paralyzerHeat+=(definition.overheatRate-(definition.coolWhileFiring?definition.cooldownRate:0))*.1;this.shots++;
+    this.cooldown=this.time+.1;this.paralyzerFiredAt=this.time;// overheatRate and cooldownRate are per 0.1 s shot: the counter climbs
+    // to its 115 cap in about 1.2 s of firing.
+    this.paralyzerHeat+=definition.overheatRate-(definition.coolWhileFiring?definition.cooldownRate:0);this.shots++;
     if(this.paralyzerHeat>=115){this.paralyzerHeat=115;this.paralyzerLock=true;}
     const origin=[...this.player.position];origin[2]+=this.viewHeight;
     for(const e of this.enemies){if(e.dead)continue;
@@ -390,17 +399,26 @@ export class BlackOps2Engine extends BlackOpsEngine {
       if(range>550||Math.cos(yaw-this.yaw)<.94||Math.abs(pitch-this.pitch)>.35)continue;
       const ray=this.rayHit(550,yaw,pitch);if(ray.hit?.enemy!==e)continue;
       e.paralyzedUntil=this.time+.35;e.paralyzerExposure=(e.paralyzerExposure||0)+.1;
+      // zombie_slowgun_sizzle on the zombie while the beam holds it.
+      if(this.time>=(e.sizzleDue||0)){e.sizzleDue=this.time+.25;this.emit('effect',{name:'weapon/paralyzer/fx_paralyzer_hit_dmg'+(this.weapon.name.includes('upgraded')?'_ug':''),position:[e.position[0],e.position[1],e.position[2]+35],duration:.6});}
       if(e.paralyzerExposure>=1){
         let damage=(this.weapon.name.includes('upgraded')?60:40)*(.667+Math.random()*.833)*(e.paralyzerMultiplier||1);
         if(e.paralyzerDamage>47073)damage*=47073/e.paralyzerDamage;
         e.paralyzerDamage=(e.paralyzerDamage||0)+damage;e.paralyzerMultiplier=Math.min(50,(e.paralyzerMultiplier||1)*1.15);
-        super.hitEnemy(e,damage,false,false);this.emit('hit',false);
+        const alive=!e.dead;super.hitEnemy(e,damage,false,false);this.emit('hit',false);
+        if(alive&&e.dead)this.emit('effect',{name:'weapon/paralyzer/fx_paralyzer_body_disintegrate'+(this.weapon.name.includes('upgraded')?'_ug':''),position:[e.position[0],e.position[1],e.position[2]+35],duration:2});
       }
     }
-    this.emit('shot',{origin,dir:[Math.cos(this.pitch)*Math.cos(this.yaw),Math.cos(this.pitch)*Math.sin(this.yaw),Math.sin(this.pitch)],rays:[]});this.emit('sound',{alias:this.weapon.definition.fireSoundPlayer});
-    if(this.pitch<-.9){this.player.velocityZ=Math.max(this.player.velocityZ,160);this.player.grounded=false;}return true;
+    this.emit('shot',{origin,dir:[Math.cos(this.pitch)*Math.cos(this.yaw),Math.cos(this.pitch)*Math.sin(this.yaw),Math.sin(this.pitch)],rays:[]});
+    // startFireSound, then loopFireSound until the trigger is released.
+    if(!this.paralyzerFiring){this.paralyzerFiring=true;this.emit('sound',{alias:definition.startFireSoundPlayer});this.emit('loop',{id:'paralyzer',alias:definition.loopFireSoundPlayer});}
+    // player_slow_for_time(): the beam on the ground at your feet slows you
+    // for 0.25 s. Airborne, that is a hover: it never lifts you off the floor.
+    if(!this.player.grounded&&Math.sin(this.pitch)<-.85){const f=[...this.player.position];const floor=this.collision.trace(f,[f[0],f[1],f[2]-550],[0,0,0]);if(floor.fraction<1)this.slowedUntil=this.time+.25;}
+    return true;
   }
   reload(){if(this.weapon.name.startsWith('slowgun'))return false;return super.reload();}
+  gravityScale(){return this.time<(this.slowedUntil||0)?.05:1;}
   pickup(drop){
     if(!drop.type.startsWith('vulture_'))return super.pickup(drop);
     if(!this.mapRules.perks.has('specialty_nomotionsensor'))return;drop.used=true;this.emit('pickup',drop);this.emit('stopLoop',{id:'drop'+drop.id});
@@ -413,7 +431,10 @@ export class BlackOps2Engine extends BlackOpsEngine {
   tick(dt,input){
     super.tick(dt,input);if(this.phase==='ready'||this.phase==='dead')return;
     if(this.player.grounded&&!this.mods?.noclip&&!this.dive){const floor=this.projectGround(this.player.position);if(this.player.position[2]-floor[2]>18)this.player.position=floor;}
-    if(this.time-this.paralyzerFiredAt>.2){this.paralyzerHeat=Math.max(0,this.paralyzerHeat-dt*(this.weapon.definition.cooldownRate||3));if(this.paralyzerHeat<=(this.weapon.definition.overheatEndVal||87))this.paralyzerLock=false;}
+    if(this.paralyzerFiring&&this.time-this.paralyzerFiredAt>.15){this.paralyzerFiring=false;this.emit('stopLoop',{id:'paralyzer'});this.emit('sound',{alias:this.data.weapons.slowgun_zm?.loopFireEndSoundPlayer});}
+    // Slowed in the air: a fraction of gravity, and a rise or fall bleeds off.
+    if(this.time<(this.slowedUntil||0)&&!this.player.grounded)this.player.velocityZ*=Math.exp(-8*dt);
+    if(this.time-this.paralyzerFiredAt>.2){this.paralyzerHeat=Math.max(0,this.paralyzerHeat-dt*10*(this.weapon.definition.cooldownRate||3));if(this.paralyzerHeat<=(this.weapon.definition.overheatEndVal||87))this.paralyzerLock=false;}
     for(const e of this.enemies)if(e.paralyzedUntil<this.time){e.paralyzerExposure=Math.max(0,(e.paralyzerExposure||0)-dt*.5);e.paralyzerMultiplier=1;}
     this.updateProjectiles(dt);
   }

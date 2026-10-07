@@ -19,7 +19,7 @@ const SLOTH='ai_zombie_sloth_';
 // Arthur, the cell door, the start area's fxanims and the mystery box's
 // zbarrier pieces use their original T6 models and animations.
 export class BuriedView {
-  constructor(scene,map,dynamic){this.scene=scene;this.map=map;this.dynamic=dynamic;this.root=new THREE.Group();this.actions=new Map();this.equipment=new Map();this.templates=new Map();this.projectiles=new Map();this.projectileTemplates=new Map();this.boxes=new Map();}
+  constructor(scene,map,dynamic,effects){this.scene=scene;this.map=map;this.dynamic=dynamic;this.effects=effects;this.root=new THREE.Group();this.actions=new Map();this.equipment=new Map();this.templates=new Map();this.projectiles=new Map();this.projectileTemplates=new Map();this.boxes=new Map();}
   async prepare(manifest,presentation={}){
     const m=manifest.map;this.manifest=manifest;this.boxSettings=presentation.box||{floatHeight:40};
     this.object=cloneModel(await model(m.arthurModel));shadeModel(this.object,[.4,.34,.26]);this.root.add(this.object);this.scene.add(this.root);
@@ -72,7 +72,8 @@ export class BuriedView {
   launch(item){const v=this.equipment.get(item.id),name=this.manifest.equipment[item.kind].launchAnimation;if(!v||!name)return;const a=v.actions.get(name);a.setLoop(THREE.LoopOnce,1).reset().play();}
   projectile(p){const d=this.manifest.weapons[p.weapon],root=cloneModel(this.projectileTemplates.get(d.projectileModel));root.position.fromArray(p.position);this.scene.add(root);this.projectiles.set(p.id,{root,p});}
   removeProjectile(id){const v=this.projectiles.get(id);v?.root.removeFromParent();this.projectiles.delete(id);}
-  reset(){for(const id of this.equipment.keys())this.remove(id);for(const id of this.projectiles.keys())this.removeProjectile(id);this.current=null;}
+  reset(){for(const w of this.wallbuys||[])if(w.entity){w.root&&this.effects.dispose(w.root);w.root=null;w.drawn=undefined;}
+    for(const id of this.equipment.keys())this.remove(id);for(const id of this.projectiles.keys())this.removeProjectile(id);this.current=null;}
   update(game,dt){
     const rules=game.mapRules,a=rules.arthur;
     for(const items of this.dynamic.values())for(const v of items){
@@ -86,6 +87,34 @@ export class BuriedView {
     if(this.door){const d=a.door;if(d)this.door.pose(d.clip,game.time-d.started);}
     for(const [key,f]of Object.entries(this.fxanims)){const at=rules.fxanims[key];f.posed.pose(f.clip,at==null?0:game.time-at);}
     this.updateBoxes(game);
+    this.updateWallbuys(game);
+  }
+  // Wall buys are chalk outlines drawn by their effects, facing out from the
+  // wall (playfx along the wall buy's forward and up). An undrawn chalk spot
+  // shows the question mark until a weapon is drawn there.
+  wallbuyRoot(name,e){
+    if(!this.effects?.has(name))return null;const root=this.effects.create(name,0),a=(e.angles||'0 0 0').split(/\s+/).map(v=>Number(v)*Math.PI/180);
+    root.position.fromArray(e.origin.split(/\s+/).map(Number));root.rotation.set(a[2],a[0],a[1],'ZYX');this.scene.add(root);return root;
+  }
+  updateWallbuys(game){
+    const fx=this.manifest.map.wallbuyEffects;if(!fx||!this.effects)return;
+    if(!this.wallbuys){
+      this.wallbuys=[];
+      for(const e of this.manifest.entities.filter(e=>e.targetname==='weapon_upgrade'))this.wallbuys.push({root:this.wallbuyRoot(fx[e.zombie_weapon_upgrade]||fx.m14_zm,e)});
+      for(const e of this.manifest.entities.filter(e=>e.chalkMark))this.wallbuys.push({entity:e,drawn:null,root:this.wallbuyRoot(fx.question,e)});
+    }
+    for(const w of this.wallbuys){
+      if(w.entity){const drawn=game.mapRules.chalk.get(w.entity.targetname)||null;
+        if(drawn!==w.drawn){w.root&&this.effects.dispose(w.root);w.drawn=drawn;w.root=this.wallbuyRoot(drawn?fx[drawn]||fx.m14_zm:fx.question,w.entity);}}
+      if(w.root)this.effects.update(w.root,game.time);
+    }
+    this.dust=(this.dust||[]).filter(d=>{if(game.time>d.due){this.effects.dispose(d.root);return false;}this.effects.update(d.root,game.time);return true;});
+  }
+  // player_draw_chalk(): chalk dust off the wall while drawing.
+  chalkDust(target,time){
+    const e=this.manifest.entities.find(x=>x.targetname===target),name=this.manifest.map.wallbuyEffects?.drawing;if(!e||!this.effects?.has(name))return;
+    const root=this.effects.create(name,time),a=(e.angles||'0 0 0').split(/\s+/).map(v=>Number(v)*Math.PI/180);root.position.fromArray(e.origin.split(/\s+/).map(Number));root.rotation.set(a[2],a[0],a[1],'ZYX');this.scene.add(root);
+    (this.dust||=[]).push({root,due:time+1.5});
   }
   updateArthur(game,a,dt){
     this.root.position.fromArray(a.position);this.root.rotation.z=a.yaw;

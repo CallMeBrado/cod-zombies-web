@@ -3,14 +3,18 @@ import {originalTexture,t4Effects} from './assets.js';
 
 // Billboards face the camera. Tail and line elements (sparks, debris streaks,
 // smoke tendrils) instead stretch along their direction of travel: width is
-// size.x and length size.y, laid along the projected velocity.
-const vertex=`attribute vec3 center;attribute vec2 size;attribute vec4 tint;attribute vec4 atlas;attribute float angle;attribute vec3 axis;attribute float stretch;
+// size.x and length size.y, laid along the projected velocity. Oriented and
+// rotated sprites (a wall buy's chalk outline) lie in a plane of the effect,
+// spanned by axis and side.
+const vertex=`attribute vec3 center;attribute vec2 size;attribute vec4 tint;attribute vec4 atlas;attribute float angle;attribute vec3 axis;attribute vec3 side;attribute float stretch;
 varying vec2 vUv;varying vec4 vTint;
 void main(){vec4 eye=modelViewMatrix*vec4(center,1.);
-  if(stretch>.5){vec3 ahead=(modelViewMatrix*vec4(center+axis,1.)).xyz-eye.xyz;vec2 d=length(ahead.xy)>1e-5?normalize(ahead.xy):vec2(0.,1.);vec2 n=vec2(-d.y,d.x);
+  if(stretch>1.5){float c=cos(angle),s=sin(angle);vec2 q=mat2(c,-s,s,c)*position.xy*size*2.;eye=modelViewMatrix*vec4(center+axis*q.x+side*q.y,1.);}
+  else if(stretch>.5){vec3 ahead=(modelViewMatrix*vec4(center+axis,1.)).xyz-eye.xyz;vec2 d=length(ahead.xy)>1e-5?normalize(ahead.xy):vec2(0.,1.);vec2 n=vec2(-d.y,d.x);
     eye.xy+=n*position.x*size.x*2.+d*position.y*size.y*2.;}
   else{float c=cos(angle),s=sin(angle);eye.xy+=mat2(c,-s,s,c)*position.xy*size*2.;}
-  gl_Position=projectionMatrix*eye;vUv=atlas.xy+uv*atlas.zw;vTint=tint;}`;
+  // DDS images load top row first: flip v so sprites stand upright.
+  gl_Position=projectionMatrix*eye;vUv=atlas.xy+vec2(uv.x,1.-uv.y)*atlas.zw;vTint=tint;}`;
 const fragment=`uniform sampler2D sprite;varying vec2 vUv;varying vec4 vTint;
 // Additive contributions stay linear; encoding every particle before summing
 // amplifies dark texels and turns the overlapping green sprites white.
@@ -19,7 +23,8 @@ gl_FragColor=vec4(texel.rgb*tint,texel.a*vTint.a);}`;
 const random=r=>r[0]+Math.random()*r[1];
 // FxElemType. T5/T6: 0-2 sprites, 3 tail, 4 line, 5 trail, 6 cloud.
 // T4: 0-1 sprites, 2 tail, 3 line, 4 trail, 5 cloud.
-const STRETCHED=new Set(t4Effects?[2,3,4]:[3,4,5]);
+const STRETCHED=new Set(t4Effects?[2,3,4]:[3,4,5]),ORIENTED=new Set(t4Effects?[1]:[1,2]);
+const euler=new THREE.Euler(),turn=new THREE.Quaternion();
 const G=800,down=new THREE.Vector3(),worldQuaternion=new THREE.Quaternion();
 
 // Original sprite atlases and exported lifetime/color/size curves, batched on GPU.
@@ -31,6 +36,7 @@ export class OriginalEffects {
       const map=await originalTexture(url),normal=e.blending==='normal';this.templates.set(key,new THREE.ShaderMaterial({uniforms:{sprite:{value:map}},vertexShader:vertex,fragmentShader:normal?fragment.replace('}', '\n#include <colorspace_fragment>\n}'):fragment,
         transparent:true,depthWrite:false,depthTest:true,blending:normal?THREE.NormalBlending:THREE.AdditiveBlending}));
     }
+    this.ready=true;
   }
   has(name){return !!this.data[name];}
   create(name,time=0){
@@ -39,8 +45,8 @@ export class OriginalEffects {
       if(!e.textures.length||!e.samples.length)continue;
       const count=Math.min(64,Math.max(1,e.looping?Math.ceil((e.life[0]+e.life[1])/Math.max(1,e.interval)):e.count));
       const plane=new THREE.PlaneGeometry(1,1),geometry=new THREE.InstancedBufferGeometry();geometry.index=plane.index;geometry.attributes.position=plane.attributes.position;geometry.attributes.uv=plane.attributes.uv;geometry.instanceCount=count;
-      for(const [attribute,size] of [['center',3],['size',2],['tint',4],['atlas',4],['angle',1],['axis',3],['stretch',1]])geometry.setAttribute(attribute,new THREE.InstancedBufferAttribute(new Float32Array(count*size),size).setUsage(THREE.DynamicDrawUsage));
-      geometry.attributes.stretch.array.fill(STRETCHED.has(e.type)?1:0);
+      for(const [attribute,size] of [['center',3],['size',2],['tint',4],['atlas',4],['angle',1],['axis',3],['side',3],['stretch',1]])geometry.setAttribute(attribute,new THREE.InstancedBufferAttribute(new Float32Array(count*size),size).setUsage(THREE.DynamicDrawUsage));
+      geometry.attributes.stretch.array.fill(ORIENTED.has(e.type)?2:STRETCHED.has(e.type)?1:0);
       const mesh=new THREE.Mesh(geometry,this.templates.get(e.textures[0]+'|'+(e.blending||'additive')));mesh.frustumCulled=false;root.add(mesh);
       const particles=Array.from({length:count},(_,i)=>this.particle(e,time+(e.looping?i*Math.max(.02,e.interval/1000):random(e.delay)/1000)));
       emitters.push({e,mesh,particles});
@@ -60,7 +66,15 @@ export class OriginalEffects {
     else if(shape===0x20){const a=Math.random()*Math.PI*2;out=[0,Math.cos(a),Math.sin(a)];offset=[random(e.height),out[1]*radius,out[2]*radius];}
     let frame=null;
     if(radial&&out){const x=new THREE.Vector3(...out).normalize(),helper=Math.abs(x.x)<.9?new THREE.Vector3(1,0,0):new THREE.Vector3(0,1,0),y=new THREE.Vector3().crossVectors(helper,x).normalize(),z=new THREE.Vector3().crossVectors(x,y);frame=[x,y,z];}
-    return {born,life:Math.max(.01,random(e.life)/1000),seed:Math.random(),cell:Math.floor(Math.random()*Math.max(1,e.atlas.entries)),
+    // Spawn angles (pitch, yaw, roll in radians) turn an oriented sprite's
+    // plane; with none it faces the effect's forward axis.
+    let plane=null;
+    if(ORIENTED.has(e.type)){const g=e.angles||[[0,0],[0,0],[0,0]];euler.set(random(g[2]),random(g[0]),random(g[1]),'ZYX');turn.setFromEuler(euler);
+      plane=[new THREE.Vector3(0,1,0).applyQuaternion(turn),new THREE.Vector3(0,0,1).applyQuaternion(turn)];}
+    // FX_ATLAS_START_FIXED/INDEXED pick the authored cell (each wall buy's own
+    // drawing); FX_ATLAS_START_RANDOM any.
+    const entries=Math.max(1,e.atlas.entries),start=e.atlas.behavior!==undefined&&(e.atlas.behavior&3)!==1?(e.atlas.index||0)%entries:Math.floor(Math.random()*entries);
+    return {born,life:Math.max(.01,random(e.life)/1000),seed:Math.random(),cell:start,plane,
       gravity:e.blending?random(e.gravity)*G:0,r,frame,
       center:e.origin.map((range,k)=>random(range)+offset[k])};
   }
@@ -95,7 +109,8 @@ export class OriginalEffects {
         local.set((v0l[0]+vel[0])/2,(v0l[1]+vel[1])/2,(v0l[2]+vel[2])/2).add(world).multiplyScalar(s).addScaledVector(down,p.gravity*s*s/2);
         a.center.setXYZ(i,p.center[0]+local.x,p.center[1]+local.y,p.center[2]+local.z);
         world.set(vel[3],vel[4],vel[5]);toLocal(world);
-        a.axis.setXYZ(i,vel[0]+world.x+down.x*p.gravity*s,vel[1]+world.y+down.y*p.gravity*s,vel[2]+world.z+down.z*p.gravity*s);
+        if(p.plane){a.axis.setXYZ(i,p.plane[0].x,p.plane[0].y,p.plane[0].z);a.side.setXYZ(i,p.plane[1].x,p.plane[1].y,p.plane[1].z);}
+        else a.axis.setXYZ(i,vel[0]+world.x+down.x*p.gravity*s,vel[1]+world.y+down.y*p.gravity*s,vel[2]+world.z+down.z*p.gravity*s);
         a.size.setXY(i,Math.max(0,blend('size',0)+blend('sizeAmplitude',0)*p.seed),Math.max(0,blend('size',1)+blend('sizeAmplitude',1)*p.seed));
         a.tint.setXYZW(i,blend('color',0)/255,blend('color',1)/255,blend('color',2)/255,blend('color',3)/255*opacity);
         const columns=2**e.atlas.cols,rows=2**e.atlas.rows,cell=(p.cell+Math.floor(s*e.atlas.fps))%Math.max(1,e.atlas.entries);

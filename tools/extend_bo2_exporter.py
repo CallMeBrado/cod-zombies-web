@@ -123,6 +123,27 @@ if dumper.exists():
     if '{"angles"' not in dtext:
         dtext=dtext.replace('{"radius",range(e.spawnOffsetRadius)},','{"radius",range(e.spawnOffsetRadius)},{"angles",json::array({range(e.spawnAngles[0]),range(e.spawnAngles[1]),range(e.spawnAngles[2])})},')
         dumper.write_text(dtext)
+# Wall buys are chalk outlines drawn by effects on the wall (fx_zmb_wall_buy_*,
+# the "?" of an undrawn chalk spot) and drawing raises chalk dust.
+if dumper.exists():
+    dtext=dumper.read_text()
+    if 'name.find("fx_zmb_wall_buy")' not in dtext:
+        dtext=dtext.replace('&& name.find("raygun") == std::string::npos','&& name.find("raygun") == std::string::npos && name.find("fx_zmb_wall_buy") == std::string::npos && name.find("fx_zmb_buried_buy") == std::string::npos && name.find("chalk") == std::string::npos')
+        dumper.write_text(dtext)
+# The atlas start behaviour and fixed index: each wall buy's chalk effect
+# shows its own weapon's cell of the shared wall-buy atlas.
+if dumper.exists():
+    dtext=dumper.read_text()
+    if '{"behavior",e.atlas.behavior}' not in dtext:
+        dtext=dtext.replace('{"atlas",{{"cols",e.atlas.colIndexBits}','{"atlas",{{"behavior",e.atlas.behavior},{"index",e.atlas.index},{"cols",e.atlas.colIndexBits}')
+        dumper.write_text(dtext)
+# Weapons' own muzzle flashes (viewFlashEffect) and the Paralyzer's beam,
+# hit sizzle and disintegration.
+if dumper.exists():
+    dtext=dumper.read_text()
+    if 'name.find("muzzleflash")' not in dtext:
+        dtext=dtext.replace('&& name.find("raygun") == std::string::npos','&& name.find("raygun") == std::string::npos && name.find("muzzleflash") == std::string::npos && name.find("paralyzer") == std::string::npos')
+        dumper.write_text(dtext)
 # Buried's catwalk and floor collapse play authored fxanim clips.
 if 'webName.find("fxanim_")' not in text:text=text.replace('webName.find("o_zmb_") == 0;', 'webName.find("o_zmb_") == 0 || webName.find("fxanim_") == 0;')
 template.write_text(text)

@@ -71,7 +71,9 @@ for e in entities:
     kind=next((k for k in equipment if e.get('classname')=='script_struct' and e.get('targetname','').startswith(k+'_') and e.get('model')),None)
     if kind:e.update(classname='script_model',buriedPart=kind,itemId='buried_part_'+e['targetname'])
     if e.get('targetname')=='maze_blocker':e.update(classname='script_model',nativeMaze=e['script_noteworthy'],targetname='buried_maze_'+e['script_noteworthy'])
-    if any(x.get('targetname')=='chalk_buildable_trigger' and x.get('target')==e.get('targetname') for x in entities):e['classname']='script_model';e['chalkMark']='1'
+    # The chalk spots' weapon structs carry a placeholder model for the
+    # weapon that is drawn later; the wall itself shows a chalk effect.
+    if any(x.get('targetname')=='chalk_buildable_trigger' and x.get('target')==e.get('targetname') for x in entities):e['chalkMark']='1'
 
 # The original hedge gate's rigid GLB bounds, restored from Y up to Z up.
 gate=find('model_export/p6_zm_bu_hedge_gate_lod0.glb').read_bytes()
@@ -126,7 +128,7 @@ for name,w in weapons.items():
     # native alias names rather than inventing replacement weapon sounds.
     if not w.get('locHead'):w['locHead']=1
 grenade=weapon('frag_grenade_zm');grenade['handsModel']=arms[0]
-gesture_names={'zombie_builder':'zombie_builder_zm','specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight','specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','specialty_longersprint':'zombie_perk_bottle_marathon','specialty_additionalprimaryweapon':'zombie_perk_bottle_three_gun','specialty_nomotionsensor':'zombie_perk_bottle_vulture','knuckle_crack':'zombie_knuckle_crack'}
+gesture_names={'zombie_builder':'zombie_builder_zm','chalk_draw':'chalk_draw_zm','specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight','specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','specialty_longersprint':'zombie_perk_bottle_marathon','specialty_additionalprimaryweapon':'zombie_perk_bottle_three_gun','specialty_nomotionsensor':'zombie_perk_bottle_vulture','knuckle_crack':'zombie_knuckle_crack'}
 gestures={key:dict(weapon(name),name=name,handsModel=arms[0]) for key,name in gesture_names.items() if find('weapons/'+name)}
 for e in entities:
     if e.get('targetname')=='weapon_upgrade':
@@ -229,6 +231,13 @@ manifest['map'].update(jailTargets=['pf749_auto11'],arthurModel='c_zom_buried_sl
     propModels=['p6_anim_zm_magic_box_fake','zombie_teddybear','p6_zm_bu_sloth_booze_jug','p6_zm_bu_sloth_candy_bowl'],
     boxClips={n:clip_info('o_zombie_magic_box_'+n)['duration'] for n in ['open','close','arrive','leave']})
 manifest['map']['collisionHulls']=maze_hulls
+# _zm.csc / zm_buried.csc wall buy effects: each wall buy is a chalk outline
+# drawn by its effect; an undrawn chalk spot shows the question mark.
+manifest['map']['wallbuyEffects']={weapon:'maps/zombie/'+fx for weapon,fx in dict(
+    an94_zm='fx_zmb_wall_buy_an94',pdw57_zm='fx_zmb_wall_buy_pdw57',svu_zm='fx_zmb_wall_buy_svuas',lsat_zm='fx_zmb_wall_buy_lsat',tazer_knuckles_zm='fx_zmb_buried_buy_taseknuck',
+    m14_zm='fx_zmb_wall_buy_m14',rottweil72_zm='fx_zmb_wall_buy_olympia',m16_zm='fx_zmb_wall_buy_m16',mp5k_zm='fx_zmb_wall_buy_mp5k',ak74u_zm='fx_zmb_wall_buy_ak74u',
+    beretta93r_zm='fx_zmb_wall_buy_berreta93r',bowie_knife_zm='fx_zmb_wall_buy_bowie',claymore_zm='fx_zmb_wall_buy_claymore',**{'870mcs_zm':'fx_zmb_wall_buy_870mcs'},
+    question='fx_zmb_wall_buy_question',drawing='fx_zmb_wall_dyn_chalk_drawing').items()}
 manifest['map']['mazePermutations']=[['blocker_1','blocker_2','blocker_3','blocker_4'],['blocker_5','blocker_6','blocker_7','blocker_8','blocker_9'],['blocker_1','blocker_10','blocker_6','blocker_4','blocker_11'],['blocker_1','blocker_3','blocker_4','blocker_12'],['blocker_5','blocker_6','blocker_12','blocker_13'],['blocker_4','blocker_6','blocker_14']]
 manifest['equipment']=equipment
 triggers=[]

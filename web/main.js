@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { get,loadMap,model,cloneModel,originalAnimation,OriginalAudio,shadeModel,applyHideTags } from './assets.js';
+import { get,loadMap,model,cloneModel,originalAnimation,OriginalAudio,shadeModel,applyHideTags,weaponHeat } from './assets.js';
 import { CollisionWorld } from './collision.js';
 import {TestingGame,TestingMenu} from './testing.js';
 import { WeaponView } from './weapon-view.js';
@@ -373,7 +373,7 @@ async function prepareBox(manifest){
   for(const [name,d]of Object.entries(manifest.weapons)){const object=cloneModel(await model(d.worldModel));applyHideTags(object,d.hideTags);shadeModel(object,[.7,.7,.7]);boxTemplates.set(name,object);}
   for(const e of manifest.entities.filter(e=>e.targetname==='treasure_chest_use')){
     // Buried's box lid, leave and arrive play the zbarrier's own clips (BuriedView).
-    if(bo2){const item=dynamic.get(e.target)?.[0];if(!item)throw new Error('Buried mystery box missing.');const v=createBoxView({object:new THREE.Object3D(),entity:item.entity},item.entity,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);continue;}
+    if(bo2){const item=dynamic.get(e.target)?.[0];if(!item)throw new Error('Buried mystery box missing.');const v=createBoxView({object:new THREE.Object3D(),entity:item.entity},item.entity,boxTemplates,effects,180);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);continue;}
     const lid=dynamic.get(e.target)?.[0],origin=manifest.entities.find(x=>x.targetname===lid?.entity.target);if(!lid||!origin)throw new Error('Original mystery box lid/spawn missing.');
     const v=createBoxView(lid,origin,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);
   }
@@ -441,9 +441,9 @@ async function init() {
   map=await loadMap(scene,progress);await prepared(1,'Preparing original map objects…');await dynamicAssets(manifest.entities);
   await prepared(2,'Preparing original weapons and Zombies…');
   if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=characterArms[character];
-  audio=new OriginalAudio(manifest.sounds,launchAudioContext);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
+  audio=new OriginalAudio(manifest.sounds,launchAudioContext);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);weaponView.effects=effects;actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
   if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
-  if(bo2){buriedView=new BuriedView(scene,map,dynamic);await buriedView.prepare(manifest,presentation);}
+  if(bo2){buriedView=new BuriedView(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
@@ -454,7 +454,7 @@ async function init() {
   await prepared(4,'Preparing map collision, navigation and audio…');
   game=new (bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     dialog:e=>voice?.speak(e).catch(console.warn),
-    buriedItem:e=>buriedView?.item(e),
+    buriedItem:e=>buriedView?.item(e),chalkDust:target=>buriedView?.chalkDust(target,game.time),
     buriedEquipment:e=>buriedView?.place(e),buriedEquipmentRemove:id=>buriedView?.remove(id),buriedEquipmentLaunch:e=>buriedView?.launch(e),
     buriedProjectile:e=>buriedView?.projectile(e),buriedProjectileRemove:id=>buriedView?.removeProjectile(id),projectileImpact:r=>{combatEffects.impact(r,game.time);if(r.hit)blood.burst(r.end,r.dir,game.time,r.hit.head);},
     dive:e=>weaponView.dive(e),
@@ -467,7 +467,7 @@ async function init() {
     loop:spec=>{if(!loops.has(spec.id))loops.set(spec.id,{spec,record:null});},
     // Weapon switch: hold the old gun's putaway, then draw the new gun.
     weaponSwitch:e=>{if(e.phase==='drop')weaponView.play(e.anim,e.duration,false,true);else loadGun(e.weapon).then(()=>weaponView.play(e.anim,e.duration)).catch(console.error);},
-    effect:e=>{const root=effects.create(e.name,game.time);root.position.fromArray(e.position);scene.add(root);bursts.push({root,due:game.time+e.duration});},
+    effect:e=>{const root=effects.create(e.name,game.time);root.position.fromArray(e.position);if(e.yaw)root.rotation.z=e.yaw;scene.add(root);bursts.push({root,due:game.time+e.duration});},
     // Earthquake(): strength falls off with distance from the source.
     shake:e=>{const d=camera.position.distanceTo(new THREE.Vector3(...e.position));if(d<e.radius)shake={until:game.time+e.duration,amplitude:e.amplitude*(1-d/e.radius)};},stopLoop:({id})=>{loops.get(id)?.record?.stop(.05);loops.delete(id);},sessionStart:()=>audio.startSession(),drop:makeDrop,pickup:pickupVisual,
     grenadePrepare:s=>{weaponView.offhand();grenadeView.start(s);},grenade:g=>combatEffects.grenade(g),
@@ -589,6 +589,8 @@ function frame(time) {
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}
   const showWeapon=(state.mode==='playing'||pauseMenu.context==='pause')&&!diveThirdPerson,offhand=grenadeView&&game?grenadeView.update(game.time,showWeapon):0;
+  // The Paralyzer's glow lines shift from cold to hot with its heat.
+  if(game)weaponHeat.value=game.weapon.name.startsWith('slowgun')?game.paralyzerHeat/115:0;
   if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,stance:game.player.stance,time:game.time,reloading:!!game.reloadEnd,offhand});}
   if(game)playerBody?.update(game,state.mode==='playing'||pauseMenu.context==='pause');
   if(game&&game.time>lastLight+.3){lastLight=game.time;

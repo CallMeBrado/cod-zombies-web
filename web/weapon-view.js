@@ -48,7 +48,7 @@ export class WeaponView {
     this.flash=new THREE.Mesh(new THREE.ConeGeometry(1.4,5,5),new THREE.MeshBasicMaterial({color:0xffe8ba,transparent:true,opacity:.85,depthWrite:false}));
     this.flash.rotation.z=-Math.PI/2;this.flash.visible=false;object.getObjectByName('tag_flash')?.add(this.flash);
     this.knife=knife;this.meleeRemaining=0;this.sprintBlend=0;this.flashTime=0;this.rechamberAt=0;
-    this.rigs.set(weapon.name,{root,object,mixer,clips,adsAction:this.adsAction,flash:this.flash,knife});
+    this.flashFx=undefined;this.rigs.set(weapon.name,{root,object,mixer,clips,adsAction:this.adsAction,flash:this.flash,flashFx:undefined,knife});
   }
   play(name,duration=0,loop=false,hold=false,fade=.035) {
     const clip=this.clips.get(name);if(!clip)return;this.sprintAnim=null;
@@ -63,6 +63,12 @@ export class WeaponView {
     if(!this.root)return;const d=this.weapon.definition;
     this.sprintBlend=0;this.root.position.set(0,0,0);this.root.rotation.set(0,0,0);this.root.scale.setScalar(1);
     this.play(ads>.8?(this.weapon.clip?d.adsFireAnim:d.adsLastShotAnim):(this.weapon.clip?d.fireAnim:d.lastShotAnim));this.flashTime=.045;
+    // The weapon's own muzzle flash effect (viewFlashEffect) on tag_flash,
+    // made on the first shot once the effect textures are ready.
+    if(this.flashFx===undefined&&this.effects?.ready){const name=d.viewFlashEffect,tag=this.object.getObjectByName('tag_flash');
+      this.flashFx=name&&tag&&this.effects.has(name)?this.effects.create(name,0):null;if(this.flashFx){this.flashFx.visible=false;tag.add(this.flashFx);}
+      const rig=this.rigs.get(this.weapon.name);if(rig)rig.flashFx=this.flashFx;}
+    if(this.flashFx){this.effects.restart(this.flashFx,this.time||0);this.flashFx.visible=true;this.flashFxDue=this.effects.endTime(this.flashFx);this.flashTime=0;}
     this.rechamberAt=d.rechamberAnim&&this.weapon.clip>0?Math.max(.12,d.fireTime):0;
   }
   reload({empty,duration}){this.rechamberAt=0;this.play(empty?this.weapon.definition.reloadEmptyAnim:this.weapon.definition.reloadAnim,duration);}
@@ -103,5 +109,6 @@ export class WeaponView {
     this.root.scale.setScalar(1+((d.sprintScale||1)-1)*blend);
     this.root.position.y-=20*offhand;
     this.flashTime=Math.max(0,this.flashTime-dt);this.flash.visible=this.flashTime>0;this.flash.rotation.x=Math.random()*Math.PI;
+    this.time=time;if(this.flashFx?.visible){if(time>this.flashFxDue)this.flashFx.visible=false;else this.effects.update(this.flashFx,time);}
   }
 }

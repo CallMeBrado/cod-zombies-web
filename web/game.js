@@ -633,7 +633,7 @@ export class SoloGame {
     const d=this.data.gestures?.[key];if(!d||this.gesture)return false;
     this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;this.pendingMelee=null;this.switching=null;
     this.gesture={key,definition:d,phase:'raise',hold:true,due:this.time+d.raiseTime};
-    this.emit('gesture',{phase:'raise',key,definition:d,duration:d.raiseTime,anim:d.raiseAnim});return true;
+    this.emit('gesture',{phase:'raise',key,definition:d,duration:d.raiseTime,anim:d.raiseAnim||d.emptyRaiseAnim});return true;
   }
   endHoldGesture(){
     const g=this.gesture;if(!g?.hold)return;g.hold=false;g.phase='drop';g.due=this.time+g.definition.dropTime;
@@ -709,7 +709,7 @@ export class SoloGame {
       const moved=this.collision.step(p.position,[dx,dy,0],this.playerHull),floor=this.groundBelow(moved.position);
       p.position=floor||moved.position;p.grounded=!!floor;p.velocityZ=0;
     }else{
-      p.velocityZ-=800*dt;
+      p.velocityZ-=800*dt*(this.gravityScale?.()??1);
       const result=this.collision.step(p.position,[dx,dy,p.velocityZ*dt],this.playerHull);p.position=result.position;p.grounded=result.grounded;
       if(p.grounded)p.velocityZ=0;
     }

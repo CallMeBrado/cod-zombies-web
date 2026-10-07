@@ -22,13 +22,13 @@ export class Arthur {
   reset(){
     this.state='jail_idle';this.gotBooze=false;this.prop=null;this.door=null;this.holding=false;
     this.yaw=this.anchorYaw;this.clip=null;this.play('idle_jail');this.position=this.anchored('idle_jail',0);
-    this.mover={position:this.position.slice(),path:[],speed:75,velocityZ:0};this.goal=null;this.goalKey=null;this.pathDue=0;
+    this.mover={position:this.position.slice(),path:[],speed:75,velocityZ:0};this.goal=null;this.goalKey=null;this.routedKey=null;this.pathDue=0;this.stalls=0;this.progressFrom=null;this.progressDue=0;
     this.scared=false;this.charge=null;this.protectUntil=0;this.target=null;this.attackHit=false;
   }
   // ----- clips -------------------------------------------------------------
   duration(name){return this.clips[name]?.duration||1;}
   age(){return this.game.time-this.clipStarted;}
-  play(name){if(name===this.clip)return;this.clip=name;this.clipStarted=this.game.time;this.noteAge=0;this.clipYaw=this.yaw;}
+  play(name){if(name===this.clip)return;this.clip=name;this.clipStarted=this.game.time;this.noteAge=-1e-6;this.clipYaw=this.yaw;}
   // Root yaw of a clip at time t (the delta rotation): drinking turns him
   // around to face away from the giver, as do backing into the cell and
   // bouncing off a wall.
@@ -74,17 +74,51 @@ export class Arthur {
   // Returns true on arrival and null when no route reaches it (a closed door
   // or barricade between), in which case he stays where he is.
   moveTo(target,clip,dt){
-    const g=this.game,key=target.map(Math.round).join(',');
-    if(g.time>=this.pathDue||key!==this.goalKey){
-      this.goalKey=key;this.pathDue=g.time+1;const direct=g.walkableLink(this.position,target);
-      this.mover.path=direct?[]:g.path(this.position,target,false);this.unreachable=!direct&&!this.mover.path.length;
-      while(this.mover.path.length>1&&g.walkableLink(this.position,this.mover.path[1]))this.mover.path.shift();
+    const g=this.game,key=target.map(v=>Math.round(v/48)).join(',');
+    // Re-route when the goal moves (at most twice a second), when the route
+    // runs out, or after two seconds without progress; three stalls on one
+    // goal mean he cannot reach it.
+    const stalled=g.time>=(this.progressDue||0)&&this.progressFrom&&flat(this.position,this.progressFrom)<16;
+    if(g.time>=(this.progressDue||0)){this.progressFrom=this.position.slice();this.progressDue=g.time+2;}
+    if(key!==this.goalKey){this.goalKey=key;this.stalls=0;this.pathDue=Math.min(this.pathDue,g.time+.5);}
+    if(stalled)this.stalls=(this.stalls||0)+1;
+    if(stalled||g.time>=this.pathDue&&(this.routedKey!==key||!this.mover.path.length)){
+      this.routedKey=key;this.pathDue=g.time+1;
+      // Physical walks, not sight lines: a porch railing or a drop must not
+      // count as a straight way through.
+      const direct=flat(this.position,target)<256&&this.walkable(this.position,target);
+      this.mover.path=direct?[]:this.route(target);this.unreachable=!direct&&!this.mover.path.length||this.stalls>=3;
+      if(this.mover.path.length>1&&this.walkable(this.position,this.mover.path[1]))this.mover.path.shift();
     }
     if(this.unreachable)return null;
     this.play(clip);this.mover.position=this.position;this.mover.speed=this.speed(clip);
-    const done=g.advancePath(this.mover,dt,target);this.position=this.mover.position;
+    // Roam nodes can sit well above the floor (one is 56 units over the
+    // street), so arriving is judged across the ground.
+    const done=g.advancePath(this.mover,dt,target)||flat(this.position,target)<12&&Math.abs(this.position[2]-target[2])<80;this.position=this.mover.position;
     if(!done)this.yaw=wrap(this.yaw+Math.max(-6*dt,Math.min(6*dt,wrap(this.mover.angle-this.yaw))));
     return done;
+  }
+  // Can he walk there? A coarse physical walk (4-unit steps with gravity and
+  // the hull's step-ups) that fails as soon as he is blocked or drops away.
+  walkable(p,q){
+    const g=this.game,length=flat(p,q);if(length>300)return false;let at=p.slice(),fall=0;
+    for(let i=0;i<Math.ceil(length/4)+20;i++){
+      const dx=q[0]-at[0],dy=q[1]-at[1],left=Math.hypot(dx,dy);if(left<4)return Math.abs(at[2]-q[2])<48;
+      const step=Math.min(4,left);fall-=800/30;const r=g.collision.step(at,[dx/left*step,dy/left*step,fall/30],HULL);
+      if(flat(r.position,at)<step*.3)return false;at=r.position;if(r.grounded)fall=0;if(at[2]<Math.min(p[2],q[2])-80)return false;
+    }
+    return false;
+  }
+  // A graph route whose first leg he can really walk. The nearest node can
+  // sit below a porch railing he cannot cross; then start from the closest
+  // node he can reach on foot.
+  route(target){
+    const g=this.game,plain=g.path(this.position,target,false);
+    if(!plain.length||this.walkable(this.position,plain[0]))return plain;
+    const near=g.nodes.map((n,i)=>[i,flat(n.origin,this.position),Math.abs(n.origin[2]-this.position[2])]).filter(c=>c[1]<256&&c[2]<120).sort((a,b)=>a[1]-b[1]).slice(0,6);
+    for(const [i]of near){const o=g.nodes[i].origin;if(!this.walkable(this.position,o))continue;
+      const rest=g.walkableLink(o,target)?[target.slice()]:g.path(o,target,false);if(rest.length)return [o.slice(),...rest];}
+    return plain;
   }
   // Zombies he barges through while running (sloth_check_ragdolls): no points,
   // and the round gets them back (level.zombie_total++).
@@ -117,7 +151,6 @@ export class Arthur {
       // start_berserk(): drink, turn to the barricade he faces, then charge.
       this.gotBooze=true;this.state='drink';this.play('drinkbooze');this.prop='booze';this.aim=this.facingBarricade();this.charge=null;
     }else{this.state='eat';this.play('eatcandy');this.prop='candy';}
-    g.emit('sound',{alias:kind==='booze'?'zmb_ai_sloth_booze_give':'zmb_ai_sloth_candy_give',position:this.position.slice()});
   }
   // get_facing_barricade(): within 900, its back toward him, along his
   // backward line (he faces the player) within 100 units; failing that, along

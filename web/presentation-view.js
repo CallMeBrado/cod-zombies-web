@@ -13,8 +13,10 @@ export function updatePickupView(drop,v,time,effects){
   const age=time-drop.spawned,period=age<22.5?.5:age<25?.25:.1;
   v.root.visible=age<15||Math.floor((age-15)/period)%2===0;effects.update(v.glow,time);
 }
-export function createBoxView(lid,origin,templates,effects){
-  const weaponRoot=new THREE.Group(),position=origin.origin.split(/\s+/).map(Number);weaponRoot.position.fromArray(position);weaponRoot.rotation.z=THREE.MathUtils.degToRad(Number(origin.angles.split(/\s+/)[1])+90);weaponRoot.visible=false;
+// The weapon turns from the box's angles: +90 on T4/T5 boxes, +180 on T6's
+// zbarrier (treasure_chest_weapon_spawn).
+export function createBoxView(lid,origin,templates,effects,yawOffset=90){
+  const weaponRoot=new THREE.Group(),position=origin.origin.split(/\s+/).map(Number);weaponRoot.position.fromArray(position);weaponRoot.rotation.z=THREE.MathUtils.degToRad(Number(origin.angles.split(/\s+/)[1])+yawOffset);weaponRoot.visible=false;
   const choices=new Map();for(const [name,template]of templates){const object=cloneModel(template);object.visible=false;weaponRoot.add(object);choices.set(name,object);}
   const glow=effects.create('env/light/fx_ray_sun_sm_short',0);glow.position.fromArray(position);glow.rotation.y=Math.PI/2;glow.visible=false;
   return {lid,origin:position,closed:lid.object.quaternion.clone(),weaponRoot,choices,glow};
