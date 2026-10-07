@@ -16,7 +16,7 @@ export class KinoRules extends FactoryRules {
   }
   visible(e){
     if(e.targetname==='use_power_switch')return !this.power;
-    if(e.targetname==='treasure_chest_use')return e.target===this.data.initialBox;
+    if(e.targetname==='treasure_chest_use')return e.target===(this.game.activeBox??this.data.initialBox);
     if(e.targetname==='zombie_vending'&&e.script_noteworthy==='specialty_quickrevive')return !!this.game.coop||this.revivesUsed<3;
     return !e.script_noteworthy?.includes('electric_door');
   }

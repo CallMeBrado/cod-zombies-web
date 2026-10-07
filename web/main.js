@@ -283,7 +283,7 @@ function factoryVisuals(){
     const active=game.entities.find(e=>e.targetname===game.data.map.initialBox),at=active&&nodePos(active);
     for(const items of dynamic.values())for(const item of items){
       if(game.opened.has(item.entity.targetname))item.object.visible=false;
-      if(at&&/zombie_treasure_box|p6_anim_zm_magic_box/.test(item.entity.model||''))item.object.visible=item.object.position.distanceTo(new THREE.Vector3(...at))<150;
+      if(at&&!bo2&&/zombie_treasure_box|p6_anim_zm_magic_box/.test(item.entity.model||''))item.object.visible=item.object.position.distanceTo(new THREE.Vector3(...at))<150;
       if(item.entity.targetname==='teleporter_link_cable_on')item.object.visible=game.mapRules.teleporterLinked;
       if(item.entity.targetname==='teleporter_link_cable_off')item.object.visible=!game.mapRules.teleporterLinked;
     }
@@ -370,7 +370,8 @@ function updateDrop(drop,v){
 async function prepareBox(manifest){
   for(const [name,d]of Object.entries(manifest.weapons)){const object=cloneModel(await model(d.worldModel));applyHideTags(object,d.hideTags);shadeModel(object,[.7,.7,.7]);boxTemplates.set(name,object);}
   for(const e of manifest.entities.filter(e=>e.targetname==='treasure_chest_use')){
-    if(bo2){const item=dynamic.get(e.target)?.[0],bone=item?.object.getObjectByName('j_hinge');if(!bone)throw new Error('Buried mystery box hinge missing.');const v=createBoxView({object:bone,entity:item.entity},item.entity,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);continue;}
+    // Buried's box lid, leave and arrive play the zbarrier's own clips (BuriedView).
+    if(bo2){const item=dynamic.get(e.target)?.[0];if(!item)throw new Error('Buried mystery box missing.');const v=createBoxView({object:new THREE.Object3D(),entity:item.entity},item.entity,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);continue;}
     const lid=dynamic.get(e.target)?.[0],origin=manifest.entities.find(x=>x.targetname===lid?.entity.target);if(!lid||!origin)throw new Error('Original mystery box lid/spawn missing.');
     const v=createBoxView(lid,origin,boxTemplates,effects);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);
   }
@@ -413,9 +414,12 @@ function gesture(e){
   if(e.phase==='raise'){
     const d=e.definition;
     weaponView.load({name:d.name,definition:d,clip:1},map.illumination(game.player.position)).then(()=>{
-      if(game.gesture?.key===e.key&&game.gesture.phase==='raise')weaponView.play(d.firstRaiseAnim,Math.max(.1,game.gesture.due-game.time),false,true);
+      if(game.gesture?.key!==e.key)return;
+      if(game.gesture.phase==='raise')weaponView.play(e.anim||d.firstRaiseAnim,Math.max(.1,game.gesture.due-game.time),false,true);
+      else if(game.gesture.phase==='hold')weaponView.play(d.idleAnim,0,true);
     }).catch(console.error);
-  }else if(e.phase==='drop')weaponView.play(e.definition.dropAnim,e.duration,false,true);
+  }else if(e.phase==='hold'){if(weaponView.weapon?.name===e.definition.name)weaponView.play(e.definition.idleAnim,0,true);}
+  else if(e.phase==='drop')weaponView.play(e.definition.dropAnim,e.duration,false,true);
   else loadGun(game.weapon).then(()=>{const raise=game.weapon.definition.raiseAnim;if(raise)weaponView.play(raise,e.duration);}).catch(console.error);
 }
 function updateAudio(){
@@ -437,7 +441,7 @@ async function init() {
   if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=characterArms[character];
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);actors=new ZombieActors(scene,map,presentation);actors.active=visuals;
   if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
-  if(bo2){buriedView=new BuriedView(scene,map,dynamic);await buriedView.prepare(manifest);}
+  if(bo2){buriedView=new BuriedView(scene,map,dynamic);await buriedView.prepare(manifest,presentation);}
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),

@@ -103,6 +103,10 @@ for e in entities:
 connections=re.findall(r'add_adjacent_zone\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"',native_script)
 registry={n:(upgrade,int(cost)) for n,upgrade,cost in re.findall(r'add_zombie_weapon\(\s*"([^"\n]+)"\s*,\s*"([^"\n]*)"\s*,\s*[^,\n]+,\s*(\d+)',native_script)}
 unsupported={'fivesevendw_zm','knife_ballistic_zm','knife_ballistic_bowie_zm','knife_ballistic_no_melee_zm','claymore_zm','cymbal_monkey_zm','frag_grenade_zm','tazer_knuckles_zm'}
+# zm_buried.gsc include_weapons(): the box offers every weapon included without
+# the ', 0' flag. Dual-wield Five-seven, monkeys, the ballistic knife and the
+# Time Bomb are not implemented yet.
+BOX_WEAPONS=['rnma_zm','judge_zm','kard_zm','fiveseven_zm','saiga12_zm','srm1216_zm','saritch_zm','tar21_zm','galil_zm','fnfal_zm','dsr50_zm','barretm82_zm','hamr_zm','usrpg_zm','m32_zm','ray_gun_zm','raygun_mark2_zm','slowgun_zm']
 base_names=[n for n in registry if n not in unsupported and find('weapons/'+n)]
 names=set(base_names)|{registry[n][0] for n in base_names if find('weapons/'+registry[n][0])}
 weapons={n:weapon(n) for n in sorted(names)};knife=weapon('knife_zm')
@@ -121,7 +125,7 @@ for name,w in weapons.items():
     # native alias names rather than inventing replacement weapon sounds.
     if not w.get('locHead'):w['locHead']=1
 grenade=weapon('frag_grenade_zm');grenade['handsModel']=arms[0]
-gesture_names={'specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight','specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','specialty_longersprint':'zombie_perk_bottle_marathon','specialty_additionalprimaryweapon':'zombie_perk_bottle_three_gun','specialty_nomotionsensor':'zombie_perk_bottle_vulture','knuckle_crack':'zombie_knuckle_crack'}
+gesture_names={'zombie_builder':'zombie_builder_zm','specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight','specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','specialty_longersprint':'zombie_perk_bottle_marathon','specialty_additionalprimaryweapon':'zombie_perk_bottle_three_gun','specialty_nomotionsensor':'zombie_perk_bottle_vulture','knuckle_crack':'zombie_knuckle_crack'}
 gestures={key:dict(weapon(name),name=name,handsModel=arms[0]) for key,name in gesture_names.items() if find('weapons/'+name)}
 for e in entities:
     if e.get('targetname')=='weapon_upgrade':
@@ -188,9 +192,29 @@ for name,native in remap.items():
     if native in aliases:sounds[name]=aliases[native][:2]
 voice={name:entries[:1] for name,entries in aliases.items() if re.match(r'vox_plr_[0-3]_(?:ammo_low|ammo_out|level_start|nomoney|revive_down|revive_up|perk_|powerup_|kill_|wpck_).*_[01]$',name)}
 body_names=['c_zom_player_oldman_fb','c_zom_player_reporter_dam_fb','c_zom_player_farmgirl_fb','c_zom_player_engineer_fb']
-manifest=dict(format='bo2-buried-solo-v1',game='black-ops-2',startWeapon='m1911_zm',variables=variables,weapons=weapons,grenade=grenade,gestures=gestures,entities=entities,sounds=sounds,voice=voice,characterNames=['Russman','Stuhlinger','Misty','Marlton'],characterArms=arms,playerBodies=[dict(body=n) for n in body_names],weaponNames={n:n.replace('_upgraded_zm',' (Pack-a-Punch)').replace('_zm','').replace('_',' ').upper() for n in weapons},map=dict(id='buried',negotiationBegin=17,negotiationEnd=18,initialZone='zone_start',connections=connections,volumes=volumes,goals=goals,initialBox='start_chest',boxWeapons=[n for n in base_names if n!='m1911_zm'],powerTargets=[]),provenance=dict(world='maps/mp/zm_buried.d3dbsp',rules='owned decompiled maps/mp/zm_buried*.gsc',runtime='Black Ops II T6 browser reimplementation'))
+manifest=dict(format='bo2-buried-solo-v1',game='black-ops-2',startWeapon='m1911_zm',variables=variables,weapons=weapons,grenade=grenade,gestures=gestures,entities=entities,sounds=sounds,voice=voice,characterNames=['Russman','Stuhlinger','Misty','Marlton'],characterArms=arms,playerBodies=[dict(body=n) for n in body_names],weaponNames={n:n.replace('_upgraded_zm',' (Pack-a-Punch)').replace('_zm','').replace('_',' ').upper() for n in weapons},map=dict(id='buried',negotiationBegin=17,negotiationEnd=18,initialZone='zone_start',connections=connections,volumes=volumes,goals=goals,initialBox='start_chest',boxWeapons=[n for n in BOX_WEAPONS if n in base_names],boxExclusive=[['ray_gun_zm','raygun_mark2_zm']],boxMoves=True,mazeChests=['maze_chest1','maze_chest2'],powerTargets=[]),provenance=dict(world='maps/mp/zm_buried.d3dbsp',rules='owned decompiled maps/mp/zm_buried*.gsc',runtime='Black Ops II T6 browser reimplementation'))
 manifest['wallCosts']={name:cost for name,(_,cost) in registry.items()}
-manifest['map'].update(jailTargets=['pf749_auto11','sloth_cell_door'],arthurModel='c_zom_buried_sloth_fb',arthurAnimations=['ai_zombie_sloth_idle_jail','ai_zombie_sloth_idle','ai_zombie_sloth_walk','ai_zombie_sloth_run'])
+ARTHUR_CLIPS=['idle_jail','idle_jail_2_cower','idle_jail_2_cower_jumpback','idle_cower','idle_cower_jumpback','idle','walk','walk_hunched','walk_scared','run','run_hunched','gimme_booze','gimme_candy','drinkbooze','drinkbooze_aim','run_berserk','hit_barrier','hit_wall','eatcandy','idle_protect','frantic_run','frantic_run_hunched','attack_v1','attack_v2','attack_v3','attack_v4']
+def clip_info(name):
+    # Duration, notetracks and the root (tag_origin) motion of each clip. The
+    # runtime drives Arthur's position from these, as the game does.
+    source=find('web-anims/'+name+'.json')
+    if not source:raise RuntimeError('Missing Arthur clip '+name)
+    d=json.loads(source.read_text());delta=d.get('delta') or {}
+    duration=max(1,d['frames'])/d['fps']
+    if delta.get('values'):
+        motion=[[round(i/d['fps'],4),*[round(delta['mins'][k]+v[k]*delta['size'][k],3) for k in range(3)]] for i,v in zip(delta['indices'],delta['values'])]
+    else:motion=[[0,*[round(x,3) for x in delta.get('constant',[0,0,0])]]]
+    return dict(duration=round(duration,4),motion=motion,notes={n['name']:round(n['time']*duration,4) for n in d.get('notifies',[])})
+arthur_clips={n:clip_info('ai_zombie_sloth_'+n) for n in ARTHUR_CLIPS}
+door_clips={n:clip_info(n) for n in ['o_zombie_sloth_idle_jail_2_cower_door','o_zombie_sloth_idle_jail_2_cower_jumpback_door','o_zombie_sloth_cower_2_close_door']}
+manifest['map'].update(jailTargets=['pf749_auto11'],arthurModel='c_zom_buried_sloth_fb',arthurAnimations=['ai_zombie_sloth_'+n for n in ARTHUR_CLIPS],arthurClips=arthur_clips,
+    arthurProps=dict(booze='p6_zm_bu_sloth_booze_jug',candy='p6_zm_bu_sloth_candy_bowl'),doorClips=door_clips,
+    # Authored prop animations: the box's zbarrier pieces, the cell door and
+    # the start area's collapsing catwalk and floor.
+    propAnimations=['o_zombie_magic_box_open','o_zombie_magic_box_close','o_zombie_magic_box_arrive','o_zombie_magic_box_leave','o_zombie_magic_box_fake_idle_twitch_a','o_zombie_magic_box_fake_idle_twitch_b',*door_clips,'fxanim_zom_buried_catwalk_anim','fxanim_zom_buried_board_drop_start_anim'],
+    propModels=['p6_anim_zm_magic_box_fake','zombie_teddybear','p6_zm_bu_sloth_booze_jug','p6_zm_bu_sloth_candy_bowl'],
+    boxClips={n:clip_info('o_zombie_magic_box_'+n)['duration'] for n in ['open','close','arrive','leave']})
 manifest['map']['collisionHulls']=maze_hulls
 manifest['map']['mazePermutations']=[['blocker_1','blocker_2','blocker_3','blocker_4'],['blocker_5','blocker_6','blocker_7','blocker_8','blocker_9'],['blocker_1','blocker_10','blocker_6','blocker_4','blocker_11'],['blocker_1','blocker_3','blocker_4','blocker_12'],['blocker_5','blocker_6','blocker_12','blocker_13'],['blocker_4','blocker_6','blocker_14']]
 manifest['equipment']=equipment
@@ -202,6 +226,14 @@ for e in entities:
         b=collision['brushes'][index]
         hulls.append(dict(mins=[v+origin[k] for k,v in enumerate(b['mins'])],maxs=[v+origin[k] for k,v in enumerate(b['maxs'])],planes=[[*p[:3],p[3]+sum(p[k]*origin[k] for k in range(3))] for p in b['planes']]))
     triggers.append(dict(id=e['guid'],kind=e['targetname'],target=e.get('target'),position=origin,hulls=hulls))
+# Arthur breaks a barricade when his berserk charge touches its trigger.
+def hulls_of(e):
+    origin=point(e);result=[]
+    for index in collision['models'][int(e['model'][1:])]['brushes']:
+        b=collision['brushes'][index]
+        result.append(dict(mins=[v+origin[k] for k,v in enumerate(b['mins'])],maxs=[v+origin[k] for k,v in enumerate(b['maxs'])],planes=[[*p[:3],p[3]+sum(p[k]*origin[k] for k in range(3))] for p in b['planes']]))
+    return result
+manifest['map']['slothBarricades']=[dict(target=e['target'],flag=e.get('script_flag'),noteworthy=e.get('script_noteworthy'),position=point(e),angles=list(map(float,e.get('angles','0 0 0').split())),hulls=hulls_of(e)) for e in entities if e.get('targetname')=='sloth_barricade' and e.get('model','').startswith('*')]
 # Player-only authored triggers do not change prepared NPC walking geometry.
 manifest['environmentTriggers']=triggers
 localized={}

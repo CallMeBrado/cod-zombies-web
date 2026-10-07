@@ -5,6 +5,9 @@ import {hitDamage,fleshPenetration,pelletAngles} from './ballistics.js';
 import {chooseKnifeLunge,moveKnifeLunge,knifeHitValid,meleeValue} from './knife-lunge.js';
 import {resetMovement,restoreMovement,playerHull,playerView,playerSpeed,playerBusy,changeStance,stanceButton,releaseStance,movementFrame,movementInput,movementEnd,moveDive,stanceSpread} from './player-movement.js';
 export const PHYSICS_STEP=1/120;
+// treasure_chest_weapon_spawn(): the bear appears, flies off 0.5 + 2 s later
+// and rises 500 units over 4 s before the box leaves.
+export const BOX_TEDDY_SECONDS=6.5;
 // round_spawning() waits while get_enemy_count() > 31.
 const MAX_ALIVE=32;
 export const NAVIGATION_VERSION='native-triangles-physics-v3';
@@ -99,6 +102,7 @@ export class SoloGame {
     this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
     this.resumed=false;this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;this.powerupOrder=[];this.powerupIndex=0;this.carpenter=null;this.nextDropId=1;
     this.boxes=new Map(this.interactions.filter(e=>e.targetname==='treasure_chest_use').map(e=>[e.target,{entity:e,phase:'closed',weapon:null}]));
+    this.activeBox=this.data.map?.initialBox??null;this.boxUses=0;this.boxMoves=0;this.mazeChests=false;
     this.mapRules?.reset();
     this.yaw=Math.PI;this.pitch=0;this.ads=0;this.spreadBloom=0;this.moving=false;this.shots=0;this.hits=0;this.nextId=1;this.elapsed=0;
     this.windows.forEach(w=>{w.boards=6;w.traverser=null;w.attackers=[];this.emit('barrier',w);});
@@ -564,7 +568,7 @@ export class SoloGame {
       powerup:{...this.powerup},carpenter:plain(this.carpenter),
       drops:this.drops.filter(d=>!d.used).map(d=>({id:d.id,type:d.type,position:d.position.slice(),expires:d.expires,spawned:d.spawned})),
       grenades:this.grenades.filter(g=>!g.held&&!g.exploded).map(g=>({position:g.position.slice(),velocity:g.velocity.slice(),due:g.due,spawned:g.spawned,resting:g.resting,bounceAt:g.bounceAt})),
-      boxes:[...this.boxes].map(([target,{entity,...box}])=>[target,plain(box)]),
+      boxes:[...this.boxes].map(([target,{entity,...box}])=>[target,plain(box)]),activeBox:this.activeBox,boxUses:this.boxUses,boxMoves:this.boxMoves,mazeChests:this.mazeChests,
       rules:this.mapRules?.saveState()};
   }
   loadState(s){
@@ -593,6 +597,7 @@ export class SoloGame {
     this.carpenter=s.carpenter||null;if(this.carpenter)this.emit('loop',{id:'carpenter',alias:'carp_loop',position:this.carpenter.origin.slice(),near:150,far:1400});
     for(const saved of s.grenades){const g={...saved,position:saved.position.slice(),previousPosition:saved.position.slice(),held:false};this.grenades.push(g);this.emit('grenade',g);}
     for(const [target,box]of s.boxes){const current=this.boxes.get(target);if(current)Object.assign(current,box);}
+    if(s.activeBox!==undefined){this.activeBox=s.activeBox;this.boxUses=s.boxUses||0;this.boxMoves=s.boxMoves||0;this.mazeChests=!!s.mazeChests;}
     this.phase=s.phase;this.resumed=true;
     for(const target of this.opened)this.emit('open',{target});for(const w of this.windows)this.emit('barrier',w);
     if(this.mapRules)this.emit('power');this.emit('weapon',this.weapon);
@@ -622,8 +627,21 @@ export class SoloGame {
     this.gesture={key,definition:d,phase:'raise',due:this.time+d.firstRaiseTime,onRaised};
     this.emit('gesture',{phase:'raise',key,definition:d,duration:d.firstRaiseTime});return true;
   }
+  // A held gesture (T6 zombie_builder_zm while building or unlocking): the
+  // hands raise, idle until endHoldGesture(), then lower and the gun returns.
+  startHoldGesture(key){
+    const d=this.data.gestures?.[key];if(!d||this.gesture)return false;
+    this.reloadEnd=0;this.pendingFire=false;this.sprinting=false;this.pendingMelee=null;this.switching=null;
+    this.gesture={key,definition:d,phase:'raise',hold:true,due:this.time+d.raiseTime};
+    this.emit('gesture',{phase:'raise',key,definition:d,duration:d.raiseTime,anim:d.raiseAnim});return true;
+  }
+  endHoldGesture(){
+    const g=this.gesture;if(!g?.hold)return;g.hold=false;g.phase='drop';g.due=this.time+g.definition.dropTime;
+    this.emit('gesture',{phase:'drop',key:g.key,definition:g.definition,duration:g.definition.dropTime});
+  }
   updateGesture(){
     const g=this.gesture;if(!g||this.time<g.due)return;
+    if(g.phase==='raise'&&g.hold){g.phase='hold';g.due=Infinity;this.emit('gesture',{phase:'hold',key:g.key,definition:g.definition});return;}
     if(g.phase==='raise'){g.onRaised?.();g.phase='drop';g.due=this.time+g.definition.dropTime;this.emit('gesture',{phase:'drop',key:g.key,definition:g.definition,duration:g.definition.dropTime});}
     else if(g.phase==='drop'){g.phase='return';g.due=this.time+.5;this.emit('gesture',{phase:'return',key:g.key,duration:.5});}
     else this.gesture=null;
@@ -887,7 +905,7 @@ export class SoloGame {
         box.phase='closing';box.closedAt=this.time;box.due=this.time+settings.cooldown;box.timedOut=false;this.emit('sound',{alias:'lid_close'});return;}
       if(box.phase!=='closed')return;
       if(!this.spendPoints(cost)){this.voiceEvent?.('denied','box');return;}
-      const names=(this.data.map?.boxWeapons||Object.keys(this.data.weapons)).filter(x=>!this.inventory.some(w=>w.name===x));
+      const names=this.boxNames();
       if(this.coop?.guest){this.coop.toHost({type:'box',target:e.target,names,cost});return;}
       this.openBox(box,names,this.coop?.localId??null);
     } else {
@@ -904,8 +922,16 @@ export class SoloGame {
     this.invalidateNavigation(e.target.includes('upstairs')?[e.target,'upstairs_blocker','upstairs_blocker2']:[e.target]);
     this.emit('open',e);this.message('Passage opened');
   }
+  // The weapons the box may offer this player: none they hold (or hold
+  // upgraded), and neither half of an exclusive pair they already own one of
+  // (Buried's buried_special_weapon_magicbox_check: Ray Gun / Ray Gun Mark II).
+  boxNames(){
+    const has=x=>this.inventory.some(w=>w.name===x||w.name===this.data.weapons[x]?.upgrade);
+    const excluded=new Set();for(const pair of this.data.map?.boxExclusive||[])if(pair.some(has))pair.forEach(x=>excluded.add(x));
+    return (this.data.map?.boxWeapons||Object.keys(this.data.weapons)).filter(x=>!has(x)&&!excluded.has(x));
+  }
   openBox(box,names,owner=null){
-    box.names=names.length?names:Object.keys(this.data.weapons);box.owner=owner;box.phase='cycling';box.started=this.time;box.index=0;box.nextAt=this.time;box.weapon=null;
+    box.names=names.length?names:Object.keys(this.data.weapons);box.owner=owner;box.phase='cycling';box.started=this.time;box.index=0;box.nextAt=this.time;box.weapon=null;box.cost=Number(box.entity.zombie_cost)||950;
     this.emit('sound',{alias:'lid_open'});this.emit('sound',{alias:'music_box'});this.updateBoxes();
   }
   rebuild(w) {
@@ -924,11 +950,48 @@ export class SoloGame {
     for(const box of this.boxes.values()){
       if(box.phase==='cycling')while(this.time+1e-9>=box.nextAt&&box.index<settings.cycleDelays.length){
         box.weapon=box.names[Math.floor(Math.random()*box.names.length)];box.nextAt+=settings.cycleDelays[box.index++];
-        if(box.index===settings.cycleDelays.length){box.phase='offered';box.offeredAt=box.nextAt;box.due=box.offeredAt+settings.offerTime;break;}
+        if(box.index===settings.cycleDelays.length){
+          box.offeredAt=box.nextAt;
+          if(this.boxJoker()){box.phase='teddy';box.weapon=null;box.due=box.offeredAt+BOX_TEDDY_SECONDS;this.boxUses=0;this.boxMoves++;this.refundBox(box);break;}
+          box.phase='offered';box.due=box.offeredAt+settings.offerTime;break;
+        }
       }
       if(box.phase==='offered'&&this.time>=box.due){box.phase='closing';box.closedAt=this.time;box.timedOut=true;box.due=this.time+settings.cooldown;this.emit('sound',{alias:'lid_close'});}
-      if(box.phase==='closing'&&this.time>=box.due){box.phase='closed';box.weapon=null;}
+      if(box.phase==='closing'&&this.time>=box.due){box.phase='closed';box.weapon=null;this.boxUses++;}
+      // treasure_chest_move(): the bear rises and flies off (weapon_fly_away),
+      // the box plays its leave animation, and 12 s later the box arrives at
+      // the next location.
+      if(box.phase==='teddy'){
+        if(!box.laughed&&this.time>=box.offeredAt+.5){box.laughed=true;this.emit('sound',{alias:'zmb_laugh_richtofen'});}
+        if(this.time>=box.due){box.phase='leaving';box.laughed=false;box.started=this.time;box.due=this.time+12.1;this.emit('sound',{alias:'zmb_box_move',position:box.entity.position});}
+      }
+      if(box.phase==='leaving'&&this.time>=box.due){
+        box.phase='closed';const next=this.nextBox(box.entity.target),arriving=this.boxes.get(next);this.activeBox=next;
+        if(arriving){arriving.phase='arriving';arriving.started=this.time;arriving.due=this.time+(this.data.map?.boxClips?.arrive||4.9);this.emit('sound',{alias:'zmb_box_poof',position:arriving.entity.position});this.emit('boxMoved',next);}
+      }
+      if(box.phase==='arriving'&&this.time>=box.due){box.phase='closed';this.emit('sound',{alias:'zmb_box_poof_land',position:box.entity.position});}
     }
+  }
+  // _zm_magicbox treasure_chest_weapon_spawn(): no teddy for the first four
+  // uses; 15% for uses 4-7; certain at 8 before the box has ever moved; after
+  // a move, 30% for uses 8-12 and 50% from 13. Only maps whose box moves.
+  boxJoker(){
+    if(!this.data.map?.boxMoves||this.boxes.size<2)return false;
+    const used=this.boxUses,random=Math.floor(Math.random()*100);let chance=-1;
+    if(used>=4){chance=used+20;if(this.boxMoves===0&&used>=8)chance=100;
+      if(used<8)chance=random<15?100:-1;
+      if(this.boxMoves>0){if(used>=8&&used<13)chance=random<30?100:-1;if(used>=13)chance=random<50?100:-1;}}
+    return chance>random;
+  }
+  refundBox(box){
+    const amount=box.cost||950;
+    if(this.coop&&box.owner!=null&&box.owner!==this.coop.localId)this.coop.to(box.owner,{type:'points',amount});else this.changePoints(amount);
+  }
+  // The next box location: any other location, the maze's only once a player
+  // has reached the maze (zm_buried_classic.gsc maze_box_trigger).
+  nextBox(current){
+    const maze=new Set(this.mazeChests?[]:this.data.map?.mazeChests||[]),options=[...this.boxes.keys()].filter(t=>t!==current&&!maze.has(t));
+    return options.length?options[Math.floor(Math.random()*options.length)]:current;
   }
   renderPosition(actor){const a=Math.min(1,this.accumulator/PHYSICS_STEP),previous=actor.previousPosition||actor.position;return lerp(previous,actor.position,a);}
   throwGrenade(cook=false) {

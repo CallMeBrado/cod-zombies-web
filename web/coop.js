@@ -223,6 +223,7 @@ export class Coop {
       }),
       boxes:[...g.boxes].map(([target,b])=>[target,{phase:b.phase,weapon:b.weapon,owner:b.owner??null,index:b.index,timedOut:!!b.timedOut,
         started:b.started!=null?b.started-now:null,nextAt:b.nextAt!=null?b.nextAt-now:null,offeredAt:b.offeredAt!=null?b.offeredAt-now:null,due:b.due!=null?b.due-now:null,closedAt:b.closedAt!=null?b.closedAt-now:null}]),
+      activeBox:g.activeBox??null,
       drops:g.drops.filter(d=>!d.used).map(d=>({id:d.id,type:d.type,p:d.position.map(round1),age:round1(now-d.spawned),left:round1(d.expires-now)})),
       rules:this.rulesState(),
     };
@@ -231,7 +232,9 @@ export class Coop {
     const r=this.game.mapRules;if(!r)return null;const now=this.game.time;
     return {power:r.power,powerAge:r.powerStartedAt!=null?now-r.powerStartedAt:null,flags:[...r.flags],links:r.links?[...r.links]:[],
       linkPending:r.linkPending?{id:r.linkPending.id,left:r.linkPending.due-now,age:now-r.linkPending.started,ticks:r.linkPending.ticks}:null,
-      teleporterLinked:r.teleporterLinked??null,coreLinked:r.coreLinked??null,cooldown:Math.max(0,(r.teleportCooldown||0)-now)};
+      teleporterLinked:r.teleporterLinked??null,coreLinked:r.coreLinked??null,cooldown:Math.max(0,(r.teleportCooldown||0)-now),
+      // Map-specific shared state (Buried: Arthur, the cell, items).
+      extra:r.coopState?.()??null};
   }
   // ----- guest mirror ----------------------------------------------------
   receive(snap,now){
@@ -249,6 +252,7 @@ export class Coop {
     s.boards.forEach((boards,i)=>{const w=g.windows[i];if(w&&w.boards!==boards){w.boards=boards;g.emit('barrier',w);}});
     for(const [target,b]of s.boxes){const box=g.boxes.get(target);if(!box)continue;const at=v=>v==null?null:g.time+v;
       Object.assign(box,{phase:b.phase,weapon:b.weapon,owner:b.owner,index:b.index,timedOut:b.timedOut,started:at(b.started),nextAt:at(b.nextAt),offeredAt:at(b.offeredAt),due:at(b.due),closedAt:at(b.closedAt)});}
+    if(s.activeBox!==undefined&&s.activeBox!==g.activeBox){g.activeBox=s.activeBox;g.emit('boxMoved',s.activeBox);}
     const live=new Set(s.drops.map(d=>d.id));
     for(const d of s.drops)if(!g.drops.some(x=>x.id===d.id)){const drop={id:d.id,type:d.type,position:d.p.slice(),spawned:g.time-d.age,expires:g.time+d.left,restored:true};g.drops.push(drop);g.emit('drop',drop);g.dropLoop(drop);}
     for(const drop of g.drops)if(!live.has(drop.id)&&!drop.used){drop.used=true;g.emit('stopLoop',{id:'drop'+drop.id});}
@@ -257,7 +261,7 @@ export class Coop {
     if(r&&w){const powered=r.power;r.power=w.power;r.powerStartedAt=w.powerAge!=null?g.time-w.powerAge:null;r.flags=new Set(w.flags);if(r.links)r.links=new Set(w.links);
       r.linkPending=w.linkPending?{id:w.linkPending.id,due:g.time+w.linkPending.left,started:g.time-w.linkPending.age,ticks:w.linkPending.ticks}:null;
       if(w.teleporterLinked!==null)r.teleporterLinked=w.teleporterLinked;if(w.coreLinked!==null)r.coreLinked=w.coreLinked;if(w.cooldown)r.teleportCooldown=Math.max(r.teleportCooldown||0,g.time+w.cooldown);
-      if(powered!==r.power||w.teleporterLinked!==null)g.emit('power');}
+      if(powered!==r.power||w.teleporterLinked!==null)g.emit('power');if(w.extra)r.applyCoopState?.(w.extra);}
     if(s.over&&!this.over)this.gameOver({round:s.round});
   }
   // Zombies are drawn 100 ms behind the newest snapshot, between two of them.

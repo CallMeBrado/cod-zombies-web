@@ -48,7 +48,7 @@ export class FactoryRules {
   }
   visible(e){
     if(e.script_noteworthy==='electric_door')return false;
-    if(e.targetname==='treasure_chest_use')return e.target===this.data.initialBox;
+    if(e.targetname==='treasure_chest_use')return e.target===(this.game.activeBox??this.data.initialBox);
     if(e.targetname==='use_power_switch')return !this.power;
     return true;
   }

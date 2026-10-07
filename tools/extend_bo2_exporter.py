@@ -105,6 +105,8 @@ template = SOURCE / 'XAnim/XAnimDumper.cpp.template'
 text = template.read_text().replace('#if defined(FEATURE_T4) || defined(FEATURE_T5)\n','#if defined(FEATURE_T4) || defined(FEATURE_T5) || defined(FEATURE_T6)\n')
 text=text.replace('webName.find("pb_") == 0;', 'webName.find("pb_") == 0 || webName.find("o_zombie_") == 0 || webName.find("o_zmb_") == 0;')
 text=text.replace('webName.find("o_zombie_") == 0;', 'webName.find("o_zombie_") == 0 || webName.find("o_zmb_") == 0;')
+# Buried's catwalk and floor collapse play authored fxanim clips.
+if 'webName.find("fxanim_")' not in text:text=text.replace('webName.find("o_zmb_") == 0;', 'webName.find("o_zmb_") == 0 || webName.find("fxanim_") == 0;')
 template.write_text(text)
 loader = ROOT / '.tools/oat-source/src/ObjLoading/Game/T6/ObjLoaderT6.cpp'
 text = loader.read_text()

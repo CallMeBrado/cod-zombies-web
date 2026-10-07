@@ -1,6 +1,7 @@
 import {BlackOpsEngine,KinoRules} from './bo1-engine.js';
 import {PERKS} from './map-rules.js';
 import {BuriedEquipment} from './bo2-equipment.js';
+import {Arthur} from './bo2-arthur.js';
 
 export const BO2_CHARACTERS=['Russman','Stuhlinger','Misty','Marlton'];
 export const BO2_ARMS=['c_zom_oldman_viewhands','c_zom_reporter_viewhands','c_zom_farmgirl_viewhands','c_zom_engineer_viewhands'];
@@ -18,13 +19,13 @@ export class BuriedRules extends KinoRules {
   reset(){
     super.reset();this.visited=new Set([this.data.initialZone]);this.carry=null;
     this.chalk=new Map();this.collected=new Set();this.itemRespawn=new Map();
-    this.bank=0;this.weaponLocker=null;this.arthurReleased=false;this.arthurJob=null;
-    this.arthurPosition=pos(this.game.entities.find(e=>e.targetname==='sloth_idle_pos'));
-    this.arthurGuardUntil=0;this.arthurDue=0;
+    this.bank=0;this.weaponLocker=null;this.arthur=new Arthur(this);this.hold=null;
+    // The start area's authored fxanims: the catwalk and the floor boards.
+    this.fxanims={};
     this.ghostActive=false;this.ghostRemaining=0;this.ghostDue=0;this.lastGhostRound=-5;this.wasInMansion=false;
     this.equipment=new BuriedEquipment(this);this.meleeUpgrade=null;this.vultureDrops=[];this.vultureProtected=false;
     this.maze=0;this.applyMaze();this.nextZoneCheck=0;this.occupiedCache=[];
-    this.catwalkDue=null;this.triggered=new Set();
+    this.catwalkDue=null;this.catwalkClipDue=null;this.triggered=new Set();
     const items=this.game.entities.filter(e=>e.nativeItemTarget),choose=rows=>rows[Math.floor(Math.random()*rows.length)]?.itemId;
     this.activeItems=new Set(items.filter(e=>e.nativeItemTarget.includes('chalk')||e.script_forcespawn==='1').map(e=>e.itemId));
     for(const kind of ['booze','candy']){
@@ -55,23 +56,31 @@ export class BuriedRules extends KinoRules {
     const groups=new Set(this.data.volumes.filter(v=>zones.has(v.name)).map(v=>v.spawners));
     return this.game.spawnEntities.filter(e=>groups.has(e.targetname));
   }
+  // Booze, candy, chalk, the key and parts. The key is used up opening the
+  // cell; candy only spawns once Arthur has broken out of the jail
+  // (wait_start_candy_booze waits for "jail_barricade_down").
+  itemVisible(e){
+    const kind=e.buriedItem||itemKinds[e.nativeItemTarget];
+    return (!kind||this.activeItems.has(e.itemId))&&!this.collected.has(e.itemId)&&(kind!=='key'||!this.arthur.cellOpen)&&(kind!=='candy'||this.flags.has('jail_door1'));
+  }
   visible(e){
-    if(e.buriedItem||e.buriedPart)return (!e.buriedItem||this.activeItems.has(e.itemId))&&!this.collected.has(e.itemId)&&(e.buriedItem!=='key'||!this.arthurReleased);
-    if(e.targetname==='buried_arthur')return this.arthurReleased;
-    if(e.targetname==='buried_jail')return !this.arthurReleased;
-    if(e.targetname==='buried_barricade')return !this.game.opened.has(e.target);
+    if(e.buriedItem||e.buriedPart)return this.itemVisible(e);
+    if(e.targetname==='buried_arthur')return this.hold?.kind==='gift'||this.arthur.canGift();
+    if(e.targetname==='buried_jail')return !this.arthur.cellOpen;
+    if(e.targetname==='buried_barricade')return false;
     if(e.targetname==='buried_chalk_place')return !this.chalk.has(e.target);
     return super.visible(e);
   }
   prompt(e,key){
     const g=this.game;
     if(e.buriedItem||e.buriedPart)return this.carry?'Already carrying '+this.carry.kind:key+' · Pick up '+(e.buriedPart?this.equipment.name(e.buriedPart)+' part':e.buriedItem==='chalk'?g.weaponName(e.zombie_weapon_upgrade)+' chalk':e.buriedItem);
+    // Holds run on the host; a co-op guest's would never finish.
+    if(g.mirror&&(e.buriedBench||['buried_jail','buried_arthur'].includes(e.targetname)))return 'The host player handles this for now';
     if(e.buriedBench)return this.equipment.prompt(e,key);
     if(e.targetname==='buried_equipment')return this.equipment.held?'Already carrying equipment':key+' · Pick up equipment';
     if(e.zombie_weapon_upgrade==='tazer_knuckles_zm')return this.meleeUpgrade==='tazer_knuckles_zm'?'Galvaknuckles purchased':key+' · Buy Galvaknuckles · 6000 points';
-    if(e.targetname==='buried_jail')return this.carry?.kind==='key'?key+' · Unlock Arthur’s cell':'Find the cell key';
-    if(e.targetname==='buried_arthur')return this.carry?.kind==='booze'?key+' · Give Arthur booze':this.carry?.kind==='candy'?key+' · Give Arthur candy':'Arthur needs booze or candy';
-    if(e.targetname==='buried_barricade')return this.arthurReleased?'Give Arthur booze while facing this barricade':'Arthur can clear this barricade';
+    if(e.targetname==='buried_jail')return this.hold?.kind==='key'?'Unlocking…':this.carry?.kind==='key'?'Hold '+key+' · Unlock':'Find the cell key';
+    if(e.targetname==='buried_arthur')return this.hold?.kind==='gift'?'Giving…':'Hold '+key+' · Give Arthur '+(this.carry?.kind==='candy'?'candy':'booze');
     if(e.targetname==='buried_chalk_place')return this.carry?.kind==='chalk'?key+' · Draw '+g.weaponName(this.carry.weapon):'Pick up weapon chalk at the gunsmith';
     if(e.targetname==='buried_bank_deposit')return key+' · Deposit 1,000 points · Balance '+this.bank;
     if(e.targetname==='buried_bank_withdraw')return key+' · Withdraw 1,000 points · Fee 100 · Balance '+this.bank;
@@ -96,6 +105,7 @@ export class BuriedRules extends KinoRules {
       if(this.carry||!this.visible(e))return true;this.carry={kind:e.buriedPart?'part':e.buriedItem,equipment:e.buriedPart,weapon:e.zombie_weapon_upgrade,itemId:e.itemId};this.collected.add(e.itemId);
       g.emit('buriedItem',{id:e.itemId,visible:false});g.emit('sound',{alias:e.buriedItem==='booze'?'zmb_booze_pickup':'cha_ching'});g.message('Picked up '+(this.carry.weapon?g.weaponName(this.carry.weapon)+' chalk':this.carry.kind));return true;
     }
+    if(g.mirror&&(e.buriedBench||tag==='buried_jail'||tag==='buried_arthur'))return true;
     if(e.buriedBench)return this.equipment.use(e);
     if(tag==='buried_equipment')return this.equipment.pickup(e);
     if(e.zombie_weapon_upgrade==='tazer_knuckles_zm'){
@@ -104,22 +114,16 @@ export class BuriedRules extends KinoRules {
     if(e.zombie_weapon_upgrade==='bowie_knife_zm'){
       if(this.meleeUpgrade!=='bowie_knife_zm'&&g.spendPoints(3000)){this.meleeUpgrade='bowie_knife_zm';g.message('Bowie Knife purchased');}return true;
     }
+    // keysbuildable(): the key is "built" into the cell door, a 3 s hold with
+    // the builder hands (zombie_builder_zm), and the cell opens.
     if(tag==='buried_jail'){
-      if(this.carry?.kind!=='key')return true;this.carry=null;this.arthurReleased=true;
-      this.openTargets(this.data.jailTargets||[]);this.flags.add('jail_door1');g.emit('sound',{alias:'switch_flip'});g.message('Arthur is free');return true;
+      if(this.carry?.kind!=='key'||this.hold||this.arthur.cellOpen)return true;
+      this.hold={kind:'key',started:g.time,due:g.time+3};g.startHoldGesture('zombie_builder');return true;
     }
+    // The sloth gift trigger: a 0.75 s hold, each facing the other.
     if(tag==='buried_arthur'){
-      if(!this.carry||this.arthurJob)return true;
-      if(this.carry.kind==='booze'){
-        // Arthur charges away from the player, into the obstruction ahead.
-        const direction=this.arthurPosition.map((v,k)=>v-g.player.position[k]),length=Math.hypot(direction[0],direction[1]);
-        const candidates=g.interactions.filter(x=>x.targetname==='buried_barricade'&&!g.opened.has(x.target)).map(x=>({e:x,d:x.position.map((v,k)=>v-this.arthurPosition[k])}));
-        const selected=candidates.filter(x=>Math.hypot(x.d[0],x.d[1])<1800&&Math.abs(x.d[2])<130&&(x.d[0]*direction[0]+x.d[1]*direction[1])/Math.max(1,Math.hypot(x.d[0],x.d[1])*length)>.65).sort((a,b)=>Math.hypot(...a.d)-Math.hypot(...b.d))[0];
-        if(!selected){g.message('Stand opposite the barricade, with Arthur between you and it.');return true;}
-        this.arthurJob={target:selected.e.target,flag:selected.e.script_flag,from:this.arthurPosition.slice(),to:[selected.e.position[0],selected.e.position[1],this.arthurPosition[2]],started:g.time,due:g.time+Math.max(1,distance(this.arthurPosition,selected.e.position)/200),reward:Math.max(10,Math.round(distance(this.arthurPosition,selected.e.position)/10)*10)};
-      }else if(this.carry.kind==='candy'){this.arthurGuardUntil=g.time+60;g.message('Arthur will protect you');}
-      else return true;
-      const id=this.carry.itemId;this.itemRespawn.set(id,g.time+60);this.carry=null;g.emit('sound',{alias:'cha_ching'});return true;
+      if(this.hold||!this.arthur.canGift())return true;
+      this.hold={kind:'gift',started:g.time,due:g.time+.75};this.arthur.holding=true;return true;
     }
     if(tag==='buried_chalk_place'){
       if(this.carry?.kind!=='chalk'||this.chalk.has(e.target))return true;
@@ -147,10 +151,22 @@ export class BuriedRules extends KinoRules {
     const existing=this.game.interactions.find(x=>x.chalkTarget===e.target);if(existing)return;
     this.game.interactions.push({...e,targetname:'weapon_upgrade',chalkTarget:e.target,zombie_weapon_upgrade:name,zombie_cost:String(this.game.data.wallCosts[name]||1000),script_ammo_clip:String(Math.floor((this.game.data.wallCosts[name]||1000)/2))});
   }
+  // watch_cell_open_close(): the door swings open and its clip goes.
+  openCell(){this.openTargets(this.data.jailTargets||[]);this.arthur.unlock();}
+  tickHold(){
+    const g=this.game,h=this.hold;if(!h)return;
+    // The press lands between ticks; the held state follows on the next one.
+    const cancel=!g.useHeld&&g.time-h.started>.1||g.phase==='dead'||(h.kind==='key'?this.carry?.kind!=='key':!this.arthur.canGift()||!this.arthur.carrier());
+    if(cancel||g.time>=h.due){
+      this.hold=null;this.arthur.holding=false;g.endHoldGesture();if(cancel)return;
+      if(h.kind==='key'){this.carry=null;this.openCell();}
+      else{const item=this.carry;this.carry=null;this.itemRespawn.set(item.itemId,g.time+60);this.arthur.give(item.kind);}
+    }
+  }
   tick(){
     // Pack-a-Punch and solo revival timings are shared with the T5 rules.
     super.tick();const g=this.game;if(g.mirror)return;
-    this.equipment.tick(1/120);
+    this.tickHold();this.equipment.tick(1/120);
     this.tickEnvironment();
     const occupied=this.occupied();for(const v of occupied)this.visited.add(v.name);
     const inMansion=occupied.some(v=>v.name==='zone_mansion');
@@ -161,17 +177,16 @@ export class BuriedRules extends KinoRules {
       this.ghostActive=false;if(this.ghostReward){this.lastGhostRound=g.round;const choices=Object.keys(BO2_PERKS).filter(p=>!this.perks.has(p));if(choices.length){const id=choices[Math.floor(Math.random()*choices.length)];this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;g.emit('sound',{alias:BO2_PERKS[id].sting});g.message('Free '+BO2_PERKS[id].name);}}
     }
     for(const [id,due]of this.itemRespawn)if(g.time>=due){this.itemRespawn.delete(id);this.collected.delete(id);g.emit('buriedItem',{id,visible:true});}
-    const job=this.arthurJob;
-    if(job){const t=Math.min(1,(g.time-job.started)/(job.due-job.started));this.arthurPosition=job.from.map((v,k)=>v+(job.to[k]-v)*t);
-      if(t===1){this.openTargets(g.entities.filter(e=>e.targetname===job.target||e.targetname===job.target+'_clip').map(e=>e.targetname));if(job.flag)this.flags.add(job.flag);g.changePoints(job.reward);g.emit('sound',{alias:'zmb_break_boards'});g.message('Arthur cleared the barricade');this.arthurJob=null;}}
-    else if(this.arthurReleased&&g.time>=this.arthurDue){
-      this.arthurDue=g.time+.1;const at=g.player.position,d=distance(at,this.arthurPosition);
-      if(d>120&&d<2000){const result=g.collision.step(this.arthurPosition,at.map((v,k)=>k<2?(v-this.arthurPosition[k])/d*12:-4),[14,14,35]);this.arthurPosition=result.position;}
-      if(g.time<this.arthurGuardUntil){const target=g.enemies.find(e=>!e.dead&&e.stage==='hunt'&&distance(e.position,this.arthurPosition)<90);if(target)g.hitEnemy(target,target.health,false,true);}
-    }
-    const arthur=g.interactions.find(e=>e.targetname==='buried_arthur');if(arthur)arthur.position=this.arthurPosition.slice();
-    g.emit('buriedArthur',{position:this.arthurPosition,charging:!!this.arthurJob,released:this.arthurReleased});
+    this.arthur.tick(1/120);
+    const arthur=g.interactions.find(e=>e.targetname==='buried_arthur');if(arthur)arthur.position=this.arthur.giftOrigin();
   }
+  // Shared with co-op guests: Arthur, the cell, the items and the start area.
+  coopState(){return {arthur:this.arthur.view(),collected:[...this.collected],activeItems:[...this.activeItems],fxanims:this.fxanimAges()};}
+  applyCoopState(s){
+    const g=this.game;this.arthur.applyView(s.arthur);this.collected=new Set(s.collected);this.activeItems=new Set(s.activeItems);
+    this.fxanims=Object.fromEntries(Object.entries(s.fxanims||{}).map(([k,age])=>[k,g.time-age]));
+  }
+  fxanimAges(){return Object.fromEntries(Object.entries(this.fxanims).map(([k,at])=>[k,this.game.time-at]));}
   tickEnvironment(){
     const g=this.game,p=[g.player.position[0],g.player.position[1],g.player.position[2]+g.viewHeight/2];
     for(const trigger of g.data.environmentTriggers||[]){
@@ -179,14 +194,22 @@ export class BuriedRules extends KinoRules {
       if(!touching)continue;
       if(trigger.kind==='force_from_prone'){if(g.player.stance==='prone')g.changeStance('crouch');continue;}
       if(this.triggered.has(trigger.id))continue;this.triggered.add(trigger.id);
-      if(trigger.kind==='start_platform_trig'){this.catwalkDue=g.time+2;g.emit('sound',{alias:'zmb_catwalk_shake',position:trigger.position});g.emit('shake',{position:trigger.position,amplitude:.3,duration:2,radius:128});}
-      if(trigger.kind==='hole_breakthrough'){this.openTargets([trigger.target]);g.emit('sound',{alias:'zmb_floor_collapse',position:trigger.position});}
+      // The catwalk shakes (an earthquake on the player: 0.3, 3 s, radius
+      // 128) and gives way 2 s later, or as soon as the LSAT is bought.
+      if(trigger.kind==='start_platform_trig'){this.catwalkDue=g.time+2;g.emit('sound',{alias:'zmb_catwalk_shake',position:trigger.position});g.emit('shake',{position:g.player.position.slice(),amplitude:.3,duration:3,radius:128});}
+      // The floor boards under the start room break (client field "bda").
+      if(trigger.kind==='hole_breakthrough'){this.openTargets([trigger.target]);if(trigger.target==='pf641_auto6')this.fxanims.boards=g.time;g.emit('sound',{alias:'zmb_floor_collapse',position:trigger.position});}
     }
-    if(this.catwalkDue&&g.time>=this.catwalkDue){this.catwalkDue=null;this.openTargets(['start_platform','start_platform_delayed_clip']);g.emit('sound',{alias:'zmb_catwalk_fall'});}
+    if(this.catwalkDue&&(g.time>=this.catwalkDue||g.inventory.some(w=>w.name.startsWith('lsat')))){
+      // cw_fall plays the catwalk's fxanim; its delayed clip goes 3 s later.
+      this.catwalkDue=null;this.catwalkClipDue=g.time+3;this.fxanims.catwalk=g.time;this.openTargets(['start_platform']);g.emit('sound',{alias:'zmb_catwalk_fall'});
+    }
+    if(this.catwalkClipDue&&g.time>=this.catwalkClipDue){this.catwalkClipDue=null;this.openTargets(['start_platform_delayed_clip']);}
   }
-  saveState(){return {...super.saveState(),visited:[...this.visited],carry:this.carry,chalk:[...this.chalk],collected:[...this.collected],itemRespawn:[...this.itemRespawn],bank:this.bank,weaponLocker:this.weaponLocker,arthurReleased:this.arthurReleased,arthurPosition:this.arthurPosition.slice(),arthurJob:this.arthurJob,arthurGuardUntil:this.arthurGuardUntil,ghostActive:this.ghostActive,ghostRemaining:this.ghostRemaining,ghostDue:this.ghostDue,lastGhostRound:this.lastGhostRound,wasInMansion:this.wasInMansion,ghostReward:this.ghostReward,equipment:this.equipment.saveState(),activeItems:[...this.activeItems],maze:this.maze,meleeUpgrade:this.meleeUpgrade,catwalkDue:this.catwalkDue,triggered:[...this.triggered]};}
+  saveState(){return {...super.saveState(),visited:[...this.visited],carry:this.carry,chalk:[...this.chalk],collected:[...this.collected],itemRespawn:[...this.itemRespawn],bank:this.bank,weaponLocker:this.weaponLocker,arthur:this.arthur.saveState(),fxanims:this.fxanimAges(),catwalkClipDue:this.catwalkClipDue,ghostActive:this.ghostActive,ghostRemaining:this.ghostRemaining,ghostDue:this.ghostDue,lastGhostRound:this.lastGhostRound,wasInMansion:this.wasInMansion,ghostReward:this.ghostReward,equipment:this.equipment.saveState(),activeItems:[...this.activeItems],maze:this.maze,meleeUpgrade:this.meleeUpgrade,catwalkDue:this.catwalkDue,triggered:[...this.triggered]};}
   loadState(s){super.loadState(s);this.visited=new Set(s.visited||[this.data.initialZone]);this.carry=s.carry||null;this.chalk=new Map(s.chalk||[]);this.collected=new Set(s.collected||[]);this.itemRespawn=new Map(s.itemRespawn||[]);
-    for(const key of ['bank','weaponLocker','arthurReleased','arthurPosition','arthurJob','arthurGuardUntil','ghostActive','ghostRemaining','ghostDue','lastGhostRound','wasInMansion','ghostReward'])if(s[key]!==undefined)this[key]=s[key];
+    this.arthur.loadState(s.arthur);this.fxanims=Object.fromEntries(Object.entries(s.fxanims||{}).map(([k,age])=>[k,this.game.time-age]));this.catwalkClipDue=s.catwalkClipDue??null;
+    for(const key of ['bank','weaponLocker','ghostActive','ghostRemaining','ghostDue','lastGhostRound','wasInMansion','ghostReward'])if(s[key]!==undefined)this[key]=s[key];
     this.activeItems=new Set(s.activeItems||[...this.activeItems]);this.maze=s.maze||0;this.applyMaze();this.meleeUpgrade=s.meleeUpgrade||null;this.equipment.loadState(s.equipment);
     this.catwalkDue=s.catwalkDue??null;this.triggered=new Set(s.triggered||[]);
     this.game.interactions=this.game.interactions.filter(e=>!e.chalkTarget);for(const [target,name]of this.chalk){const e=this.game.interactions.find(e=>e.targetname==='buried_chalk_place'&&e.target===target);if(e)this.installChalk(e,name);}
@@ -254,7 +277,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
       if(tag)this.interactions.push({...e,position:pos(e),targetname:tag});
     }
     if(!this.interactions.some(e=>e.targetname==='buried_jail'))this.interactions.push({targetname:'buried_jail',position:[-1128,522,41],origin:'-1128 522 41'});
-    this.interactions.push({targetname:'buried_arthur',position:this.mapRules.arthurPosition.slice()});
+    this.interactions.push({targetname:'buried_arthur',position:this.mapRules.arthur.giftOrigin()});
   }
   newGame(){
     super.newGame();this.interactions=this.interactions.filter(e=>!e.chalkTarget);this.paralyzerHeat=0;this.paralyzerLock=false;this.paralyzerFiredAt=-100;
@@ -262,7 +285,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     this.windows.forEach(w=>{if(!w.boardEntities.some(e=>e.nativeBoard))w.boards=0;});
     this.interactions=this.interactions.filter(e=>!e.equipmentId);
   }
-  get movementBlocked(){return super.movementBlocked||!!this.mapRules?.equipment?.building;}
+  get movementBlocked(){return super.movementBlocked||!!this.mapRules?.equipment?.building||!!this.mapRules?.hold;}
   weaponName(name){
     const labels={slowgun_zm:'Paralyzer',slowgun_upgraded_zm:'Petrifier',m1911_upgraded_zm:'Mustang & Sally',raygun_mark2_zm:'Ray Gun Mark II',raygun_mark2_upgraded_zm:'Porter’s Mark II Ray Gun',fnfal_zm:'FAL',rnma_zm:'Remington New Model Army'};
     if(labels[name])return labels[name];
