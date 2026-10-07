@@ -33,6 +33,9 @@
     "prepare:bo1": "python -B tools/prepare_bo1.py && node tools/build_preload.mjs --map kino",
     "test:bo1": "node tools/test_bo1.mjs",
     "prepare:menus": "python -B tools/prepare_menus.py",
+    "extract:nuketown": "python -B tools/extract_nuketown.py",
+    "test:nuketown": "node tools/test_nuketown.mjs",
+    "prepare:nuketown": "python -B tools/prepare_nuketown.py && python -B tools/prepare_launch_media.py && node --max-old-space-size=6144 tools/build_preload.mjs --map nuketown",
     "extract:verruckt": "python -B tools/extract_verruckt.py",
     "prepare:verruckt": "python -B tools/prepare_verruckt.py && python -B tools/prepare_launch_media.py && node --max-old-space-size=6144 tools/build_preload.mjs --map verruckt",
     "test:verruckt": "node tools/test_verruckt.mjs",
@@ -52,7 +55,10 @@
     "test:coop": "node tools/test_coop.mjs",
     "prepare:movement": "python -B tools/prepare_player_movement.py && node tools/build_preload.mjs --map kino --assets-only",
     "test:dive": "node tools/test_dive.mjs",
-    "prepare:dive": "python -B tools/prepare_dive.py && node tools/build_preload.mjs --map kino --assets-only"
+    "prepare:dive": "python -B tools/prepare_dive.py && node tools/build_preload.mjs --map kino --assets-only",
+    "extract:cotd": "python -B tools/extract_bo1.py --map call-of-the-dead",
+    "prepare:cotd": "python -B tools/prepare_bo1.py --map call-of-the-dead && node tools/build_preload.mjs --map call-of-the-dead",
+    "test:cotd": "node tools/test_coast.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

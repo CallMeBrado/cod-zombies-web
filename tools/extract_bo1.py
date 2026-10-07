@@ -2,7 +2,7 @@
 --map kino (default), --map ascension (zombie_cosmodrome) or --map frontend
 (the interrogation room behind the zombies menu)."""
 from pathlib import Path
-import argparse, subprocess
+import argparse, subprocess, os
 
 ROOT = Path(__file__).resolve().parents[1]
 GAME = Path(r'E:\SteamLibrary\steamapps\common\Call of Duty Black Ops')
@@ -23,6 +23,11 @@ ZONES = {
         ('Common/zombie_cosmodrome_patch', 'bo1-cosmodrome-patch', ['Common/common', 'Common/common_zombie', 'Common/zombie_cosmodrome']),
         ('English/en_zombie_cosmodrome', 'bo1-cosmodrome-english', ['Common/zombie_cosmodrome']),
     ],
+    'call-of-the-dead': [
+        ('Common/zombie_coast', 'bo1-coast', ['Common/common', 'Common/common_zombie']),
+        ('Common/zombie_coast_patch', 'bo1-coast-patch', ['Common/common', 'Common/common_zombie', 'Common/zombie_coast']),
+        ('English/en_zombie_coast', 'bo1-coast-english', ['Common/zombie_coast']),
+    ],
     # The frontend (interrogation room) behind the zombies menu.
     'frontend': [
         ('Common/frontend', 'bo1-frontend', ['Common/common']),
@@ -31,6 +36,8 @@ ZONES = {
 }
 parser = argparse.ArgumentParser()
 parser.add_argument('--map', choices=sorted(ZONES), default='kino')
+scratch=ROOT/'.cache/temp';scratch.mkdir(parents=True,exist_ok=True)
+environment=dict(os.environ,TEMP=str(scratch),TMP=str(scratch))
 for filename, output, dependencies in ZONES[parser.parse_args().map]:
     folder = ROOT / 'local-data' / output
     args = base + ['--output-folder', str(folder)]
@@ -39,5 +46,5 @@ for filename, output, dependencies in ZONES[parser.parse_args().map]:
     args.append(str(GAME / 'zone' / (filename + '.ff')))
     print('Extracting ' + filename, flush=True)
     with (ROOT / 'local-data' / (output + '-extract.log')).open('w') as log:
-        subprocess.run(args, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(args, cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT, check=True)
     print('Finished ' + output, flush=True)

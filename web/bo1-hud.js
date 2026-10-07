@@ -3,7 +3,7 @@ import {roundIndicatorState} from './round-hud.js';
 import {scorePopupState} from './score-hud.js';
 import {CrosshairHud} from './crosshair-hud.js';
 import {drawCoop} from './coop-hud.js';
-const icons={specialty_armorvest:'specialty_juggernaut_zombies',specialty_fastreload:'specialty_fastreload_zombies',specialty_rof:'specialty_doubletap_zombies',specialty_quickrevive:'specialty_quickrevive_zombies',specialty_flakjacket:'specialty_divetonuke_zombies',specialty_longersprint:'specialty_marathon_zombies'};
+const icons={specialty_armorvest:'specialty_juggernaut_zombies',specialty_fastreload:'specialty_fastreload_zombies',specialty_rof:'specialty_doubletap_zombies',specialty_quickrevive:'specialty_quickrevive_zombies',specialty_flakjacket:'specialty_divetonuke_zombies',specialty_longersprint:'specialty_marathon_zombies',specialty_deadshot:'specialty_ads_zombies'};
 export class BlackOpsHud {
   constructor(canvas,options={}){this.folder=options.folder||'gameplay/bo1-kino';this.icons=options.icons||icons;this.scorebar=options.scorebar||'scorebar_zom_1';this.canvas=canvas;this.ctx=canvas.getContext('2d');this.images=new Map();this.crosshair=new CrosshairHud();this.ready=false;this.roundLayer=document.createElement('canvas');this.roundLayer.width=128;this.roundLayer.height=64;}
   async load(){
@@ -34,6 +34,6 @@ export class BlackOpsHud {
     if(hit){ctx.strokeStyle='#ddd';ctx.beginPath();for(const x of [-1,1])for(const y of [-1,1]){ctx.moveTo(cx+x*3,cy+y*3);ctx.lineTo(cx+x*6,cy+y*6);}ctx.stroke();}
     if(!game.events.controllerPrompts?.())this.text(game.prompt(),cx,294,14,'center');if(!game.weapon.clip&&!game.reloadEnd&&!game.events.controllerPrompts?.())this.text((game.events.bindingName?.('reload')||'R')+' · Reload',cx,276,14,'center');
     const left=game.mapRules.projectionUntil-game.time;if(left>0)this.text('TELEPORTING IN '+Math.ceil(left),cx,50,17,'center');
-    const active=Object.entries(game.powerup).map(([k,t])=>k.replaceAll('_',' ')+' '+Math.ceil(t-game.time));if(active.length)this.text(active.join('   '),cx,455,14,'center');
+    const active=Object.entries(game.powerup).map(([k,t])=>k.replaceAll('_',' ')+' '+Math.ceil(t-game.time));if(game.mapRules.deathMachine)active.push('DEATH MACHINE '+Math.ceil(game.mapRules.deathMachineUntil-game.time));if(active.length)this.text(active.join('   '),cx,455,14,'center');
   }
 }

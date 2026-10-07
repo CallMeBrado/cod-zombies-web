@@ -4,13 +4,18 @@ Each surface indexes a packed batch, not firstVertex. Validate every referenced
 position against its native bounds before publishing buffers to the renderer.
 """
 from pathlib import Path
-import json, struct, math, re
+import json, struct, math, re, argparse
 
 ROOT=Path(__file__).resolve().parents[1]
-folder=ROOT/'local-data/bo2-buried/web-world'
-path=folder/'zm_buried.json'
+parser=argparse.ArgumentParser()
+parser.add_argument('--zone',default='bo2-buried')
+parser.add_argument('--asset',default='zm_buried')
+parser.add_argument('--search',default='bo2-buried,bo2-patch,bo2-classic,bo2-base,bo2-common')
+args=parser.parse_args()
+folder=ROOT/'local-data'/args.zone/'web-world'
+path=folder/(args.asset+'.json')
 world=json.loads(path.read_text())
-native=folder/'zm_buried.native.json'
+native=folder/(args.asset+'.native.json')
 if world['vertexStride']==0:
     native.write_text(json.dumps(world,separators=(',',':')))
 else:
@@ -35,12 +40,12 @@ for surface in world['surfaces']:
         output.extend(vertices[offset+16:offset+20]);count+=1
     out_indices.extend(struct.pack('<'+str(len(ids))+'H',*(mapping[v] for v in ids)))
     surfaces.append(row)
-world.update(format='bo2-web-world-v2',vertexStride=32,vertexCount=count,surfaces=surfaces,vertices='zm_buried.web.vertices.bin',indices='zm_buried.web.indices.bin')
+world.update(format='bo2-web-world-v2',vertexStride=32,vertexCount=count,surfaces=surfaces,vertices=args.asset+'.web.vertices.bin',indices=args.asset+'.web.indices.bin')
 # Compiled blend materials (*<base>_<layer>) keep a second layer: its color
 # map, tint and how it combines (b: blend by its alpha, m: multiply,
 # t: alpha-tested), revealed by the vertex color's green channel ("v1") with
 # alphaRevealParms1. The base layer's own colorTint applies as well.
-materials=ROOT/'local-data/bo2-buried/materials'
+materials=ROOT/'local-data'/args.zone/'materials'
 for name,info in world['materials'].items():
     if not name.startswith('*'):continue
     record=materials/'generated'/(name.split('(')[0].replace('*','_')+'.json')
@@ -57,7 +62,7 @@ for name,info in world['materials'].items():
 # premultiplied, additive chalk and multiply stains.
 def native_record(name):
     if name.startswith('*'):return materials/'generated'/(name.split('(')[0].replace('*','_')+'.json')
-    for zone in ['bo2-buried','bo2-patch','bo2-classic','bo2-base','bo2-common']:
+    for zone in args.search.split(','):
         record=ROOT/'local-data'/zone/'materials'/(name+'.json')
         if record.exists():return record
 for name,info in world['materials'].items():
@@ -79,4 +84,4 @@ for info in world['materials'].values():info.pop('declarations',None)
 (folder/world['vertices']).write_bytes(output)
 (folder/world['indices']).write_bytes(out_indices)
 path.write_text(json.dumps(world,separators=(',',':')))
-print(f'Validated {len(surfaces)} native Buried surfaces, {count} vertices, {len(out_indices)//6} triangles.')
+print(f'Validated {len(surfaces)} native {args.asset} surfaces, {count} vertices, {len(out_indices)//6} triangles.')

@@ -5,12 +5,31 @@ const DIAL_AXIS=new THREE.Vector3(0,1,0);
 export class WeaponView {
   constructor(scene,audio){this.scene=scene;this.audio=audio;this.version=0;this.root=null;this.actions=new Map();this.current=null;this.ads=0;this.queue=[];this.rigs=new Map();this.sprintBlend=0;}
   async prepare(weapons,light){for(const [name,definition]of Object.entries(weapons))await this.load({name,definition,clip:definition.clipSize},light);}
+  async prepareMeleeUpgrade(definition){
+    const template=await model(definition.gunModel);
+    for(const rig of this.rigs.values()){
+      const knife=cloneModel(template);(rig.object.getObjectByName('tag_knife_attach')||rig.object.getObjectByName('tag_weapon')).add(knife);knife.visible=false;shadeModel(knife,[.4,.4,.4]);
+      for(const name of [definition.meleeAnim,definition.meleeChargeAnim].filter(Boolean))if(!rig.clips.has(name))rig.clips.set(name,await originalAnimation(name,rig.object));
+      rig.meleeUpgrades=new Map([[definition.gunModel,knife]]);
+    }
+  }
+  prepareCombat(){
+    // Binding the fire/reload actions and constructing muzzle emitters belong
+    // to the loading screen, before any input can fire the weapon.
+    for(const rig of this.rigs.values()){
+      for(const clip of rig.clips.values())rig.mixer.clipAction(clip);
+      const name=rig.definition.viewFlashEffect,tag=rig.object.getObjectByName('tag_flash');
+      rig.flashFx=name&&tag&&this.effects?.has(name)?this.effects.create(name,0):null;
+      if(rig.flashFx){rig.flashFx.visible=false;tag.add(rig.flashFx);}
+    }
+  }
   activate(rig,weapon){
     if(this.root)this.scene.remove(this.root);
     Object.assign(this,rig);this.weapon=weapon;this.mixer.stopAllAction();this.actions=new Map();this.current=null;this.queue=[];this.sprintBlend=0;this.meleeRemaining=0;this.flashTime=0;this.rechamberAt=0;
     const torso=this.object.getObjectByName('tag_torso'),base=this.clips.get(weapon.definition.adsUpAnim);
     if(torso&&base)for(const track of base.tracks){if(track.name===torso.uuid+'.position')torso.position.fromArray(track.values);if(track.name===torso.uuid+'.quaternion')torso.quaternion.fromArray(track.values);}
     this.scene.add(this.root);this.play(weapon.definition.idleAnim,0,true);this.knife.visible=false;
+    for(const knife of this.meleeUpgrades?.values()||[])knife.visible=false;
     if(this.adsAction){this.adsAction.reset().play();this.adsAction.paused=true;this.adsAction.time=this.adsAction.getClip().duration;this.adsAction.setEffectiveWeight(0);}
     this.mixer.update(.03);
   }
@@ -49,7 +68,7 @@ export class WeaponView {
     this.flash=new THREE.Mesh(new THREE.ConeGeometry(1.4,5,5),new THREE.MeshBasicMaterial({color:0xffe8ba,transparent:true,opacity:.85,depthWrite:false}));
     this.flash.rotation.z=-Math.PI/2;this.flash.visible=false;object.getObjectByName('tag_flash')?.add(this.flash);
     this.knife=knife;this.meleeRemaining=0;this.sprintBlend=0;this.flashTime=0;this.rechamberAt=0;
-    this.flashFx=undefined;this.rigs.set(weapon.name,{root,object,mixer,clips,adsAction:this.adsAction,flash:this.flash,flashFx:undefined,knife});
+    this.flashFx=undefined;this.rigs.set(weapon.name,{root,object,mixer,clips,definition,adsAction:this.adsAction,flash:this.flash,flashFx:undefined,knife});
   }
   play(name,duration=0,loop=false,hold=false,fade=.035) {
     const clip=this.clips.get(name);if(!clip)return;this.sprintAnim=null;
@@ -91,7 +110,7 @@ export class WeaponView {
     this.dialBones.forEach((bone,k)=>bone.quaternion.setFromAxisAngle(DIAL_AXIS,THREE.MathUtils.degToRad(125-36*digits[k]-126)));
   }
   offhand(){this.rechamberAt=0;this.flashTime=0;this.play(this.weapon.clip?this.weapon.definition.idleAnim:this.weapon.definition.emptyIdleAnim,0,true);}
-  melee({duration,charge=false}={}){const d=this.weapon.definition;this.rechamberAt=0;this.sprintBlend=0;this.meleeRemaining=duration||d.meleeTime||.5;this.knife.visible=true;this.play(charge&&this.clips.has(d.meleeChargeAnim)?d.meleeChargeAnim:d.meleeAnim,this.meleeRemaining);}
+  melee({duration,charge=false,upgrade=null}={}){const d=upgrade||this.weapon.definition;this.rechamberAt=0;this.sprintBlend=0;this.meleeRemaining=duration||d.meleeTime||.5;if(upgrade&&this.meleeUpgrades?.has(upgrade.gunModel)){this.knife.visible=false;this.knife=this.meleeUpgrades.get(upgrade.gunModel);}this.knife.visible=true;this.play(charge&&this.clips.has(d.meleeChargeAnim)?d.meleeChargeAnim:d.meleeAnim,this.meleeRemaining);}
   dive({phase,duration=0}){const d=this.weapon.definition,empty=!this.weapon.clip,key=phase[0].toUpperCase()+phase.slice(1),anim=empty&&this.clips.has(d['dtp'+key+'EmptyAnim'])?d['dtp'+key+'EmptyAnim']:d['dtp'+key+'Anim'];this.rechamberAt=0;this.flashTime=0;this.meleeRemaining=0;this.play(anim||({in:d.sprintInAnim,loop:d.sprintLoopAnim,out:d.raiseAnim})[phase],duration,phase==='loop',phase==='in');}
   update(dt,{ads,moving,sprinting,stance='stand',time,reloading,offhand=0}) {
     if(!this.root)return;

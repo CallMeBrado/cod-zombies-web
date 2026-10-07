@@ -1,0 +1,36 @@
+// A small logic check; browser appearance and playability are left to playtesting.
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {BlackOps2Engine} from '../web/bo2-engine.js';
+import {CollisionWorld} from '../web/collision.js';
+const read=async p=>JSON.parse(await readFile(new URL('../local-data/'+p,import.meta.url),'utf8'));
+const make=async()=>{const m=await read('gameplay/bo2-nuketown/manifest.json'),p=await read('gameplay/bo2-nuketown/presentation.json');
+  const g=new BlackOps2Engine(m,new CollisionWorld(await read('bo2-nuketown/web-world/zm_nuked.collision.json'),m.entities),await read('bo2-nuketown/web-world/zm_nuked.paths.json'),{},p);
+  g.prepareSpawnPaths(await read('gameplay/bo2-nuketown/navigation.json'));g.useGateNavigation(await read('gameplay/bo2-nuketown/gate-navigation.json'));return g;};
+const g=await make(),r=g.mapRules;
+assert.equal(g.data.map.id,'nuketown');assert(g.player.grounded);assert(r.power);assert.equal(g.windows.length,0);
+r.perks.add('specialty_armorvest');assert.equal(r.maxHealth,250);r.perks.clear();
+assert(!g.interactions.some(e=>e.targetname==='buried_arthur'||e.targetname==='buried_jail'));
+for(const name of ['mx_splash_screen','mx_zombie_wave_1','chalk'])assert(g.data.sounds[name]?.length);
+assert.equal(new Set(Object.values(r.placements)).size,5);
+assert(g.data.map.perkLandings.find(l=>l.id===r.placements.specialty_quickrevive).soloRevive);
+assert(!g.interactions.filter(e=>e.targetname==='zombie_vending').some(e=>r.visible(e)));
+g.start();g.update(1/120,{});g.remaining=6;
+r.spawnEnemy();assert(g.enemies.length);assert.equal(g.enemies[0].stage,'rise');assert.equal(g.enemies[0].window,null);
+// An authored climb must be admitted by routing and retain its native clip.
+const begin=g.nodes.findIndex((n,i)=>n.type===17&&g.data.map.traversals[i]),end=g.nodes[begin].links.find(l=>l.negotiation).node;
+assert(r.negotiationLink(begin,end,g.nodes[begin].links.find(l=>l.node===end)));
+const climber={position:g.nodes[begin].origin.slice(),path:[g.nodes[begin].origin.slice(),g.nodes[end].origin.slice()],stage:'hunt',age:0,spawnTime:g.time};
+assert(r.startTraversal(climber));assert.equal(climber.stage,'maptraverse');assert(climber.nativeTraversal.animation);
+const clock=g.time;g.time=climber.nativeTraversal.started+climber.nativeTraversal.duration;r.advanceTraversal(climber);assert.equal(climber.stage,'hunt');assert.deepEqual(climber.position,g.nodes[end].origin);g.time=clock;
+assert(g.canSave());const saved=g.saveState(),restored=await make();restored.loadState(saved);
+assert.equal(restored.enemies.length,g.enemies.length,'Risers without a barrier survive saves');
+assert.deepEqual(restored.mapRules.placements,r.placements);assert.deepEqual(restored.player.position,g.player.position);
+r.bring('specialty_quickrevive');const flightSave=g.saveState();restored.loadState(flightSave);
+assert.deepEqual(restored.mapRules.flight,r.flight,'A save keeps the actual machine flight');
+g.time=r.flight.started+r.flight.duration;r.land();
+assert(r.arrived.has('specialty_quickrevive'));assert(r.visible(g.interactions.find(e=>e.script_noteworthy==='specialty_quickrevive')));
+g.round=25;g.remaining=2;const before=g.enemies.length;r.spawnEnemy();assert(g.enemies.length>before);assert.equal(g.enemies.at(-1).kind,'blue');
+g.powerup.fire_sale=g.time+30;assert.equal(r.boxCost({zombie_cost:'950'}),10);assert(!r.boxJoker());
+assert(g.interactions.filter(e=>e.targetname==='treasure_chest_use').every(e=>r.visible(e)));
+console.log('Nuketown quick logic check passed: native spawn floor, solo perk placements, risers, saves during perk flight, round-25 eyes, Fire Sale pricing.');

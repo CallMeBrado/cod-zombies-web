@@ -16,4 +16,10 @@ BO1_MAPS = {
                               {'name': 'Nikolai', 'body': 'c_rus_nikolai_dlc2_body'},
                               {'name': 'Takeo', 'body': 'c_jap_takeo_dlc2_body'},
                               {'name': 'Richtofen', 'body': 'c_ger_richtofen_dlc2_body'}]),
+    'call-of-the-dead': dict(id='call-of-the-dead',zone='bo1-coast',asset='zombie_coast',data='gameplay/bo1-coast',english='bo1-coast-english',
+        search=['bo1-coast-patch','bo1-coast','bo1-common','bo1-base','bo1-coast-english','bo1-english','bo1-ui'],
+        bodies=[{'name':'Sarah Michelle Gellar','body':'c_zom_sarah_michelle_gellar_fb_player'},
+                {'name':'Robert Englund','body':'c_zom_robert_englund_fb_player'},
+                {'name':'Danny Trejo','body':'c_zom_danny_trejo_fb_player'},
+                {'name':'Michael Rooker','body':'c_zom_michael_rooker_fb_player'}]),
 }

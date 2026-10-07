@@ -15,6 +15,7 @@ _parser = argparse.ArgumentParser()
 _parser.add_argument('--map', choices=sorted(BO1_MAPS), default='kino')
 M = BO1_MAPS[_parser.parse_known_args(sys.argv[1:] if __name__ == '__main__' else [])[0].map]
 KINO = M['id'] == 'kino'
+COAST = M['id'] == 'call-of-the-dead'
 SEARCH = M['search']
 OUTPUT = DATA / M['data']
 OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -102,9 +103,12 @@ else:
     BOX = [n for n,in_box in re.findall(r'^\s*include_weapon\(\s*"([^"]+)"\s*(?:,\s*(true|false))?',script,re.M) if '_upgraded' not in n and in_box!='false' and n not in UNSUPPORTED]
     names |= {'m1911_zm',*BOX}
 names -= {'claymore_zm','bowie_knife_zm','frag_grenade_zm'}
+if COAST: names.add('minigun_zm')
 base_names = sorted(names)
 weapon_script = (DATA / 'bo1-common/maps/_zombiemode_weapons.gsc').read_text()
 native_weapons = {n:(upgrade,int(cost)) for n,upgrade,cost in re.findall(r'add_zombie_weapon\(\s*"([^"\n]+)"\s*,\s*"([^"\n]*)"\s*,\s*[^,\n]+,\s*(\d+)', weapon_script)}
+if COAST:
+    native_weapons.update({n:(up,int(cost)) for n,up,cost in re.findall(r'add_zombie_weapon\(\s*"([^"\n]+)"\s*,\s*"([^"\n]*)"\s*,\s*[^,\n]+,\s*(\d+)',script)})
 for n in base_names:
     upgraded=native_weapons.get(n,(n.replace('_zm','_upgraded_zm'),0))[0]
     if n not in ['m1911_zm'] and find('weapons/'+upgraded): names.add(upgraded)
@@ -113,7 +117,7 @@ knife = weapon('knife_zm')
 for name, w in weapons.items():
     # T5 stores reserve ammo in magazines, unlike T4's bullet counts.
     if name.startswith(('ray_gun','thundergun')): w['startAmmo'] += w['clipSize']
-    else: w['startAmmo'] = (w['startAmmo']+1)*w['clipSize']; w['maxAmmo'] *= w['clipSize']
+    elif name!='minigun_zm': w['startAmmo'] = (w['startAmmo']+1)*w['clipSize']; w['maxAmmo'] *= w['clipSize']
     w['handsModel'] = 'viewmodel_usa_pow_arms'
     w['knifeModel'] = knife['gunModel']
     for phase in ['in','loop','out']:
@@ -134,6 +138,7 @@ gesture_names={'specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastre
 if not KINO:
     # PhD Flopper and Stamin-Up (zombie_vending specialty_flakjacket / specialty_longersprint).
     gesture_names.update(specialty_flakjacket='zombie_perk_bottle_nuke',specialty_longersprint='zombie_perk_bottle_marathon')
+if COAST: gesture_names['specialty_deadshot']='zombie_perk_bottle_deadshot'
 gestures={key:dict(weapon(name),name=name,handsModel='viewmodel_usa_pow_arms') for key,name in gesture_names.items()}
 costs = {n: value[1] for n,value in native_weapons.items()}
 for e in entities:
@@ -167,11 +172,18 @@ for name in ['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zom
 # Kino's honour guard zombie; Ascension's character\c_zom_cosmo_spetznaz with
 # xmodelalias c_zom_cosmo_headalias's first head.
 actors=dict(body='c_ger_honorguard_body1',head='c_ger_zombie_head1') if KINO else dict(body='c_zom_cosmo_spetznaz_body',head='c_zom_cosmo_head1')
+if COAST: actors=dict(body='c_zom_soldier_body',head='c_zom_head_1')
 presentation = dict(animations=animations, effects={}, actors=actors,
                     powerups=dict(full_ammo='zombie_ammocan',insta_kill='zombie_skull',double_points='zombie_x2_icon',nuke='zombie_bomb',carpenter='zombie_carpenter'),
                     box=dict(openAngle=105,openTime=.5,floatHeight=40,riseTime=3,offerTime=12,closeTime=.5,cooldown=3,cycleDelays=[.05]*20+[.1]*10+[.2]*5+[.3]*3))
 import prepare_fidelity
 prepare_fidelity.GAME = GAME
+if COAST:
+    for p in (DATA/M['zone']/'web-anims').glob('ai_zombie_boss_*.json'): animations[p.stem]=animation(M['zone'],p.stem)
+    for p in (DATA/M['zone']/'web-anims').glob('ai_zombie_humangun_*.json'): animations[p.stem]=animation(M['zone'],p.stem)
+    boss={n:n for n in animations if n.startswith('ai_zombie_boss_')}
+    presentation['actorVariants']={'george':dict(body='c_zom_george_romero_zombiefied_fb',count=2,animations=boss,attachments=[dict(model='t5_weapon_engineer_club',tag='tag_weapon_right')]),
+        'human':dict(body='c_usa_pent_ciaagent_body',head='c_zom_head_human',count=8,animations={n:n for n in animations if 'humangun_' in n})}
 for name in ['misc/fx_zombie_powerup_on','misc/fx_zombie_powerup_grab','env/light/fx_ray_sun_sm_short',
              'explosions/fx_grenadeexp_concrete','explosions/fx_grenade_flash',*([] if KINO else ['maps/zombie/fx_zmb_phdflopper_exp'])]:
     p=find('web-fx/'+name+'.json')
@@ -179,6 +191,10 @@ for name in ['misc/fx_zombie_powerup_on','misc/fx_zombie_powerup_grab','env/ligh
         effect=prepare_fidelity.load_effect(p,SEARCH,effect_blending='grenade' in name)
         if name.endswith('fx_grenadeexp_concrete'): effect['name']='explosions/grenadeexp_concrete'
         presentation['effects'][effect['name']]=effect
+if COAST:
+    for p in (DATA/M['zone']/'web-fx').rglob('*.json'):
+        if re.search(r'director|coast.*pap|jackal|human_gun|sniper|deadshot',str(p)):
+            effect=prepare_fidelity.load_effect(p,SEARCH,effect_blending=True);presentation['effects'][effect['name']]=effect
 
 # Recover dependencies skipped as fastfile placeholders from the native IWDs.
 wanted = {m.get(k,'').lstrip(',') for m in world['materials'].values() for k in ['diffuse','normal'] if m.get(k)}
@@ -188,7 +204,7 @@ for z in SEARCH:
         wanted.update(Path(i['uri']).stem.lstrip(',') for i in gltf.get('images',[]) if i.get('uri','').endswith('.dds'))
 art = ['loadscreen_'+M['asset'],'menu_'+M['asset'],'scorebar_zom_1','specialty_divetonuke_zombies','specialty_marathon_zombies','ammocounterback','hud_us_grenade',
        'specialty_juggernaut_zombies','specialty_fastreload_zombies','specialty_doubletap_zombies','specialty_quickrevive_zombies',*[f'chalkmarks_{i}' for i in range(1,6)],
-       'overlay_low_health','hit_direction']
+       'overlay_low_health','hit_direction',*( ['specialty_ads_zombies','frost_test'] if COAST else [])]
 for name in sorted(wanted | set(art)):
     if find('images/'+name+'.dds') or '$identity' in name: continue
     raw=archive_bytes('images/'+name+'.iwi')
@@ -226,6 +242,10 @@ for name in {v for w in [*weapons.values(),grenade,*gestures.values()] for k,v i
     p=find('web-anims/'+name+'.json')
     if p: aliases.update(n['name'][6:] for n in json.loads(p.read_text()).get('notifies',[]) if n['name'].startswith('sndnt#'))
 aliases.update(p.stem for z in [M['zone'],'bo1-common'] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'zmb_.*(jugg|speed|revive|doubletap|packa|perk|powerup|marathon|divetonuke|flopper)|mus_theatre|mus_cosmo|mus_perks',p.stem))
+if COAST:
+    aliases.update(p.stem for z in [M['zone'],M['english']] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'romero|director|engineer|pap_|flinger|zipline|ice_|humangun|sniper|mus_coast|mus_zcoast',p.stem))
+    remap['mx_zombie_wave_1']='mus_cosmo_underscore'
+    aliases.add(remap['mx_zombie_wave_1'])
 sounds={};sound_output=OUTPUT/'sounds';sound_output.mkdir(exist_ok=True);cache={}
 def convert_audio(entry):
     filename=entry['file'].replace('\\','/').lstrip(',/')
@@ -293,6 +313,25 @@ manifest = dict(format='bo1-'+M['id']+'-solo-v1',game='black-ops',startWeapon='m
                 weaponNames={n:n.replace('_upgraded_zm',' (Pack-a-Punch)').replace('_zm','').replace('_',' ').upper() for n in weapons},
                 map=map_data,
                 provenance=dict(world='maps/'+M['asset']+'.d3dbsp',rules='maps/'+M['asset']+'.gsc',runtime='Black Ops browser reimplementation using locally installed T5 assets'))
+if COAST:
+    manifest['characterNames']=[b['name'] for b in M['bodies']]
+    presentation['box']['teddyModel']='zombie_teddybear'
+    manifest['characterArms']=['viewmodel_zom_gellar_arms','viewmodel_zom_englund_arms','viewmodel_zom_trejo_arms','viewmodel_zom_rooker_arms']
+    manifest['map']['boxMoves']=True
+    presentation['powerups']['minigun']='zombie_pickup_minigun'
+    presentation['powerups']['free_perk']='zombie_pickup_perk_bottle'
+    manifest['weaponNames'].update(humangun_zm='V-R11',humangun_upgraded_zm='V-R11 Lazarus',sniper_explosive_zm='Scavenger',sniper_explosive_upgraded_zm='Hyena Infra-Dead',minigun_zm='Death Machine')
+    manifest['map']['zoneFlags']=re.findall(r'add_zone_flags\(\s*"([^"]+)"\s*,\s*"([^"]+)"',script)
+    manifest['map']['papLocations']=[e for e in entities if e.get('targetname')=='pap_location']
+    manifest['map']['directorSpawn']=next(e for e in entities if e.get('targetname')=='boss_zombie_spawner')
+    def hulls_of(e):
+        origin=point(e);return [dict(mins=[v+origin[k] for k,v in enumerate(collision['brushes'][i]['mins'])],maxs=[v+origin[k] for k,v in enumerate(collision['brushes'][i]['maxs'])],planes=[[*p[:3],p[3]+sum(p[k]*origin[k] for k in range(3))] for p in collision['brushes'][i]['planes']]) for i in collision['models'][int(e['model'][1:])]['brushes']]
+    manifest['map']['waterVolumes']=[dict(position=point(e),hulls=hulls_of(e)) for e in entities if e.get('targetname')=='waterdamage']
+    manifest['map']['transportTriggers']=[dict(kind=e['targetname'],position=point(e),target=e.get('target'),hulls=hulls_of(e)) for e in entities if e.get('targetname') in ['player_zipline','flinger_activate']]
+    manifest['map']['meleeUpgrade']=weapon('sickle_knife_zm')
+    manifest['map']['projectileWeapons']={n:weapon(n) for n in ['sniper_explosive_bolt_zm','sniper_explosive_bolt_upgraded_zm']}
+    # The moving machine's original clip is linked/not solid in the stock script.
+    manifest['map']['initialDisabled']=['zombie_vending_upgrade_clip','flinger_player_gate']
 (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
 # Character voice lines are a separate, lazily decoded table (tools/prepare_voice.py).
 import prepare_voice

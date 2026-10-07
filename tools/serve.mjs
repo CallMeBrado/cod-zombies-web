@@ -38,6 +38,11 @@ async function currentBuild(){
   const names=(await readdir(path.join(root,'web'))).filter(n=>/\.(js|css|html)$/.test(n)).sort();
   const files=await Promise.all(names.map(async name=>[name,await readFile(path.join(root,'web',name))]));
   const hash=createHash('sha256').update(JSON.stringify(Object.entries(maps).map(([key,value])=>[key,value.id])));for(const [name,buffer] of files)hash.update(name).update(buffer);
+  // Loading movies have their own preparation stamps. Include them so a
+  // changed soundtrack gets a fresh browser URL along with the runtime.
+  const media=await Promise.all([...MAPS,...BO1_MAPS,...BO2_MAPS].map(async map=>{
+    try{return [map.id,await readFile(path.join(root,'local-data/launch',map.id+'.json'))];}catch(error){if(error.code==='ENOENT')return null;throw error;}
+  }));for(const item of media)if(item)hash.update(item[0]).update(item[1]);
   const id=hash.digest('hex').slice(0,16);
   if(!builds.has(id)){builds.set(id,{id,files:new Map(files),preload,maps});if(builds.size>4)builds.delete(builds.keys().next().value);}
   return builds.get(id);
@@ -56,7 +61,7 @@ const server = http.createServer(async (req, res) => {
     if(page?.redirect){res.writeHead(302,{'Location':page.redirect,'Cache-Control':'no-store'});res.end();return;}
     if(page?.template){
       const build=await currentBuild();
-      const map=page.game==='black-ops-2'?BO2_MAPS[0]:page.game==='black-ops'?BO1_MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||BO1_MAPS[0]:MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||MAPS[0];
+      const map=page.game==='black-ops-2'?BO2_MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||BO2_MAPS[0]:page.game==='black-ops'?BO1_MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||BO1_MAPS[0]:MAPS.find(m=>m.id===requestUrl.searchParams.get('map'))||MAPS[0];
       const preview=page.game==='black-ops'&&map.id==='kino'&&build.maps[map.id]?.navigationVersion!=='kino-ground-v2';
       const preloadConfig=page.game&&!preview?encodeURIComponent(JSON.stringify((build.maps[map.id]?.packs||[]).map(({url,bytes})=>({url,bytes})))):'';
       const html=build.files.get(preview?'bo1-progress.html':page.template).toString('utf8').replaceAll('__BUILD__',build.id).replaceAll('__PRELOAD__',preloadConfig);
@@ -84,7 +89,7 @@ const server = http.createServer(async (req, res) => {
       folder = path.join(root, 'local-data'); relative = pathname.slice(6);
       // Publish game assets, while keeping extraction reports, logs and process files local.
       const assetFolder = path.relative(folder, path.resolve(folder, relative)).split(path.sep)[0];
-      if (!['gameplay', 'nacht', 'der-riese', 'verruckt', 'verruckt-patch', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo1-doa','bo1-doa-patch','bo1-doa-english','bo1-doa-common','bo1-cosmodrome','bo1-cosmodrome-patch','bo1-cosmodrome-english','bo1-frontend','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
+      if (!['gameplay', 'nacht', 'der-riese', 'verruckt', 'verruckt-patch', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo1-doa','bo1-doa-patch','bo1-doa-english','bo1-doa-common','bo1-cosmodrome','bo1-cosmodrome-patch','bo1-cosmodrome-english','bo1-frontend','bo1-coast','bo1-coast-patch','bo1-coast-english','bo2-nuketown','bo2-nuketown-patch','bo2-nuketown-english','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
         res.writeHead(404); res.end('File not found.'); return;
       }
     } else if (pathname.startsWith('/vendor/')) {

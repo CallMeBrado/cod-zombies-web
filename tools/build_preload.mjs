@@ -10,6 +10,7 @@ import {CollisionWorld} from '../web/collision.js';
 import {SoloGame} from '../web/game.js';
 import {MAPS,BO1_MAPS,BO2_MAPS,mapById} from '../web/maps.js';
 import {BlackOpsEngine} from '../web/bo1-engine.js';
+import {CallOfDeadEngine} from '../web/bo1-coast.js';
 import {BlackOps2Engine} from '../web/bo2-engine.js';
 import {spawn} from 'node:child_process';
 import {prepareFactoryPowerNavigation} from './prepare_power_navigation.mjs';
@@ -35,7 +36,7 @@ const navSources=[chosen.zone+'/web-world/'+chosen.asset+'.collision.json',chose
 const navStamp=await navigationStamp(root,chosen,manifest);let navigation,navigationGame;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
 if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&&navigation?.version)){
   const began=performance.now(),collision=await read(navSources[0]),paths=await read(navSources[1]);
-  const game=new (bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
+  const game=new (chosen.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
   navigation={...game.preparedNavigation(),sourceStamp:navStamp};await writeFile(path.join(data,chosen.data+'/navigation.json'),JSON.stringify(navigation));
   console.log(`Prepared ${navigation.links.length} directed navigation links and ${navigation.routes.length} window routes on E: in ${((performance.now()-began)/1000).toFixed(1)} seconds.`);
 }
@@ -82,22 +83,26 @@ if(presentation.gore)for(const url of [presentation.gore.burst,presentation.gore
 for(const entry of [...Object.values(manifest.sounds),...Object.values(manifest.voice||{})].flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));
 const hudFolder=blackOps?chosen.data+'/hud':'gameplay/hud';for(const name of await readdir(path.join(data,hudFolder)))if(name.endsWith('.png'))await add(hudFolder+'/'+name);
 for(const name of await readdir(path.join(data,chosen.zone+'/web-world'))){if(bo2&&!new Set([chosen.asset+'.json',world.vertices,world.indices,chosen.asset+'.collision.json',chosen.asset+'.paths.json',chosen.asset+'.lights.json']).has(name))continue;await add(chosen.zone+'/web-world/'+name);}
-for(const material of Object.values(world.materials)){await texture(material.diffuse);await texture(material.normal);}
+for(const material of Object.values(world.materials)){await texture(material.diffuse);await texture(material.normal);await texture(material.layer?.diffuse);}
 for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(lightmap))if(name&&(!blackOps||bo2||type==='primary'))await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
 // Kino's four characters each have their own viewmodel arms.
 const names=new Set([...(bo2?[...manifest.characterArms,presentation.actors.body,presentation.actors.head,manifest.map.arthurModel]:blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
   ...[manifest.grenade?.gunModel,manifest.grenade?.projectileModel,presentation.gore?.neckModel].filter(Boolean),
   ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel]),...Object.values(manifest.gestures||{}).map(g=>g.gunModel)]);
 for(const character of manifest.playerBodies||[])for(const key of ['body','head','hat','gear'])if(character[key])names.add(character[key]);
-for(const actor of Object.values(presentation.actorVariants||{}))names.add(actor.body);
+for(const arm of manifest.characterArms||[])names.add(arm);
+if(presentation.box?.teddyModel)names.add(presentation.box.teddyModel);
+for(const actor of Object.values(presentation.actorVariants||{}))for(const name of [actor.body,actor.head,actor.neckModel,...(actor.attachments||[]).map(a=>a.model)].filter(Boolean))names.add(name);
 for(const e of Object.values(manifest.equipment||{}))names.add(e.model);
 for(const name of manifest.map?.propModels||[])names.add(name);
+if(manifest.map?.meleeUpgrade?.gunModel)names.add(manifest.map.meleeUpgrade.gunModel);
 for(const w of Object.values(manifest.weapons))if(w.weaponType==='projectile'&&w.projectileModel)names.add(w.projectileModel);
 for(const name of names)await model(name);
 const animations=new Set([...Object.keys(presentation.animations),...(manifest.playerAnimations||[]),...manifest.entities.map(e=>e.closedAnim).filter(Boolean),...(manifest.map?.arthurAnimations||[]),...(manifest.map?.propAnimations||[])]);
 for(const actor of Object.values(presentation.actorVariants||{}))for(const name of Object.values(actor.animations))animations.add(name);
 for(const e of Object.values(manifest.equipment||{}))for(const name of [e.animation,e.launchAnimation].filter(Boolean))animations.add(name);
 for(const weapon of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade||{}])for(const [key,value] of Object.entries(weapon))if(key.endsWith('Anim')&&value)animations.add(value);
+for(const [key,value]of Object.entries(manifest.map?.meleeUpgrade||{}))if(key.endsWith('Anim')&&value)animations.add(value);
 for(const name of animations)for(const zone of zones)if(await add(`${zone}/web-anims/${name}.json`,false))break;
 const entries=[...files].sort(([a],[b])=>a.localeCompare(b));
 const stamp=createHash('sha256').update('sharded-v1').update(JSON.stringify(entries.map(([url,info])=>[url,info.size,info.mtime]))).digest('hex');

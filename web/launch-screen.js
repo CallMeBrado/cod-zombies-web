@@ -47,7 +47,7 @@ export class LaunchScreen {
     this.element('back').hidden=true;this.element('skip').disabled=true;this.element('skip').textContent='LOADING MAP…';
     this.element('bytes').textContent='';this.update(0,'Loading '+this.map.title+'…');
     this.movie.style.opacity='1';this.root.style.backgroundImage=`url("${this.movie.poster}")`;
-    this.movie.src='/data/launch/'+this.map.id+'.mp4?build='+document.documentElement.dataset.build;
+    this.movie.src='/data/launch/'+this.map.id+'.mp4?mix=stereo-v3&build='+document.documentElement.dataset.build;
     this.gate=new LaunchGate(()=>this.finishIfVisible());this.gate.held=hold;
     const completion=new Promise(resolve=>this.resolve=resolve);
     this.play();return completion;

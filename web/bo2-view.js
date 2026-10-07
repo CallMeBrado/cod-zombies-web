@@ -22,6 +22,8 @@ export class BuriedView {
   constructor(scene,map,dynamic,effects){this.scene=scene;this.map=map;this.dynamic=dynamic;this.effects=effects;this.root=new THREE.Group();this.actions=new Map();this.equipment=new Map();this.templates=new Map();this.projectiles=new Map();this.projectileTemplates=new Map();this.boxes=new Map();}
   async prepare(manifest,presentation={}){
     const m=manifest.map;this.manifest=manifest;this.boxSettings=presentation.box||{floatHeight:40};
+    this.props={};this.fxanims={};
+    if(m.arthurModel){
     this.object=cloneModel(await model(m.arthurModel));shadeModel(this.object,[.4,.34,.26]);this.root.add(this.object);this.scene.add(this.root);
     this.mixer=new THREE.AnimationMixer(this.object);
     for(const name of m.arthurAnimations){const action=this.mixer.clipAction(restRelative(await originalAnimation(name,this.object,true),this.object));const loop=ARTHUR_LOOPS.has(name.slice(SLOTH.length));
@@ -36,6 +38,7 @@ export class BuriedView {
     for(const [key,modelName,clip]of [['catwalk','fxanim_zom_buried_catwalk_mod','fxanim_zom_buried_catwalk_anim'],['boards','fxanim_zom_buried_board_drop_start_mod','fxanim_zom_buried_board_drop_start_anim']]){
       const item=[...this.dynamic.values()].flat().find(v=>v.entity.model===modelName);if(!item)continue;
       const posed=new Posed(item.object);try{await posed.add(clip);posed.pose(clip,0);this.fxanims[key]={posed,clip};}catch(error){console.warn(error);}
+    }
     }
     await this.prepareBoxes(manifest);
     for(const [kind,d]of Object.entries(manifest.equipment)){
@@ -83,9 +86,9 @@ export class BuriedView {
     }
     for(const v of this.equipment.values())v.mixer.update(dt);
     for(const {root,p}of this.projectiles.values()){const from=p.previousPosition||p.position,t=Math.min(1,game.accumulator*120);root.position.set(...p.position.map((x,k)=>from[k]+(x-from[k])*t));root.rotation.z=Math.atan2(p.velocity[1],p.velocity[0]);}
-    this.updateArthur(game,a,dt);
-    if(this.door){const d=a.door;if(d)this.door.pose(d.clip,game.time-d.started);}
-    for(const [key,f]of Object.entries(this.fxanims)){const at=rules.fxanims[key];f.posed.pose(f.clip,at==null?0:game.time-at);}
+    if(a){this.updateArthur(game,a,dt);
+      if(this.door){const d=a.door;if(d)this.door.pose(d.clip,game.time-d.started);}
+      for(const [key,f]of Object.entries(this.fxanims)){const at=rules.fxanims[key];f.posed.pose(f.clip,at==null?0:game.time-at);}}
     this.updateBoxes(game);
     this.updateWallbuys(game);
   }
@@ -136,7 +139,7 @@ export class BuriedView {
   updateBoxes(game){
     const clips=this.manifest.map.boxClips||{},float=this.boxSettings.floatHeight||40;
     for(const [target,v]of this.boxes){
-      const box=game.boxes.get(target),active=target===game.activeBox;let clip=null,time=0,shown=active;
+      const box=game.boxes.get(target),active=target===game.activeBox||!!game.powerup.fire_sale;let clip=null,time=0,shown=active||['cycling','offered','closing'].includes(box.phase);
       if(box.phase==='cycling'||box.phase==='offered'||box.phase==='teddy'){clip='o_zombie_magic_box_open';time=game.time-box.started;}
       else if(box.phase==='closing'){clip='o_zombie_magic_box_close';time=game.time-box.closedAt;}
       else if(box.phase==='leaving'){time=game.time-box.started;shown=time<(clips.leave||7.5);clip='o_zombie_magic_box_leave';}

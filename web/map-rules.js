@@ -1,7 +1,7 @@
 const position=e=>e.origin.split(/\s+/).map(Number);
 export const PERKS={specialty_armorvest:{name:'Jugger-Nog',cost:2500,sting:'mx_jugger_sting',family:'jugger'},specialty_fastreload:{name:'Speed Cola',cost:3000,sting:'mx_speed_sting',family:'speed'},specialty_rof:{name:'Double Tap',cost:2000,sting:'mx_doubletap_sting',family:'doubletap'},specialty_quickrevive:{name:'Quick Revive',cost:1500,sting:'mx_revive_sting',family:'revive'},
   // Ascension's Stamin-Up and PhD Flopper (_zombiemode_perks.gsc: 2000 each).
-  specialty_longersprint:{name:'Stamin-Up',cost:2000,sting:'mus_perks_stamin_sting',family:'stamin'},specialty_flakjacket:{name:'PhD Flopper',cost:2000,sting:'mus_perks_phd_sting',family:'phd'}};
+  specialty_longersprint:{name:'Stamin-Up',cost:2000,sting:'mus_perks_stamin_sting',family:'stamin'},specialty_flakjacket:{name:'PhD Flopper',cost:2000,sting:'mus_perks_phd_sting',family:'phd'},specialty_deadshot:{name:'Deadshot Daiquiri',cost:1500,sting:'mus_perks_deadshot_sting',family:'deadshot'}};
 // perksacola struct script_sound -> the level.*_jingle flag it shares with its sting.
 const JINGLES={mx_jugger_jingle:'jugger',mx_speed_jingle:'speed',mx_doubletap_jingle:'doubletap',mx_revive_jingle:'revive',mx_packa_jingle:'packa'};
 // The exported aliases carry no min/max distance, so these ranges are chosen

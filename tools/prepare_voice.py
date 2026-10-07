@@ -29,7 +29,8 @@ def archive_index():
 
 def encode(job):
     raw, target = job
-    with tempfile.NamedTemporaryFile(suffix='.boa', delete=False) as handle:
+    scratch=ROOT/'.cache/temp';scratch.mkdir(parents=True,exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix='.boa',dir=scratch,delete=False) as handle:
         handle.write(raw)
         source = handle.name
     try:

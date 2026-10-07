@@ -101,6 +101,7 @@ export class SoloGame {
   newGame() {
     for(const enemy of this.enemies)this.emit('removeEnemy',enemy);
     this.enemies=[];this.effects=[];this.collision.disabled.clear();this.opened=new Set();
+    for(const target of this.data.map?.initialDisabled||[])this.collision.disabled.add(target);
     this.collision.playerMovement=true;const floor=this.collision.move(this.spawn,[0,0,-64]);this.collision.playerMovement=false;
     if(!floor.grounded)throw new Error('The original player spawn has no walkable collision floor.');
     this.player={position:floor.position,health:100,points:this.vars.zombie_score_start,kills:0,headshots:0,velocityZ:0,grounded:true,grenades:4};
@@ -229,10 +230,11 @@ export class SoloGame {
       if(at===b)break;done[at]=1;
       for(const link of this.nodes[at].links) {
         const n=link.node;if(n>=costs.length||done[n])continue;
-        if(this.nodes[at].type===this.negotiationBegin||this.nodes[n].type===this.negotiationEnd)continue;
+        const negotiation=!!this.mapRules?.negotiationLink?.(at,n,link);
+        if(!negotiation&&(this.nodes[at].type===this.negotiationBegin||this.nodes[n].type===this.negotiationEnd))continue;
         {
           const p=this.nodes[at].origin,q=this.nodes[n].origin;
-          const key=at+','+n;let clear=this.linkCache.get(key);
+          const key=at+','+n;let clear=negotiation||this.linkCache.get(key);
           if(clear===undefined){clear=this.walkableLink(p,q,true);this.linkCache.set(key,clear);}
           if(!clear)continue;
         }
@@ -605,7 +607,7 @@ export class SoloGame {
     restoreMovement(this,s.player.stance);
     const windows=new Map(this.windows.map(w=>[w.target,w])),enemies=new Map();
     for(const saved of s.enemies){
-      const window=windows.get(saved.window);if(!window)continue;
+      const window=windows.get(saved.window);if(!window&&!(this.data.map?.openRisers&&saved.window==null&&['rise','hunt','maptraverse'].includes(saved.stage)))continue;
       const enemy={...saved,window,previousPosition:saved.position.slice(),path:saved.path||[]};
       this.enemies.push(enemy);enemies.set(enemy.id,enemy);this.emit('spawn',enemy);
     }
@@ -755,8 +757,8 @@ export class SoloGame {
     if(!this.mirror){
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
     // A map can hold spawning (Ascension's lander flights clear spawn_zombies).
-    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&!this.mapRules?.spawnPaused&&this.enemies.filter(x=>!x.dead).length<this.maxAlive()){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay)+this.spawnNetFrame();}
-    if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead)) {
+    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&!this.mapRules?.spawnPaused&&this.enemies.filter(x=>!x.dead&&!x.ignoreRound).length<this.maxAlive()){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay)+this.spawnNetFrame();}
+    if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead||x.ignoreRound)) {
       this.phase='between';this.roundEndedAt=this.time;this.roundDue=this.time+this.vars.zombie_between_round_time;
       this.emit('sound',{alias:'round_over'});
     }
@@ -975,6 +977,7 @@ export class SoloGame {
       if(!this.spendPoints(cost)){this.voiceEvent?.('denied',owned?'ammo':'weapon');return;}
       if(owned){owned.reserve=owned.definition.maxAmmo;this.message('Ammo replenished');}else{this.giveWeapon(name);this.message(this.weaponName(name)+' purchased');this.voiceEvent?.('weapon',name);}
     } else if(e.targetname==='treasure_chest_use') {
+      cost=this.mapRules?.boxCost?.(e)??cost;
       const box=this.boxes.get(e.target),settings=this.presentation.box||{offerTime:12,closeTime:.5,cooldown:3};
       if(box.phase==='offered'){
         // Only the player who paid can take the box's weapon.
@@ -1010,7 +1013,7 @@ export class SoloGame {
     return (this.data.map?.boxWeapons||Object.keys(this.data.weapons)).filter(x=>!has(x)&&!excluded.has(x));
   }
   openBox(box,names,owner=null){
-    box.names=names.length?names:Object.keys(this.data.weapons);box.owner=owner;box.phase='cycling';box.started=this.time;box.index=0;box.nextAt=this.time;box.weapon=null;box.cost=Number(box.entity.zombie_cost)||950;
+    box.names=names.length?names:Object.keys(this.data.weapons);box.owner=owner;box.phase='cycling';box.started=this.time;box.index=0;box.nextAt=this.time;box.weapon=null;box.cost=this.mapRules?.boxCost?.(box.entity)??(Number(box.entity.zombie_cost)||950);
     this.emit('sound',{alias:'lid_open'});this.emit('sound',{alias:'music_box'});this.updateBoxes();
   }
   rebuild(w) {
@@ -1189,7 +1192,7 @@ export class SoloGame {
     else if(drop.type==='nuke'){for(const e of this.enemies)if(!e.dead)this.hitEnemy(e,e.health);this.changePoints(400);}
     else if(drop.type==='carpenter'){this.carpenter={origin:drop.position.slice(),next:this.time};this.emit('loop',{id:'carpenter',alias:'carp_loop',position:drop.position.slice(),near:150,far:1400});}
     else this.powerup[drop.type]=this.time+30;
-    this.message({'full_ammo':'Max ammo','insta_kill':'Insta-kill · 30 seconds','double_points':'Double points · 30 seconds','nuke':'Nuke','carpenter':'Carpenter'}[drop.type]);
+    this.message({'full_ammo':'Max ammo','insta_kill':'Insta-kill · 30 seconds','double_points':'Double points · 30 seconds','nuke':'Nuke','carpenter':'Carpenter','fire_sale':'Fire Sale · 30 seconds'}[drop.type]);
   }
   snapshot(){return {phase:this.phase,time:this.time,round:this.round,health:this.player.health,points:this.player.points,kills:this.player.kills,position:this.player.position,physicsHz:1/PHYSICS_STEP,physicsTicks:this.physicsTicks,grounded:this.player.grounded,ammo:[this.weapon.clip,this.weapon.reserve],weapon:this.weapon.name,remaining:this.remaining,shots:this.shots,hits:this.hits,windows:this.windows.map(w=>({entry:w.entry,boards:w.boards})),enemies:this.enemies.filter(e=>!e.dead).map(e=>({id:e.id,position:e.position,health:e.health,stage:e.stage}))};}
 }

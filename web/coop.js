@@ -122,6 +122,7 @@ export class Coop {
         const r=this.remotes.get(from);if(r?.state)enemy.killFrom=r.state.p;
         this.withCredit(from,()=>g.hitEnemy(enemy,Number(msg.damage)||0,!!msg.head,!!msg.melee));
         if(enemy.dead)this.to(from,{type:'killed',enemy:enemy.id,head:!!msg.head,melee:!!msg.melee});return;}
+      case 'coastHumanize':{if(!this.host||g.data.map?.id!=='call-of-the-dead')return;const enemy=g.enemies.find(e=>e.id===msg.enemy&&!e.dead);if(enemy)this.withCredit(from,()=>g.humanize(enemy,!!msg.upgraded));return;}
       // A purchase that lost a race (already open, box busy) is refunded.
       case 'open':{if(!this.host)return;const e=g.interactions.find(x=>x.target===msg.target&&['zombie_door','zombie_debris'].includes(x.targetname));
         if(e&&!g.opened.has(e.target))this.withCredit(from,()=>g.openDoor(e));else this.to(from,{type:'points',amount:Number(e?.zombie_cost)||0});return;}
@@ -139,6 +140,7 @@ export class Coop {
       case 'killed':{g.player.kills++;if(msg.head)g.player.headshots++;const enemy=g.enemies.find(e=>e.id===msg.enemy);if(enemy&&g.killVox)g.killVox(enemy,msg.head,msg.melee);return;}
       case 'damage':g.damagePlayer(Number(msg.amount)||0,{from:Array.isArray(msg.from)?msg.from.map(Number):null});return;
       case 'sound':if(msg.sound?.alias)g.emit('sound',msg.sound);return;
+      case 'iceHit':if(this.remotes.get(from)?.present)g.mapRules?.thaw?.();return;
       case 'powerup':this.sharePowerup(msg.drop,msg.by);return;
       case 'revive':this.revived(from);return;
       case 'gameOver':this.gameOver(msg);return;
@@ -150,6 +152,8 @@ export class Coop {
     const g=this.game;if(this.host)return;
     if(type==='full_ammo'){for(const w of g.inventory){w.clip=w.definition.clipSize;w.reserve=w.definition.maxAmmo;}if(this.down)for(const w of this.down.inventory){w.clip=w.definition.clipSize;w.reserve=w.definition.maxAmmo;}g.player.grenades=4;}
     else if(type==='nuke')g.changePoints(400);
+    else if(type==='free_perk'){if(!this.down&&!this.dead)g.mapRules.grantPerk?.();return;}
+    else if(type==='minigun'){if(by===this.localId)g.grantDeathMachine?.();return;}
     g.message({'full_ammo':'Max ammo','insta_kill':'Insta-kill · 30 seconds','double_points':'Double points · 30 seconds','nuke':'Nuke','carpenter':'Carpenter'}[type]||'');
     if(by===this.localId)g.laterDialog?.(3+Math.random()*.5,'powerup',type);
   }
@@ -183,15 +187,16 @@ export class Coop {
   // A teammate's body stops this player's shots (friendly fire does no
   // damage): hits beyond them are dropped and the bullet ends there.
   blockShot(ray,origin,dir,sample){
-    let nearest=Infinity;
+    let nearest=Infinity,teammate=null;
     for(const r of this.remotes.values()){
       const s=r.present&&sample(r.id);if(!s||s.dead)continue;
       const height=s.down||s.stance==='prone'?22:s.stance==='crouch'?50:70,lo=[s.p[0]-PLAYER_RADIUS,s.p[1]-PLAYER_RADIUS,s.p[2]],hi=[s.p[0]+PLAYER_RADIUS,s.p[1]+PLAYER_RADIUS,s.p[2]+height];
       let near=0,far=Infinity,miss=false;
       for(let k=0;k<3;k++){if(Math.abs(dir[k])<1e-9){if(origin[k]<lo[k]||origin[k]>hi[k]){miss=true;break;}continue;}const a=(lo[k]-origin[k])/dir[k],b=(hi[k]-origin[k])/dir[k];near=Math.max(near,Math.min(a,b));far=Math.min(far,Math.max(a,b));if(near>far){miss=true;break;}}
-      if(!miss&&near>1)nearest=Math.min(nearest,near);
+      if(!miss&&near>1&&near<nearest){nearest=near;teammate=r;}
     }
     const end=Math.hypot(...ray.end.map((v,i)=>v-origin[i]));if(nearest>=end)return ray;
+    if(teammate?.state?.frozen&&this.game.data.map?.id==='call-of-the-dead')this.to(teammate.id,{type:'iceHit'});
     const hits=(ray.hits||(ray.hit?[ray.hit]:[])).filter(h=>h.distance<nearest);
     return {...ray,hits,hit:hits[0]||null,end:origin.map((v,i)=>v+dir[i]*nearest),wall:false,teammate:true};
   }
@@ -204,17 +209,19 @@ export class Coop {
     const g=this.game,p=g.player;
     return {p:p.position.map(round1),yaw:Math.round(g.yaw*1000)/1000,pitch:Math.round(g.pitch*1000)/1000,stance:p.stance,moving:!!g.moving,sprinting:!!g.sprinting,ads:Math.round((g.ads||0)*100)/100,
       weapon:g.weapon?.name,points:p.points,kills:p.kills,health:Math.round(p.health),down:!!this.down,bleed:this.down?Math.max(0,Math.ceil(this.down.bleedout-g.time)):0,dead:this.dead,
-      dive:g.dive?{phase:g.dive.phase,yaw:Math.round(g.dive.yaw*1000)/1000}:null,shots:this.shots,proj:!!g.mapRules?.projectionUntil,reload:!!g.reloadEnd,character:this.character,slot:this.slot};
+      dive:g.dive?{phase:g.dive.phase,yaw:Math.round(g.dive.yaw*1000)/1000}:null,shots:this.shots,proj:!!g.mapRules?.projectionUntil,frozen:!!g.mapRules?.frozen,reload:!!g.reloadEnd,character:this.character,slot:this.slot};
   }
   // ----- host snapshot ---------------------------------------------------
   snapshot(){
-    const g=this.game,now=g.time,stage={approach:0,barrier:1,enter:2,traverse:3,hunt:4,rise:5};
+    const g=this.game,now=g.time,stage={approach:0,barrier:1,enter:2,traverse:3,hunt:4,rise:5,maptraverse:6};
     return {
       time:now,phase:g.phase,round:g.round,remaining:g.remaining,roundIn:Math.max(0,g.roundDue-now),zombieHealth:g.zombieHealth,over:this.over,
       powerup:Object.fromEntries(Object.entries(g.powerup).map(([k,v])=>[k,round1(v-now)])),
       opened:[...g.opened],disabled:[...g.collision.disabled],boards:g.windows.map(w=>w.boards),
       enemies:g.enemies.map(e=>{
         const out={i:e.id,p:e.position.map(round1),a:Math.round(e.angle*100)/100,s:stage[e.stage]??4,g:e.gait};
+        if(e.kind)out.kind=e.kind;
+        if(e.nativeTraversal)out.mt={...e.nativeTraversal,age:round1(now-e.nativeTraversal.started)};
         if(e.dead){out.d=1;out.h=e.deathHeadshot?1:0;const from=e.killFrom||g.player.position;out.k=e.position.map((v,i)=>round1(v-from[i]));}
         if(e.attacking)out.x=e.attack?[e.attack.name,round1(now-e.attack.started)]:1;
         if(e.tear)out.t=[e.tear.name,round1(e.age-(e.tear.started-e.spawnTime))];
@@ -275,8 +282,9 @@ export class Coop {
     for(const e of b.snap.enemies){
       present.add(e.i);const prev=before.get(e.i)||e,p=prev.p.map((v,k)=>v+(e.p[k]-v)*t),angle=prev.a+Math.atan2(Math.sin(e.a-prev.a),Math.cos(e.a-prev.a))*t;
       let enemy=this.mirrored.get(e.i);
-      if(!enemy){enemy={id:e.i,position:p,previousPosition:p.slice(),angle,stage:'hunt',gait:e.g,speed:37.64,dead:false,age:0,spawnTime:0,path:[],health:1};this.mirrored.set(e.i,enemy);g.enemies.push(enemy);g.emit('spawn',enemy);}
-      enemy.position=p;enemy.previousPosition=p.slice();enemy.angle=angle;enemy.gait=e.g;enemy.stage=['approach','barrier','enter','traverse','hunt','rise'][e.s]||'hunt';enemy.attacking=!!e.x;
+      if(!enemy){enemy={id:e.i,kind:e.kind,position:p,previousPosition:p.slice(),angle,stage:'hunt',gait:e.g,speed:37.64,dead:false,age:0,spawnTime:0,path:[],health:1};this.mirrored.set(e.i,enemy);g.enemies.push(enemy);g.emit('spawn',enemy);}
+      enemy.position=p;enemy.previousPosition=p.slice();enemy.angle=angle;enemy.gait=e.g;enemy.stage=['approach','barrier','enter','traverse','hunt','rise','maptraverse'][e.s]||'hunt';enemy.attacking=!!e.x;
+      enemy.nativeTraversal=e.mt?{...e.mt,started:g.time-e.mt.age}:null;
       // The melee clip and how far into it the host is; a steady start keeps
       // snapshot jitter from restarting the swing.
       if(Array.isArray(e.x)){const started=g.time-e.x[1];if(enemy.attack?.name!==e.x[0]||Math.abs(enemy.attack.started-started)>.3)enemy.attack={name:e.x[0],started};}else enemy.attack=null;

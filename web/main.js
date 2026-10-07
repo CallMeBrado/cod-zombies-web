@@ -28,10 +28,13 @@ import {PERKS} from './map-rules.js';
 import {powerSwitchRotation} from './factory-view.js';
 import {PauseKeys} from './pause-keys.js';
 import {BlackOpsEngine} from './bo1-engine.js';
+import {CallOfDeadEngine} from './bo1-coast.js';
+import {CoastView} from './bo1-coast-view.js';
 import {BlackOpsHud} from './bo1-hud.js';
 import {BlackOps2Engine,BO2_CHARACTERS,BO2_ARMS,BO2_PERKS} from './bo2-engine.js';
 import {BlackOps2Hud} from './bo2-hud.js';
 import {BuriedView} from './bo2-view.js';
+import {NuketownView} from './bo2-nuketown-view.js';
 import {ServerSaveStore} from './server-saves.js';
 import {LaunchScreen} from './launch-screen.js';
 import {PlayerVoice,CHARACTERS,CHARACTER_ARMS} from './player-voice.js';
@@ -53,7 +56,7 @@ const bo2=mapChoice.game==='black-ops-2',blackOps=bo2||mapChoice.game==='black-o
 // The original overlay_low_health and hit_direction art (BO2's hit_direction_zm is additive).
 const hurtArcs=document.createElement('canvas');hurtArcs.id='hurt-arcs';hurtArcs.setAttribute('aria-hidden','true');document.getElementById('blood').after(hurtArcs);
 const hurt=new HurtEffect({overlay:document.getElementById('blood'),canvas:hurtArcs,view:document.getElementById('viewport'),hudBase:blackOps?`/data/${mapChoice.data}/hud/`:'/data/gameplay/hud/',arc:bo2?'hit_direction_zm':'hit_direction',additive:bo2});
-const characterNames=bo2?BO2_CHARACTERS:CHARACTERS,characterArms=bo2?BO2_ARMS:CHARACTER_ARMS;
+const characterNames=mapChoice.characterNames||(bo2?BO2_CHARACTERS:CHARACTERS),characterArms=mapChoice.characterArms||(bo2?BO2_ARMS:CHARACTER_ARMS);
 // Black Ops solo plays a random one of the four characters (player_set_viewmodel);
 // ?character=0-3 picks one. A save keeps its character.
 const characterParam=new URLSearchParams(location.search).get('character');
@@ -74,7 +77,7 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixe
 renderer.info.autoReset=false;renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)*settings.value.renderScale/100);
 const viewScene=new THREE.Scene();
 const viewCamera=new THREE.PerspectiveCamera(worldFov(65),innerWidth/innerHeight,.1,300);
-const hud=new (bo2?BlackOps2Hud:blackOps?BlackOpsHud:OriginalHud)($('hud-art'),blackOps&&!bo2?{folder:mapChoice.data}:undefined),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene),blood=new BloodEffects(scene);
+const hud=new (bo2?BlackOps2Hud:blackOps?BlackOpsHud:OriginalHud)($('hud-art'),blackOps?{folder:mapChoice.data}:undefined),raycaster=new THREE.Raycaster(),combatEffects=new CombatEffects(scene),blood=new BloodEffects(scene);
 const visuals=new Map(),dynamic=new Map(),dropVisuals=new Map();
 const state={ready:false,mode:'menu',inputMode:'idle',yaw:Math.PI,pitch:0,loading:'idle',fps:0,error:null};
 const launch=new LaunchScreen(mapChoice,()=>settings.value.volume);
@@ -89,7 +92,7 @@ const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,exertDue=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
 let deathFxTime=0,frameMsTotal=0;
-const loops=new Map();let papView=null,shake=null,verrucktView=null;const cellObjects=[];let cellMask=null;
+const loops=new Map();let papView=null,shake=null,verrucktView=null,coastView=null;const cellObjects=[];let cellMask=null;
 const pauseKeys=new PauseKeys();
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
@@ -407,6 +410,7 @@ function resetVisuals() {
   for(const burst of bursts)effects.dispose(burst.root);bursts.length=0;
   combatEffects.reset();blood.reset();
   buriedView?.reset();
+  coastView?.reset();
   deathFxTime=0;
   grenadeView?.reset();
   state.yaw=game?.mapRules?.spawnYaw??(game?.data.map?Number(game.entities.find(e=>e.targetname==='initial_spawn_points').angles.split(' ')[1])*Math.PI/180:Math.PI);state.pitch=0;factoryVisuals();kickPitch=0;kickYaw=0;damageFlash=0;hurt.reset();zombieVox?.reset();gameOver?.stop();throe=null;lastHitFrom=null;document.body.classList.remove('game-over');controls.reset();aimBlend=0;mouse.reset();lastLight=-1;cameraPose();
@@ -427,6 +431,7 @@ function traceEnemy(origin,direction,max,all=false) {
   return all?hits.sort((a,b)=>a.distance-b.distance):best;
 }
 function shot(ray) {
+  const shotStarted=performance.now();
   if(coop)coop.shots++;
   const d=game.weapon.definition,prefix=aimBlend>.8?'ads':'hip';
   const range=(a,b)=>a+(b-a)*Math.random();
@@ -440,6 +445,7 @@ function shot(ray) {
     if(!r.hit&&!r.wall)continue;
     combatEffects.impact(r,game.time);
   }
+  state.weaponShotMs=performance.now()-shotStarted;
 }
 function makeDrop(drop) {
   if(!drop.restored){drop.spawned=game.time;drop.expires=game.time+26.5;}
@@ -525,27 +531,31 @@ async function init() {
   if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=characterArms[character];
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);zombieVox=new ZombieVox(audio,ZOMBIE_VOX[bo2?'black-ops-2':blackOps?'black-ops':mapChoice.id==='der-riese'?'der-riese':'nacht']);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);weaponView.effects=effects;actors=new ZombieActors(scene,map,presentation);actors.onNote=(enemy,alias)=>{if(!paused)zombieVox?.note(enemy,alias,game.time);};actors.active=visuals;
   if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
-  if(bo2){buriedView=new BuriedView(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
+  if(bo2){buriedView=new (mapChoice.id==='nuketown'?NuketownView:BuriedView)(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
     ...Object.entries(presentation.powerups).map(async([type,name])=>{const object=cloneModel(await model(name));shadeModel(object,[.9,.9,.9]);dropTemplates.set(type,object);})]);
   await prepared(3,'Preparing mystery box and grenade effects…');
+  if(mapChoice.id==='call-of-the-dead')await weaponView.prepareMeleeUpgrade(manifest.map.meleeUpgrade);
+  weaponView.prepareCombat();
   await prepareBox(manifest);preparePap(manifest);verrucktView=mapChoice.id==='verruckt'?new VerrucktView(scene,dynamic,manifest.entities,p=>map.illumination(p)):null;
+  if(mapChoice.id==='call-of-the-dead'){coastView=new CoastView(scene,map,dynamic);await coastView.prepare(manifest,presentation);}
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
   await prepared(4,'Preparing map collision, navigation and audio…');
-  game=new (bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
+  game=new (mapChoice.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     dialog:e=>voice?.speak(e).catch(console.warn),
     buriedItem:e=>buriedView?.item(e),chalkDust:target=>buriedView?.chalkDust(target,game.time),
     buriedEquipment:e=>buriedView?.place(e),buriedEquipmentRemove:id=>buriedView?.remove(id),buriedEquipmentLaunch:e=>buriedView?.launch(e),
     buriedProjectile:e=>buriedView?.projectile(e),buriedProjectileRemove:id=>buriedView?.removeProjectile(id),projectileImpact:r=>{combatEffects.impact(r,game.time);if(r.hit)blood.burst(r.end,r.dir,game.time,r.hit.head);},
+    coastProjectile:e=>coastView?.projectile(e),coastProjectileRemove:id=>coastView?.removeProjectile(id),
     dive:e=>weaponView.dive(e),
     diveEvent:e=>diveAudio?.handle(e),contactSurface:(p,n)=>contactSurfaceName(map.bullets.trace([p[0]+n[0]*4,p[1]+n[1]*4,p[2]+6],[0,0,-1],24)),
     bindingName:keyName,controllerPrompts:()=>gamepads.active,
     message:notice,spawn:e=>{spawnVisual(e);zombieVox?.spawn(e,game.time);},
     zombieAttack:e=>zombieVox?.attack(e,game.time),
     kill:e=>{zombieVox?.death(e,game.time);const direction=e.killDirection||e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{stepView.reset();stepOffset=0;resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
-    traceShot:(origin,dir,range)=>coop&&session?coop.blockShot(map.bullets.shot(origin,dir,range,traceEnemy),origin,dir,id=>session.sample(id)):map.bullets.shot(origin,dir,range,traceEnemy),traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:e=>{if(typeof e==='number')e={amount:e};lastHitFrom=e.from||null;hurt.hit({from:e.from,health:e.health??game.player.health,max:e.max??(game.mapRules?.maxHealth||100)},game.time,game.player.position);
+    traceShot:(origin,dir,range)=>{const began=performance.now(),ray=map.bullets.shot(origin,dir,range,traceEnemy);state.traceShotMs=performance.now()-began;state.maxTraceShotMs=Math.max(state.maxTraceShotMs||0,state.traceShotMs);return coop&&session?coop.blockShot(ray,origin,dir,id=>session.sample(id)):ray;},traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:e=>{if(typeof e==='number')e={amount:e};lastHitFrom=e.from||null;hurt.hit({from:e.from,health:e.health??game.player.health,max:e.max??(game.mapRules?.maxHealth||100)},game.time,game.player.position);
       // Being swiped jolts the view; BO1 and BO2 play evt_player_swiped
       // (and BO2 the character's pain exert, at most every 1.5-3 s).
       if(e.from){kickPitch+=THREE.MathUtils.degToRad(-1.5-Math.random());kickYaw+=THREE.MathUtils.degToRad((Math.random()-.5)*2);
@@ -572,11 +582,11 @@ async function init() {
   warmScene.remove(actors.warmObject());effects.dispose(warmFx);await prepared(6,'Uploading textures and character rigs…');await map.uploadTextures(renderer);
   // Shader compilation alone does not allocate skinning textures or geometry
   // buffers. Draw every prepared rig offscreen before the first spawn/switch.
-  const gpuWarmScene=new THREE.Scene(),rigs=[...actors.pool.map(v=>v.root),...weaponView.rigs.values(),grenadeView.root,...combatEffects.grenades.map(v=>v.mesh),...combatEffects.explosions.map(v=>v.root),...blood.warmObjects(),...(playerBody?.warmObjects()||[])].map(v=>v.root||v),restore=[];
-  for(const root of rigs){restore.push({root,parent:root.parent,visible:root.visible});root.visible=true;gpuWarmScene.add(root);root.traverse(n=>{if(n.isMesh){restore.push({mesh:n,culled:n.frustumCulled});n.frustumCulled=false;}});}
+  const gpuWarmScene=new THREE.Scene(),rigs=[...actors.pool.map(v=>v.root),...[...actors.variantPools.values()].flatMap(pool=>pool.map(v=>v.root)),...weaponView.rigs.values(),grenadeView.root,...combatEffects.grenades.map(v=>v.mesh),...combatEffects.explosions.map(v=>v.root),...blood.warmObjects(),...(playerBody?.warmObjects()||[])].map(v=>v.root||v),restore=[];
+  for(const root of rigs){restore.push({root,parent:root.parent});gpuWarmScene.add(root);root.traverse(n=>{restore.push({node:n,visible:n.visible,culled:n.frustumCulled});n.visible=true;if(n.isMesh)n.frustumCulled=false;});}
   const warmTarget=new THREE.WebGLRenderTarget(64,64);
   await renderer.compileAsync(gpuWarmScene,viewCamera);renderer.setRenderTarget(warmTarget);renderer.render(gpuWarmScene,viewCamera);renderer.setRenderTarget(null);warmTarget.dispose();
-  for(const item of restore)if(item.mesh)item.mesh.frustumCulled=item.culled;else{gpuWarmScene.remove(item.root);item.root.visible=item.visible;item.parent?.add(item.root);}
+  for(const item of restore)if(item.node){item.node.visible=item.visible;item.node.frustumCulled=item.culled;}else{gpuWarmScene.remove(item.root);item.parent?.add(item.root);}
   await prepared(7,'Finishing map graphics…');
   // Draw every map object once offscreen (culling off, hidden props shown) so
   // its textures and buffers upload while loading. Otherwise each upload is a
@@ -647,7 +657,7 @@ function applyCellCulling(){
 }
 function frame(time) {
   const began=performance.now();
-  const dt=Math.max(0,Math.min((time-frameTime)/1000,.1));frameTime=time;
+  const frameGapMs=Math.max(0,time-frameTime),dt=Math.min(frameGapMs/1000,.1);frameTime=time;state.frameGapMs=frameGapMs;
   gamepads.poll(dt);controllerHud.update(game,state.mode==='playing');
   if(!state.ready||state.mode==='loading'){requestAnimationFrame(frame);return;}
   if(gameOver?.active)for(const event of gameOver.update(dt))gameOverEvent(event);
@@ -674,7 +684,7 @@ function frame(time) {
   }
   if(game&&!paused&&state.mode==='playing')zombieVox?.update(game.time,game,game.yaw);
   for(const [drop,v]of dropVisuals){if(drop.used||game.time>drop.expires){effects.dispose(v.glow);scene.remove(v.root);dropVisuals.delete(drop);}else updateDrop(drop,v);}
-  if(game&&state.ready){factoryVisuals();updateMovers();updateBoxes();verrucktView?.update(game,cellObjects);updatePap();updateAudio();}
+  if(game&&state.ready){factoryVisuals();updateMovers();updateBoxes();verrucktView?.update(game,cellObjects);coastView?.update(game,cellObjects);updatePap();updateAudio();}
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];if(game.time>=b.due){effects.dispose(b.root);bursts.splice(i,1);}else effects.update(b.root,game.time);}
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}
@@ -690,21 +700,21 @@ function frame(time) {
   }
   if(game)hurt.update(game.time+deathFxTime,{health:game.player.health,max:game.mapRules?.maxHealth||100,viewYaw:game.yaw});
   map?.updateVisibility(camera);applyCellCulling();
-  renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}
+  const renderStarted=performance.now();renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}state.renderFrameMs=performance.now()-renderStarted;
   if(game&&state.mode==='playing'&&time>=hudDue){
     if(coop){const names=blackOps?characterNames.map(n=>n.toUpperCase()):null,target=coop.reviveTarget();
       game.coopHud={rows:coop.scoreboard(names),markers:(remotePlayers?.markers(camera,innerWidth,innerHeight)||[]).map(m=>({...m,name:coop.nameOf(m.id,names),color:coop.scoreboard(names).find(r=>r.id===m.id)?.color})),
         down:coop.down?Math.max(0,Math.ceil(coop.down.bleedout-game.time)):null,dead:coop.dead,revive:target?{name:coop.nameOf(target.id,names),progress:coop.revive?.id===target.id?coop.revive.progress:0,key:keyName('use')}:null};}
     else game.coopHud=null;
     hud.draw(game,aimBlend,time<hitTime,camera.fov);hudDue=time+1000/60;}
-  if(state.ready&&state.mode==='playing'){frameSamples.push({dt:dt*1000,cpu:performance.now()-began});if(frameSamples.length>600)frameSamples.shift();}
+  if(state.ready&&state.mode==='playing'){frameSamples.push({dt:frameGapMs,cpu:performance.now()-began,trace:state.traceShotMs||0,weapon:state.weaponShotMs||0,render:state.renderFrameMs});if(frameSamples.length>600)frameSamples.shift();}
   // Frame counter: FPS and mean CPU frame time, refreshed twice a second.
   frames++;frameMsTotal+=performance.now()-began;
   if(time-fpsTime>500){state.fps=Math.round(frames*1000/(time-fpsTime));$('position').textContent=state.fps+' FPS';
     const counter=$('fps-counter');counter.classList.toggle('on',settings.value.showFps);if(settings.value.showFps)counter.textContent=state.fps+' FPS\n'+(frameMsTotal/frames).toFixed(1)+' ms CPU';
     frames=0;frameMsTotal=0;fpsTime=time;}
   if(time>=domDue){updateHud();domDue=time+100;}
-  if(game&&state.ready)buriedView?.update(game,paused?0:dt);
+  if(game&&state.ready)buriedView?.update(game,paused?0:dt,cellObjects);
   requestAnimationFrame(frame);
 }
 window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get verrucktView(){return verrucktView;},get frontend(){return frontend;},get bo2Menu(){return bo2Menu;},get menuAudio(){return menuAudio;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,

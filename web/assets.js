@@ -52,6 +52,7 @@ async function diffuse(name) {
   throw new Error('Original texture unavailable: '+name);
 }
 export function film(shader,vision=null) {
+  vision??=mapChoice.vision;
   if(vision){
     // A T5 .vision's film pass: saturation, then the dark -> mid -> light
     // tints by luminance, then contrast about middle grey.
@@ -69,7 +70,7 @@ export function film(shader,vision=null) {
   if(mapChoice.game==='black-ops-2'){
     shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
       float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
-      outgoingLight=mix(vec3(luma),outgoingLight,.90)*vec3(1.035,1.,.94);
+      outgoingLight=mix(vec3(luma),outgoingLight,${mapChoice.id==='nuketown'?'.853516':'.90'})*${mapChoice.id==='nuketown'?'vec3(1.)':'vec3(1.035,1.,.94)'};
       gl_FragColor.rgb=outgoingLight;
       #include <tonemapping_fragment>`);return;
   }

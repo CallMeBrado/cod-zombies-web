@@ -15,7 +15,11 @@ export class ZombieActors {
     await this.prepareRig(body,Object.fromEntries(Object.keys(this.presentation.animations).map(n=>[n,n])),32,this.pool);
     this.variantPools=new Map();
     for(const [kind,config]of Object.entries(this.presentation.actorVariants||{})){
-      const object=cloneModel(await model(config.body));shadeModel(object,[1,1,1]);const pool=[];this.variantPools.set(kind,pool);await this.prepareRig(object,config.animations,config.count||8,pool);
+      const object=cloneModel(await model(config.body));
+      for(const a of config.attachments||[]){const attachment=cloneModel(await model(a.model));(object.getObjectByName(a.tag)||object).add(attachment);}
+      if(config.head){const head=cloneModel(await model(config.head));head.userData.zombieHeadRoot=true;head.traverse(n=>{if(n.isMesh)n.userData.zombieHead=true;});object.getObjectByName('j_spine4')?.add(head);}
+      if(config.neckModel){const neck=cloneModel(await model(config.neckModel));neck.userData.zombieNeckRoot=true;neck.traverse(n=>{if(n.isMesh)n.userData.goreOnly=true;});object.add(neck);}
+      shadeModel(object,[1,1,1]);const pool=[];this.variantPools.set(kind,pool);await this.prepareRig(object,config.animations,config.count||8,pool);
     }
   }
   async prepareRig(body,names,count,pool){
@@ -69,6 +73,7 @@ export class ZombieActors {
     let name=v.actions.has(e.gait)?e.gait:'ai_zombie_walk_v1',started=null;
     if(e.dead)name='ai_zombie_death_v1';
     else if(e.stage==='traverse')name=e.traverseAnim;
+    else if(e.nativeTraversal){name=e.nativeTraversal.animation;started=e.nativeTraversal.started;}
     else if(e.stage==='rise'&&e.riseAnim&&v.actions.has(e.riseAnim)){name=e.riseAnim;started=e.spawnTime;}
     else if(e.stage==='barrier'){name=e.tear?.name||'ai_zombie_idle_v1';started=e.tear?.started??null;}
     else if(e.attack&&v.actions.has(e.attack.name)){name=e.attack.name;started=e.attack.started;}
@@ -76,7 +81,8 @@ export class ZombieActors {
     this.play(v,name,started);
     const action=v.actions.get(name);
     if(action){
-      action.paused=!e.dead&&(!!e.tear||e.stage==='traverse');
+      action.paused=!e.dead&&(!!e.tear||e.stage==='traverse'||!!e.nativeTraversal);
+      if(e.nativeTraversal)action.time=Math.min(action.getClip().duration,e.nativeTraversal.age??(e.age-(e.nativeTraversal.started-e.spawnTime)));
       if(!e.dead&&e.tear)action.time=Math.min(action.getClip().duration,e.age-(e.tear.started-e.spawnTime));
       if(!e.dead&&e.stage==='traverse')action.time=e.traverseTime;
       // Movement speed comes from the gait clip's root motion; only an

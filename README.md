@@ -4,7 +4,7 @@ A browser runtime for **Call of Duty Zombies**, with World at War, Black Ops and
 
 World at War has **Nacht der Untoten**, **Verrückt** and **Der Riese**. Black Ops adds **Kino der Toten**, **Ascension** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
 
-The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / Buried** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
+The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / Buried and Nuketown Zombies** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
 ![Nacht der Untoten in the browser](docs/images/nacht-gameplay.jpg)
 
@@ -127,6 +127,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
     - Locations not in this build are shown but can't be chosen.
   - `npm run prepare:menus` exports and converts all of this from the installed games.
 - **Launching a map:** selecting a map opens its lobby without downloading the game pack. START GAME plays the installed game's original loading movie and soundtrack while downloading assets. The progress bar measures downloaded bytes, then completed preparation stages. Once the map is ready, SKIP INTRO starts immediately; otherwise it waits for the movie to end. Der Riese's original loading clip is a silent still frame and remains on screen while the map loads. Saved-game loading uses the same flow across both games. `npm run prepare:launch` converts the original movies on E:; the normal launcher also prepares them when necessary.
+- **Loading audio:** split Bink speaker tracks are combined into one stereo soundtrack, including the centre dialogue, bass and rear channels. BO2's external left/right and centre stems use the same mixer. A limiter prevents clipping when channels combine. Audio-only fixes reuse the prepared H.264 video, and movie preparation stamps change the browser URL so refreshed pages receive the corrected soundtrack.
 - **Save game:** three named server slots per map, shared by everyone who has access to the site, with no extra sign-in. Pause → SAVE GAME, enter a name, then choose a slot. Resume from LOAD GAME on any browser or device. Saves keep live zombies, round progress, drops, timers and map state, with thumbnail and statistics. Files live under `local-data/saves/` on E: and persist across server restarts; existing browser saves import into empty slots once. A changed slot rejects stale writes from another device; overwrites and deletions retain a recovery backup.
 - **Character voices (Black Ops):** solo Kino plays as a random one of Dempsey, Nikolai, Takeo or Richtofen (add `&character=0`–`3` to pick), with that character's arms and voice. Lines follow `_zombiemode_audio.gsc`: kill types and their chances, kill streaks, weapon and favourite-weapon pickups, Pack-a-Punch, perks, power-ups, refused purchases, ammo warnings, going down and the level-start line. `npm run prepare:voice` rebuilds the voice files.
 - **Testing mod menu:** choose MOD MENU from the pause menu. It has god mode, unlimited points, ammo and grenades, noclip (fly through walls: look to steer, hold Jump to rise, Sprint for speed), a weapon selector and a round selector.
@@ -196,6 +197,14 @@ Not implemented yet: space monkey rounds, the centrifuge and fire traps, the Ger
 
 Prepare with `npm run extract:ascension` then `npm run prepare:ascension`; verify with `npm run test:ascension`.
 
+### Black Ops: Call of the Dead
+
+Select **Call of the Dead** in the BO1 map picker, or open `/black-ops/?map=call-of-the-dead`. The installed `zombie_coast` map, patch and English fastfiles supply the snow-covered coast, ship and lighthouse, native lighting/vision grade, collision, navigation, 32 window routes, seven perk machines, models, sounds and celebrity voices/arms. The original loading movie plays with audio and measured download progress when Start Game is pressed. Prepared assets, movies and caches stay on E:.
+
+The separate `CallOfDeadEngine`/`CoastRules` run BO1's rounds and combat with George's native model, club, animations and per-player health. Shooting makes him angry; water calms him. He does not count towards round completion, survives nukes, drops a free-perk pickup and a 30-second Death Machine when defeated, and returns after an absent round. The perk pickup rewards each living player. Water builds cold over 30 seconds, freezes controls and lets a teammate's shot break the ice. Pack-a-Punch follows the original lighthouse wait/search/rise/availability cycle and moves between the three native sites, keeping the machine and purchase point together. Original zipline landing points and the flinger provide approximate travel trajectories. The moving box, Sickle melee, Deadshot, travelling Ray Gun/V-R11 rounds and Scavenger's sticky three-second explosive bolt are supported alongside shared settings, controllers, gore, co-op and server saves.
+
+This is a playable browser reimplementation, with approximate George pursuit, transport paths and projectile visuals. The main Easter egg, George's complete scripted attack/retreat choreography, native weather effects, Matryoshka Dolls, full upgraded V-R11 effects and VR-11 human lure behaviour remain pending. Live projectiles and the temporary Death Machine block saving until they finish. `npm run extract:cotd`, `npm run prepare:cotd` and `npm run test:cotd` prepare and perform a focused logic check; browser gameplay is user playtested.
+
 ### Black Ops: Kino der Toten preview
 
 The dedicated T5 runtime uses Kino's original theater geometry, packed HDR lighting, collision, navigation, weapon rigs, animation clips and decoded sound banks. It implements BO1 round counts, wall purchases, mystery box cycling, perks, three solo Quick Revives, power and the linked teleporter's 30-second projection-room visit and automatic return. Native firearms include burst fire and Pack-a-Punch variants. The preview also has pause/settings, the testing menu and shared named server saves.
@@ -240,6 +249,22 @@ npm run test:bo2
 ```
 
 `tools/decompile_bo2.py` optionally produces local script references using gsc-tool. Those scripts stay under ignored `local-data/bo2-scripts/` and are not served or packaged. All extraction, navigation, cache and prepared asset output remains under this project's directory on E:.
+
+### Black Ops II: Nuketown Zombies
+
+Select **Nuketown** on BO2's globe, or open `/black-ops-2/?map=nuketown`. The map runs on the shared T6 movement, combat, controller, projectile, ragdoll and save systems, with separate `NuketownRules`; Buried's Arthur, mansion and buildable rules do not participate.
+
+The installed `zm_nuked` map and patch provide the geometry, native material blends and lighting, collision, navigation, CIA/CDC player rigs, hazmat zombie models, original sounds, weapon definitions and animation clips. Both cul-de-sac zones start enabled; purchased doors enable their connected rooms and native ground-rise spawners. Authored negotiation links let zombies mantle, jump and crawl through the garage using the native animation clips; the traverse trajectory is an approximation between the authored endpoints. Nuketown has no repairable window barriers in these entities. The live zombie cap is 24.
+
+Power starts on. Five machines are assigned to distinct original landing spots each game. Solo Quick Revive arrives first; the other machines are chosen at random after rounds in the original ranges (3–4, 6–8, 10–13, 15–18, 20–24), with the script's additional delays. Machines follow their authored vehicle-node paths and activate on landing. They include Jugger-Nog, Speed Cola, Double Tap II, Quick Revive and Pack-a-Punch. A save preserves machine placements, arrival schedules and an in-flight machine.
+
+The mystery box starts at either original starting location and uses Nuketown's supported native weapon list, including the M27 and LSAT. Fire Sale opens all five boxes for 10-point spins for 30 seconds. The population sign and clock track kills, and newly spawned zombies have the native blue-eye head from round 25. Bowie Knife and Galvaknuckles apply their original melee damage; their special viewmodel presentation remains pending.
+
+The installed Nuketown release has no loading WEBM. Its launch presentation uses the original Nuketown menu artwork and extracted Nuketown underscore, with the shared measured download progress and ready-only skip button. Assets download when Start Game is pressed, about 368 MiB compressed on the first visit, and remain under ignored `local-data/` and `.cache/` on E:.
+
+Still unfinished: Semtex, monkeys, claymores, ballistic knives and dual-wield Five-seven, the bunker/Moon audio and easter eggs, the original rocket game-over cinematic, multiple zombie body variations, full landing dust/debris effects, and stock announcer switching. The ammo shed's cycling powerup is not yet recreated. This is a browser reconstruction, not execution of the native game.
+
+Prepare with `npm run extract:nuketown` and `npm run prepare:nuketown`. `npm run test:nuketown` is a small logic check covering native spawn support, risers, perks, saves and Fire Sale; visual and sustained gameplay testing is separate.
 
 ### WaW: in progress or not yet implemented
 
