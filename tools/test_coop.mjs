@@ -38,7 +38,8 @@ assert.equal(host.coop.playerCount(),2,'The host counts both players');
 assert.deepEqual(host.session.players.get(guestJoin.you).state.p,guest.g.player.position.map(v=>Math.round(v*10)/10),'Each sees the other player');
 assert.notDeepEqual(host.g.player.position,guest.g.player.position,'Players start on different spawn markers');
 // Rounds and zombies are the host's; the guest mirrors them.
-host.g.roundDue=host.g.time;await step(4);
+// Round 1's first spawn follows BO1's 8.25 s round-number intro.
+host.g.roundDue=host.g.time;await step(9);
 assert.equal(guest.g.round,host.g.round);assert.equal(guest.g.phase,'round');
 const hostLive=host.g.enemies.filter(e=>!e.dead).map(e=>e.id).sort(),guestLive=guest.g.enemies.filter(e=>!e.dead).map(e=>e.id).sort();
 assert(hostLive.length>0,'The host spawned zombies');assert.deepEqual(guestLive,hostLive,'The guest mirrors the host\'s zombies');

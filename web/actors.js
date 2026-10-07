@@ -27,7 +27,7 @@ export class ZombieActors {
         n.material=Array.isArray(n.material)?n.material.map(clone):clone(n.material);
       });
       const mixer=new THREE.AnimationMixer(object),actions=new Map([...clips].map(([name,clip])=>[name,mixer.clipAction(clip)]));
-      for(const [name,action]of actions){const once=name.includes('death')||name.includes('tear')||name.includes('traverse');action.setLoop(once?THREE.LoopOnce:THREE.LoopRepeat,once?1:Infinity);action.clampWhenFinished=once;}
+      for(const [name,action]of actions){const once=name.includes('death')||name.includes('tear')||name.includes('traverse')||name.includes('attack');action.setLoop(once?THREE.LoopOnce:THREE.LoopRepeat,once?1:Infinity);action.clampWhenFinished=once;}
       let headModel,neckModel;object.traverse(n=>{if(n.userData.zombieHeadRoot)headModel=n;if(n.userData.zombieNeckRoot)neckModel=n;});
       const headRoot=new THREE.Group(),headFragment=new SeveredHead(headRoot);
       pool.push({pool,root,object,mixer,actions,materials,current:null,enemy:null,started:null,trace:new ZombieHitTrace(root),ragdoll:new SkeletonRagdoll(root),headModel,neckModel,headMount:headModel?.parent,headFragment,headRest:headModel&&{position:headModel.position.clone(),quaternion:headModel.quaternion.clone(),scale:headModel.scale.clone()}});
@@ -65,11 +65,13 @@ export class ZombieActors {
     const e=v.enemy;
     if(e.dead&&v.ragdoll.ready){this.kill(e);v.ragdoll.update(dt,this.collision);v.headFragment?.update(dt,this.collision);v.trace.tick=-1;v.traceTick=-1;return;}
     v.root.position.fromArray(position);v.root.rotation.z=e.angle;
-    if(e.stage==='rise')v.root.position.z-=50*Math.max(0,(e.riseUntil-e.spawnTime-e.age)/(e.riseUntil-e.spawnTime));
+    if(e.stage==='rise'&&!e.riseAnim)v.root.position.z-=50*Math.max(0,(e.riseUntil-e.spawnTime-e.age)/(e.riseUntil-e.spawnTime));
     let name=v.actions.has(e.gait)?e.gait:'ai_zombie_walk_v1',started=null;
     if(e.dead)name='ai_zombie_death_v1';
     else if(e.stage==='traverse')name=e.traverseAnim;
+    else if(e.stage==='rise'&&e.riseAnim&&v.actions.has(e.riseAnim)){name=e.riseAnim;started=e.spawnTime;}
     else if(e.stage==='barrier'){name=e.tear?.name||'ai_zombie_idle_v1';started=e.tear?.started??null;}
+    else if(e.attack&&v.actions.has(e.attack.name)){name=e.attack.name;started=e.attack.started;}
     else if(e.attacking)name='ai_zombie_attack_v1';
     this.play(v,name,started);
     const action=v.actions.get(name);
@@ -83,6 +85,18 @@ export class ZombieActors {
     }
     v.mixer.update(dt);
     v.trace.tick=-1;v.traceTick=-1;
+    if(action&&this.onNote)this.notes(v,name,action);
+  }
+  // The clip's "sndnt#<alias>" notes crossed since the last frame, including
+  // across a loop; a newly started clip includes its first frame.
+  notes(v,name,action){
+    const clip=action.getClip(),duration=clip.duration||1,t=action.time/duration;
+    if(v.noteClip!==name||v.noteStarted!==v.started){v.noteClip=name;v.noteStarted=v.started;v.noteTime=-1e-6;}
+    const previous=v.noteTime;v.noteTime=t;if(t===previous)return;
+    for(const n of clip.userData?.notifies||[]){
+      if(!n.name.startsWith('sndnt#'))continue;
+      if(t>previous?n.time>previous&&n.time<=t:n.time>previous||n.time<=t)this.onNote(v.enemy,n.name.slice(6));
+    }
   }
   light(v){const color=this.map.illumination(v.enemy.position);for(const m of v.materials)if(!m.userData.fixedLight)m.color.setRGB(...color);}
   release(id){const v=this.active.get(id);if(!v)return;this.scene.remove(v.root);v.mixer.stopAllAction();this.restoreHead(v);v.ragdoll.reset();v.enemy=null;this.active.delete(id);(v.pool||this.pool).push(v);}

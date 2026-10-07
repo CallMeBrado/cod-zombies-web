@@ -45,10 +45,10 @@ export class Coop {
   install(){
     const g=this.game,damage=g.damagePlayer.bind(g),changeStance=g.changeStance.bind(g),use=g.use.bind(g),tickEnemy=g.tickEnemy.bind(g),pickup=g.pickup.bind(g),startRound=g.startRound.bind(g),updateCarpenter=g.updateCarpenter.bind(g),emit=g.emit.bind(g);
     // Going down instead of dying; nothing hurts a downed or dead player.
-    g.damagePlayer=amount=>{
+    g.damagePlayer=(amount,options={})=>{
       if(this.down||this.dead||this.over)return;
-      if(!g.mods?.god&&g.player.health-amount<=0){this.goDown();g.emit('damage',amount);return;}
-      damage(amount);
+      if(!g.mods?.god&&g.player.health-amount<=0){this.goDown();g.emit('damage',{amount,from:options.from||null,health:0,max:g.mapRules?.maxHealth||100});return;}
+      damage(amount,options);
     };
     g.changeStance=name=>this.down||this.dead?false:changeStance(name);
     g.use=()=>{
@@ -110,7 +110,7 @@ export class Coop {
   // node cache, and its damage goes to that browser.
   asTarget(target,fn){
     const g=this.game,r=target.record,saved={player:g.player,targetNode:g.targetNode,targetNodeDue:g.targetNodeDue,noclipping:g.noclipping,damagePlayer:g.damagePlayer};
-    r.proxy.position=target.position;g.player=r.proxy;g.targetNode=r.node;g.targetNodeDue=r.nodeDue;g.noclipping=false;g.damagePlayer=amount=>this.to(r.id,{type:'damage',amount});
+    r.proxy.position=target.position;g.player=r.proxy;g.targetNode=r.node;g.targetNodeDue=r.nodeDue;g.noclipping=false;g.damagePlayer=(amount,options={})=>this.to(r.id,{type:'damage',amount,from:options.from||null});
     try{fn();}finally{r.node=g.targetNode;r.nodeDue=g.targetNodeDue;Object.assign(g,saved);}
   }
   // ----- host: guest requests -------------------------------------------
@@ -137,7 +137,7 @@ export class Coop {
       // ----- every player -----
       case 'points':g.changePoints(Number(msg.amount)||0);return;
       case 'killed':{g.player.kills++;if(msg.head)g.player.headshots++;const enemy=g.enemies.find(e=>e.id===msg.enemy);if(enemy&&g.killVox)g.killVox(enemy,msg.head,msg.melee);return;}
-      case 'damage':g.damagePlayer(Number(msg.amount)||0);return;
+      case 'damage':g.damagePlayer(Number(msg.amount)||0,{from:Array.isArray(msg.from)?msg.from.map(Number):null});return;
       case 'sound':if(msg.sound?.alias)g.emit('sound',msg.sound);return;
       case 'powerup':this.sharePowerup(msg.drop,msg.by);return;
       case 'revive':this.revived(from);return;
@@ -216,7 +216,7 @@ export class Coop {
       enemies:g.enemies.map(e=>{
         const out={i:e.id,p:e.position.map(round1),a:Math.round(e.angle*100)/100,s:stage[e.stage]??4,g:e.gait};
         if(e.dead){out.d=1;out.h=e.deathHeadshot?1:0;const from=e.killFrom||g.player.position;out.k=e.position.map((v,i)=>round1(v-from[i]));}
-        if(e.attacking)out.x=1;
+        if(e.attacking)out.x=e.attack?[e.attack.name,round1(now-e.attack.started)]:1;
         if(e.tear)out.t=[e.tear.name,round1(e.age-(e.tear.started-e.spawnTime))];
         if(e.stage==='traverse')out.v=[e.traverseAnim,Math.round(e.traverseTime*100)/100];
         return out;
@@ -275,6 +275,9 @@ export class Coop {
       let enemy=this.mirrored.get(e.i);
       if(!enemy){enemy={id:e.i,position:p,previousPosition:p.slice(),angle,stage:'hunt',gait:e.g,speed:37.64,dead:false,age:0,spawnTime:0,path:[],health:1};this.mirrored.set(e.i,enemy);g.enemies.push(enemy);g.emit('spawn',enemy);}
       enemy.position=p;enemy.previousPosition=p.slice();enemy.angle=angle;enemy.gait=e.g;enemy.stage=['approach','barrier','enter','traverse','hunt'][e.s]||'hunt';enemy.attacking=!!e.x;
+      // The melee clip and how far into it the host is; a steady start keeps
+      // snapshot jitter from restarting the swing.
+      if(Array.isArray(e.x)){const started=g.time-e.x[1];if(enemy.attack?.name!==e.x[0]||Math.abs(enemy.attack.started-started)>.3)enemy.attack={name:e.x[0],started};}else enemy.attack=null;
       if(e.t){enemy.tear={name:e.t[0],started:0};enemy.spawnTime=0;enemy.age=e.t[1];}else enemy.tear=null;
       if(e.v){enemy.traverseAnim=e.v[0];enemy.traverseTime=e.v[1];}
       if(e.d&&!enemy.dead){enemy.dead=true;enemy.deathTime=g.time;enemy.deathHeadshot=!!e.h;enemy.killDirection=e.k;g.emit('kill',enemy);}

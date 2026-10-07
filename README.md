@@ -49,7 +49,7 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
 ### Working: both maps
 
 - **Original assets:** map geometry, baked lightmaps, textures, static and script models, weapons, viewmodel animations, sounds and HUD art, all loaded from your install.
-- **Rounds:** original solo zombie counts, health scaling and spawn delays, with up to 32 zombies alive at once.
+- **Rounds:** original solo zombie counts, health scaling and spawn pacing, with up to 32 zombies alive at once. Spawning starts after the round-number intro (6.75 s on round 1, 0.5 s later), and each spawn waits the original `zombie_spawn_delay` (Nacht 3 s, Der Riese 2 s plus a network frame), shrinking 5% a round.
   - Nacht's script adds no solo bonus, so it caps at 24 per round.
   - Der Riese scales up, for example 60 zombies at round 20.
 - **Zombie AI:**
@@ -58,6 +58,9 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Navigates using the map's own path nodes.
   - Each zombie walks, runs or sprints using the original movement roll and clips.
   - Zombies keep their spacing instead of stacking into one model.
+  - Melee plays the original attack clips (Der Riese adds walking and running swipes). Damage lands only on each clip's `fire` notes while you are in reach, so backing off dodges a swing. 50 damage a hit; health returns 2.4 s after a hit, or after 5 s once in the red. Jugger-Nog raises max health to 160.
+  - Footsteps, swipes and vocals play from each zombie on its animation notetracks. Der Riese adds death and "behind you" vocals.
+- **Getting hurt:** the original `_gameskill` feedback: a fading blur on each hit, the `hit_direction` blood arc toward the attacker, and the `overlay_low_health` red pulse at 20% health or below.
 - **Weapons:**
   - Original viewmodels, iron sights, recoil, reloads, sprint poses and knife.
   - Short knife lunges select a nearby living zombie in front, use native charge timing and stabbing clips, and gently center aim. Movement respects native player hulls, stairs, walls and window clips; close attacks keep the normal swipe. Melee hits share the blood effects.
@@ -112,6 +115,8 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
 
 The dedicated T5 runtime uses Kino's original theater geometry, packed HDR lighting, collision, navigation, weapon rigs, animation clips and decoded sound banks. It implements BO1 round counts, wall purchases, mystery box cycling, perks, three solo Quick Revives, power and the linked teleporter's 30-second projection-room visit and automatic return. Native firearms include burst fire and Pack-a-Punch variants. The preview also has pause/settings, the testing menu and shared named server saves.
 
+Zombies follow BO1's pacing (a 10.25 s intro before round 1, 2.5 s later, plus a 0.1 s network frame per spawn) and melee (60 damage on each attack clip's `fire` notes). `_zombiemode_audio.gsc` vocals play from each zombie: ambient or sprint loops, attack, teardown, death and behind-you lines, with `evt_player_swiped` and the original hurt overlay and blood arcs on hits. Zombies route through player clip but not monster clip, so every Kino window is used.
+
 This is a browser reimplementation, not the original executable or complete BO1 engine. Hellhound rounds, Nova crawlers, traps, film reels, Mustang & Sally and full wonder-weapon projectile/effect fidelity are still pending. Ray Gun splash and the Thunder Gun cone currently use simplified combat behavior.
 
 To prepare BO1 from the installed game on E: after installing the existing OAT toolchain:
@@ -133,7 +138,9 @@ The map uses the original T6 packed world geometry, three-layer HDR lightmaps, n
 
 Survival includes T6 round counts and health scaling, spawning near occupied zones, factory descent with the start catwalk and floor collapsing on their original fxanims, town doors, original viewmodels and animations, wall buys, seven perk machines, power and Pack-a-Punch. The mystery box uses Buried's own weapon list and zbarrier open/close/leave/arrive animations; after enough uses the teddy bear refunds the spin and the box moves to another location (the maze locations once the maze is reached). Buried rules add Arthur from the original sloth script: unlock his cell with the key (a held use with the builder hands) and he cowers as the door swings open; carry booze or candy and he follows and asks for it; give it while facing each other. Booze makes him drink, turn and charge, breaking the barricade he hits; candy makes him guard you for 45 s. Also included are six placeable weapon chalks, the bank and weapon locker, mansion ghosts and a free perk. Buildable parts can be assembled at free benches into a Turbine, Trample Steam, Head Chopper or Subsurface Resonator. Equip one and use **5 / controller D-pad Up** to place it; Use retrieves it. Bindings can be changed in Options. The Resonator needs a nearby Turbine.
 
-Ray Gun, Ray Gun Mark II and explosive weapons use traveling projectiles, native damage and splash values. The Paralyzer has heat, cooling, slowing and a damage cone. Shared grenade cooking, stance/dive controls, gore, pause/options, testing menu and named server saves also apply to Buried. Saves keep chalks, Arthur, bank/locker, the box location, maze gates and built/placed equipment.
+Zombies rise with T6's `zm_rise` clips for their speed and spawn at most 24 alive. They are voiced by `_zm_audio.gsc` (louder vocals for the last zombie, network-safe limits) and swipe for 60 on their attack clips' `fire` notes. Hits play `evt_player_swiped` and the character's pain exert, with the original hurt blur, `hit_direction_zm` arcs and low-health overlay.
+
+Ray Gun, Ray Gun Mark II and explosive weapons use traveling projectiles, native damage and splash values. The Paralyzer's counter climbs to 115 over 10 s of firing and unlocks at 100; it slows, hovers and has a damage cone. Shared grenade cooking, stance/dive controls, gore, pause/options, testing menu and named server saves also apply to Buried. Saves keep chalks, Arthur, bank/locker, the box location, maze gates and built/placed equipment.
 
 This is a playable survival port under development, not complete stock BO2 parity. Easter-egg quests, the Time Bomb, persistent upgrades, dual-wield presentation, chalk drawing visuals, upgraded melee viewmodels, Vulture Aid's gas and through-wall markers, full native wonder-weapon effects and parts of Arthur remain unfinished: he doesn't react to being shot or go back to his cell, has only the protect candy task (not moving the box, building or fetching), and doesn't use the mansion route. Mystery box fire sales, the box's away-piece twitches and limited-weapon counts aren't implemented yet; dual-wield Five-seven, monkeys, the ballistic knife and the Time Bomb are left out of the box. Solo survival is the tested mode. In co-op, guests see Arthur, the cell and the box, but only the host can unlock the cell, give Arthur items or build at benches for now. Some equipment and ghost behaviors are approximations. The initial map pack is about 500 MiB compressed and is cached after download.
 
@@ -154,7 +161,6 @@ npm run test:bo2
 | Area | Status |
 |---|---|
 | **Ray Gun / Wunderwaffe DG-2** | Not implemented yet. Their weapon files are extracted, but projectile, splash and chain-lightning behaviour is still to do. |
-| **Zombie vocals** | Growls, screams and attack and death sounds are not played yet. The animation sound cues that should trigger them have been identified. |
 | **Hellhounds** | Not implemented. When the teleporter drop would send a hellhound, nothing appears instead. |
 | **Der Riese extras** | Electric traps, monkey bombs and Bouncing Betties are not implemented. |
 | **Der Riese spawns** | Three roof/drop zombie spawns are disabled because their traversal isn't supported yet. |

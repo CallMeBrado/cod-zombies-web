@@ -137,6 +137,9 @@ variables['zombie_health_increase_percent'] = variables.get('zombie_health_incre
 animations = {}
 for name in ['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zombie_walk_v4','ai_zombie_walk_v6','ai_zombie_walk_v7','ai_zombie_walk_v8',
              'ai_zombie_walk_fast_v1','ai_zombie_walk_fast_v2','ai_zombie_walk_fast_v3','ai_zombie_run_v2','ai_zombie_run_v4','ai_zombie_sprint_v1','ai_zombie_sprint_v2',
+             # level._zombie_melee / _zombie_walk_melee / _zombie_run_melee
+             'ai_zombie_attack_v2','ai_zombie_attack_v4','ai_zombie_attack_v6','ai_zombie_attack_forward_v1','ai_zombie_attack_forward_v2',
+             'ai_zombie_walk_attack_v1','ai_zombie_walk_attack_v2','ai_zombie_walk_attack_v3','ai_zombie_walk_attack_v4','ai_zombie_run_attack_v1','ai_zombie_run_attack_v2','ai_zombie_run_attack_v3',
              'ai_zombie_attack_v1','ai_zombie_death_v1','ai_zombie_idle_v1','ai_zombie_traverse_v1','ai_zombie_traverse_v2',
              'ai_zombie_door_tear_low','ai_zombie_door_tear_high','ai_zombie_door_tear_left','ai_zombie_door_tear_right']:
     p=find('web-anims/'+name+'.json')
@@ -161,7 +164,8 @@ for z in SEARCH:
         b=p.read_bytes();gltf=json.loads(b[20:20+int.from_bytes(b[12:16],'little')])
         wanted.update(Path(i['uri']).stem.lstrip(',') for i in gltf.get('images',[]) if i.get('uri','').endswith('.dds'))
 art = ['loadscreen_zombie_theater','menu_zombie_theater','scorebar_zom_1','ammocounterback','hud_us_grenade',
-       'specialty_juggernaut_zombies','specialty_fastreload_zombies','specialty_doubletap_zombies','specialty_quickrevive_zombies',*[f'chalkmarks_{i}' for i in range(1,6)]]
+       'specialty_juggernaut_zombies','specialty_fastreload_zombies','specialty_doubletap_zombies','specialty_quickrevive_zombies',*[f'chalkmarks_{i}' for i in range(1,6)],
+       'overlay_low_health','hit_direction']
 for name in sorted(wanted | set(art)):
     if find('images/'+name+'.dds') or '$identity' in name: continue
     raw=archive_bytes('images/'+name+'.iwi')
@@ -183,6 +187,8 @@ remap = dict(mx_splash_screen='mus_zombie_splash_screen',mx_zombie_wave_1='mus_t
              mx_jugger_sting='mus_perks_jugganog_sting',mx_speed_sting='mus_perks_speed_sting',mx_doubletap_sting='mus_perks_doubletap_sting',mx_revive_sting='mus_perks_revive_sting',mx_packa_sting='mus_perks_packa_sting',
              perks_power_on='zmb_perks_power_on',packa_rollers_loop='zmb_perks_packa_loop',packa_weap_upgrade='zmb_perks_packa_upgrade',packa_weap_ready='zmb_perks_packa_ready',ticktock_loop='zmb_perks_packa_ticktock',packa_deny='zmb_perks_packa_deny')
 aliases.update(remap.values());aliases.update(['evt_teleporter_activate_start','evt_teleporter_activate_finish','evt_teleporter','wpn_knife_pull_plr','zmb_perks_packa_upgrade'])
+aliases.update(['zmb_vocals_zombie_ambience','zmb_vocals_zombie_sprint','zmb_vocals_zombie_attack','zmb_vocals_zombie_teardown','zmb_vocals_zombie_taunt','zmb_vocals_zombie_behind',
+                'zmb_vocals_zombie_death','zmb_vocals_zombie_crawler','zmb_zombie_spawn','zmb_attack_whoosh','fly_fall_zombie','evt_player_swiped'])
 aliases.update(['zmb_vox_ann_maxammo','zmb_vox_ann_instakill','zmb_vox_ann_doublepoints','zmb_vox_ann_nuke','zmb_vox_ann_carpenter','zmb_vox_ann_magicbox'])
 aliases.update(line.split()[-1] for w in gestures.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
 # T5 viewmodel clips name their sounds in notetracks ("sndnt#fly_colt45_mag_in"):
@@ -230,7 +236,7 @@ for alias in sorted(aliases):
     p=find('web-sounds/'+alias+'.json')
     if not p: continue
     entries=[]
-    for entry in json.loads(p.read_text())[:2]:
+    for entry in json.loads(p.read_text())[:16 if alias.startswith(('zmb_vocals_zombie','zmb_attack_whoosh')) else 2]:
         url=convert_audio(entry)
         if url: entries.append(dict(entry,url=url,volume=entry['volume'],pitch=entry['pitch']))
     if entries: sounds[alias]=entries

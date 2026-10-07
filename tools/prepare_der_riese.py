@@ -57,7 +57,7 @@ def convert_sounds(aliases, sounds, output=None, search=None):
         source = next((DATA/z/'web-sounds'/f'{alias}.json' for z in search if (DATA/z/'web-sounds'/f'{alias}.json').is_file()), None)
         if not source: continue
         available = []
-        for i, entry in enumerate(json.loads(source.read_text())[:4]):
+        for i, entry in enumerate(json.loads(source.read_text())[:12 if alias.endswith(('_vocals','_whoosh')) or alias.startswith('step_') else 4]):
             file = entry['file'].replace('\\','/').lstrip(',/')
             loaded = next((candidate for z in search for candidate in [DATA/z/'sound'/file,(DATA/z/'sound'/file).with_suffix('.xwma')] if candidate.is_file()),None)
             location = index.get(('sound/'+file).casefold()) or index.get(file.casefold())
@@ -219,13 +219,16 @@ def prepare():
     sounds = dict(original['sounds'])
     aliases = {w.get(k) for w in weapons.values() for k in ['fireSound','reloadSound','fireSoundPlayer','reloadSoundPlayer','emptyFireSoundPlayer','meleeSwipeSoundPlayer','raiseSoundPlayer','putawaySoundPlayer']}
     aliases.update(line.split()[-1] for w in weapons.values() for line in w.get('notetrackSoundMap','').splitlines() if line.split())
+    # Zombie notetrack sounds and the scripted death_vocals / behind_vocals.
+    aliases.update(['amb_vocals','sprint_vocals','attack_vocals','attack_whoosh','step_zombie','step_sweetner','crawl_vocals','crawl_vocals_slow','board_vocals','taunt_vocals','death_vocals','behind_vocals'])
     aliases.update(['switch_flip','bridge_lower','bridge_hit','mx_jugger_jingle','mx_speed_jingle','mx_doubletap_jingle','mx_revive_jingle','mx_packa_jingle','teleport_in','teleport_out','packa_door_2'])
     convert_sounds(aliases, sounds)
     labels=['Colt M1911','Kar98k','Gewehr 43','M1A1 Carbine','M1 Garand','Thompson','BAR','Double barrel','Trench gun','MP40','.357 Magnum','STG-44','MG42','FG42','Type 100','PPSh-41','Browning M1919']
     weapon_names=dict(zip(names,labels))
     for name in names[1:]:
         if name+'_upgraded' in weapons: weapon_names[name+'_upgraded']='Upgraded '+weapon_names[name]
-    manifest = {**original,'weapons':weapons,'weaponNames':weapon_names,'entities':entities,'sounds':sounds,
+    # _zombiemode.gsc: Der Riese's zombie_spawn_delay starts at 2, not Nacht's 3.
+    manifest = {**original,'variables':{**original['variables'],'zombie_spawn_delay':2},'weapons':weapons,'weaponNames':weapon_names,'entities':entities,'sounds':sounds,
                 'map':{'id':'der-riese','title':'Der Riese','initialZone':'receiver_zone','volumes':volumes,'goals':goals,'connections':connections,
                        'boxWeapons':names,'initialBox':'magic_box_lid_0'}}
     add_perk_assets(manifest)

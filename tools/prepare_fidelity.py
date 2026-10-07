@@ -7,14 +7,18 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'local-data'
 GAME = Path(r'E:\SteamLibrary\steamapps\common\Call of Duty World at War')
-ANIMS = ['ai_zombie_walk_v1', 'ai_zombie_attack_v1', 'ai_zombie_death_v1', 'ai_zombie_idle_v1',
+# level._zombie_melee: Nacht's four melee clips.
+ANIMS = ['ai_zombie_walk_v1', 'ai_zombie_attack_v1', 'ai_zombie_attack_v2', 'ai_zombie_attack_forward_v1', 'ai_zombie_attack_forward_v2', 'ai_zombie_death_v1', 'ai_zombie_idle_v1',
          'ai_zombie_traverse_v1', 'ai_zombie_traverse_v2',
          'ai_zombie_door_tear_low', 'ai_zombie_door_tear_high', 'ai_zombie_door_tear_left', 'ai_zombie_door_tear_right']
 # _zombiemode.gsc walk/run/sprint cycles. Der Riese adds slower walks and real runs.
 GAITS = ['ai_zombie_walk_v2', 'ai_zombie_walk_v3', 'ai_zombie_walk_v4',
          'ai_zombie_walk_fast_v1', 'ai_zombie_walk_fast_v2', 'ai_zombie_walk_fast_v3',
          'ai_zombie_sprint_v1', 'ai_zombie_sprint_v2']
-DER_RIESE_GAITS = ['ai_zombie_walk_v6', 'ai_zombie_walk_v7', 'ai_zombie_walk_v8', 'ai_zombie_run_v2', 'ai_zombie_run_v4']
+DER_RIESE_GAITS = ['ai_zombie_walk_v6', 'ai_zombie_walk_v7', 'ai_zombie_walk_v8', 'ai_zombie_run_v2', 'ai_zombie_run_v4',
+                   # Der Riese adds these melee clips (level._zombie_melee, _walk_melee, _run_melee).
+                   'ai_zombie_attack_v4', 'ai_zombie_attack_v6', 'ai_zombie_walk_attack_v1', 'ai_zombie_walk_attack_v2', 'ai_zombie_walk_attack_v3', 'ai_zombie_walk_attack_v4',
+                   'ai_zombie_run_attack_v1', 'ai_zombie_run_attack_v2', 'ai_zombie_run_attack_v3']
 
 def animation(zone, name):
     d = json.loads((DATA / zone / 'web-anims' / (name+'.json')).read_text())

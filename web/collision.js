@@ -5,8 +5,12 @@ const preparedWorlds=new WeakMap();
 // 128-unit grid cells keyed by number (no per-lookup string building).
 const cellKey=(x,y)=>(x+32768)*65536+(y+32768);
 export const TINY_PROP={height:12,size:64};
+// CONTENTS_SOLID with CONTENTS_PLAYERCLIP (0x10000) or CONTENTS_MONSTERCLIP (0x20000).
+export const PLAYER_CONTENTS=1|0x10000,ACTOR_CONTENTS=1|0x20000;
+const ALL_CONTENTS=PLAYER_CONTENTS|ACTOR_CONTENTS;
 export class CollisionWorld {
   constructor(data, entities) {
+    this.mask=PLAYER_CONTENTS;
     const prepared=preparedWorlds.get(data);
     if(prepared?.entities===entities){Object.assign(this,prepared);this.disabled=new Set();return;}
     const submodels = new Set(data.models.slice(1).flatMap(m => m.brushes));
@@ -35,7 +39,7 @@ export class CollisionWorld {
       const mesh=data.collisionMeshes?.[model.model];
       if(mesh&&!meshes.has(model.model))meshes.set(model.model,mesh.map(surface=>({...surface,points:surface.triangles.map(nativeCollisionTriangle)})));
       for(const surface of mesh?meshes.get(model.model):model.surfaces){
-        if(!(surface.contents&(1|0x10000)))continue;
+        if(!(surface.contents&ALL_CONTENTS))continue;
         const mins=[Infinity,Infinity,Infinity],maxs=[-Infinity,-Infinity,-Infinity],planes=[];
         for(let corner=0;corner<8;corner++){const p=[0,1,2].map(k=>corner&(1<<k)?surface.maxs[k]:surface.mins[k]);for(let k=0;k<3;k++){const value=model.origin[k]+columns.reduce((s,c,j)=>s+c[k]*p[j],0);mins[k]=Math.min(mins[k],value);maxs[k]=Math.max(maxs[k],value);}}
         for(let k=0;k<3;k++){const n=a[k],length=Math.hypot(...n),offset=n.reduce((s,v,j)=>s+v*model.origin[j],0);planes.push([...n.map(v=>v/length),(surface.maxs[k]+offset)/length],[...n.map(v=>-v/length),(-surface.mins[k]-offset)/length]);}
@@ -84,7 +88,7 @@ export class CollisionWorld {
     for(let x=Math.floor(mins[0]/128);x<=Math.floor(maxs[0]/128);x++)for(let y=Math.floor(mins[1]/128);y<=Math.floor(maxs[1]/128);y++){const key=cellKey(x,y);if(!this.triangleCells.has(key))this.triangleCells.set(key,[]);this.triangleCells.get(key).push(id);}
   }
   add(original, origin, target) {
-    if (!(original.contents & (1 | 0x10000))) return;
+    if (!(original.contents & ALL_CONTENTS)) return;
     const mins = original.mins.map((v,i)=>v+origin[i]), maxs = original.maxs.map((v,i)=>v+origin[i]);
     const planes = original.planes.map(p=>[...p.slice(0,3), p[3]+p[0]*origin[0]+p[1]*origin[1]+p[2]*origin[2]]);
     for (let i=0;i<3;i++) {
@@ -101,7 +105,7 @@ export class CollisionWorld {
   }
   // Candidates are gathered in grid-visit order and deduplicated with stamps
   // (no per-trace Sets); the arithmetic matches the original step for step.
-  trace(start,end,half=[0,0,0],mask=1|0x10000,ignoreWalkableTerrain=false) {
+  trace(start,end,half=[0,0,0],mask=this.mask,ignoreWalkableTerrain=false) {
     const s0=start[0],s1=start[1],s2=start[2],e0=end[0],e1=end[1],e2=end[2],h0=half[0],h1=half[1],h2=half[2];
     const low0=Math.min(s0,e0)-h0,low1=Math.min(s1,e1)-h1,low2=Math.min(s2,e2)-h2,high0=Math.max(s0,e0)+h0,high1=Math.max(s1,e1)+h1,high2=Math.max(s2,e2)+h2;
     if(this.brushSeen?.length!==this.brushes.length||this.triangleSeen?.length!==this.triangles.length||this.traceStamp>=0xfffffff0){
@@ -182,6 +186,9 @@ export class CollisionWorld {
     }
     return {fraction,normal,solid,allSolid,end:[s0+(e0-s0)*fraction,s1+(e1-s1)*fraction,s2+(e2-s2)*fraction]};
   }
+  // Zombies are blocked by solid and monster clip but walk through player
+  // clip (the clip sealing Kino's spawn closets): run fn with their mask.
+  actor(fn){const mask=this.mask;this.mask=ACTOR_CONTENTS;try{return fn();}finally{this.mask=mask;}}
   move(feet, delta, half=[14,14,35]) {
     const start=[feet[0],feet[1],feet[2]+half[2]];
     let pos=start.slice(), velocity=delta.slice(), grounded=false;

@@ -145,7 +145,7 @@ export class BuriedRules extends KinoRules {
       const id=e.script_noteworthy,p=BO2_PERKS[id],quick=id==='specialty_quickrevive',solo=!g.coop;
       if(!p||this.perks.has(id)||this.perks.size>=4||(!this.equipment.powered(e.position)&&!(quick&&solo))||g.gesture||quick&&solo&&this.revivesUsed>=3)return true;
       if(!g.spendPoints(quick&&solo?500:p.cost))return true;
-      g.startGesture(id,()=>{this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;g.laterDialog(1.5,'perk',id);});g.emit('sound',{alias:p.sting});return true;
+      g.startGesture(id,()=>{this.perks.add(id);if(id==='specialty_armorvest')g.player.health=this.maxHealth;g.laterDialog(1.5,'perk',id);});g.emit('sound',{alias:p.sting});return true;
     }
     return super.use(e);
   }
@@ -351,7 +351,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
       for(const spawner of inside.sort(()=>Math.random()-.5)){
         let at;const p=pos(spawner);for(const height of [80,32]){try{const candidate=this.settleFeet([p[0],p[1],p[2]+height]);if(reachable(candidate)){at=candidate;break;}}catch{}}
         if(!at||distance(at,this.player.position)<110)continue;const gait=this.zombieGait();
-        const enemy={id:this.nextId++,position:at,previousPosition:at.slice(),health:this.zombieHealth,window:this.windows[0],stage:'rise',riseUntil:this.time+1.5,path:[],attackDue:0,navDue:0,angle:Number((spawner.angles||'0 0 0').split(' ')[1])*Math.PI/180,dead:false,age:0,spawnTime:this.time,gait:gait.name,speed:gait.speed};
+        const enemy={id:this.nextId++,position:at,previousPosition:at.slice(),health:this.zombieHealth,window:this.windows[0],stage:'rise',...this.riseClip(gait),path:[],attackDue:0,navDue:0,angle:Number((spawner.angles||'0 0 0').split(' ')[1])*Math.PI/180,dead:false,age:0,spawnTime:this.time,gait:gait.name,speed:gait.speed};
         if(this.recycleHealth.length)enemy.health=this.recycleHealth.shift();this.enemies.push(enemy);this.remaining--;this.emit('spawn',enemy);return;
       }
     }if(!windows.length)return;
@@ -360,6 +360,14 @@ export class BlackOps2Engine extends BlackOpsEngine {
     const available=this.availableWindows;this.availableWindows=()=>windows;try{super.spawnEnemy();}finally{this.availableWindows=available;}
     const enemy=this.enemies.find(e=>e.id===before);if(enemy&&this.recycleHealth.length)enemy.health=this.recycleHealth.shift();
   }
+  // do_zombie_rise(): zm_rise by move speed (walkers v1_walk, runners
+  // v1_run, sprinters climbout_fast); the zombie hunts once it has risen.
+  riseClip(gait){
+    const name=/sprint/.test(gait.name)?'ai_zombie_traverse_ground_climbout_fast':/run/.test(gait.name)?'ai_zombie_traverse_ground_v1_run':'ai_zombie_traverse_ground_v1_walk',clip=this.presentation.animations?.[name];
+    return clip?{riseAnim:name,riseUntil:this.time+clip.duration}:{riseUntil:this.time+1.5};
+  }
+  // Buried's zombie_ai_limit: spawning holds at 24 alive.
+  maxAlive(){return 24;}
   tickEnemy(e,dt){
     if(e.kind==='ghost'&&!e.dead){
       e.age+=dt;const target=this.player.position,d=target.map((v,k)=>v-e.position[k]),length=Math.hypot(...d);e.angle=Math.atan2(d[1],d[0]);

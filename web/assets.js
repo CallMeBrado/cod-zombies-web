@@ -672,6 +672,8 @@ export class OriginalAudio {
     // One instance per key, like the GSC level.*_jingle flags shared by a
     // machine's purchase sting and its idle jingle.
     if(options.exclusive&&[...this.sources].some(s=>s.exclusive===options.exclusive))return;
+    // An alias's voice limit (e.g. zmb_vocals_zombie_sprint plays 3 at once).
+    if(options.limit){let count=0;for(const s of this.sources)if(s.alias===alias&&++count>=options.limit)return;}
     const entries=this.sounds[alias]||[],s=entries[Number.isInteger(options.variant)&&options.variant>=0&&options.variant<entries.length?options.variant:Math.floor(Math.random()*entries.length)];if(!s)return;
     const buffer=this.buffers.get(s.url);if(!buffer)return;
     const node=this.context.createBufferSource(),gain=this.context.createGain();node.buffer=buffer;

@@ -2,15 +2,19 @@ import { roundCount, nextHealth, spawnDelay } from './rules.js';
 import { SCORE_POPUP_SECONDS } from './score-hud.js';
 import {FactoryRules,POWER_TARGETS} from './map-rules.js';
 import {hitDamage,fleshPenetration,pelletAngles} from './ballistics.js';
+import {ACTOR_CONTENTS} from './collision.js';
 import {chooseKnifeLunge,moveKnifeLunge,knifeHitValid,meleeValue} from './knife-lunge.js';
 import {resetMovement,restoreMovement,playerHull,playerView,playerSpeed,playerBusy,changeStance,stanceButton,releaseStance,movementFrame,movementInput,movementEnd,moveDive,stanceSpread} from './player-movement.js';
 export const PHYSICS_STEP=1/120;
 // treasure_chest_weapon_spawn(): the bear appears, flies off 0.5 + 2 s later
 // and rises 500 units over 4 s before the box leaves.
 export const BOX_TEDDY_SECONDS=6.5;
-// round_spawning() waits while get_enemy_count() > 31.
-const MAX_ALIVE=32;
-export const NAVIGATION_VERSION='native-triangles-physics-v3';
+// Melee clips (level._zombie_melee / _zombie_walk_melee / _zombie_run_melee).
+const MELEE_START_RANGE=64,MELEE_HIT_RANGE=72,MELEE_HIT_YAW=Math.PI*7/18,MELEE_HEIGHT=64,MELEE_CLOSE=34;
+const NACHT_MELEE={stand:['ai_zombie_attack_forward_v1','ai_zombie_attack_forward_v2','ai_zombie_attack_v1','ai_zombie_attack_v2'],walk:[],run:[]};
+const FACTORY_MELEE={stand:['ai_zombie_attack_forward_v1','ai_zombie_attack_forward_v2','ai_zombie_attack_v1','ai_zombie_attack_v2','ai_zombie_attack_v1','ai_zombie_attack_v4','ai_zombie_attack_v6'],
+  walk:['ai_zombie_walk_attack_v1','ai_zombie_walk_attack_v2','ai_zombie_walk_attack_v3','ai_zombie_walk_attack_v4'],run:['ai_zombie_run_attack_v1','ai_zombie_run_attack_v2','ai_zombie_run_attack_v3']};
+export const NAVIGATION_VERSION='actor-clip-v4';
 export const POWER_NAVIGATION_VERSION='factory-power-v1';
 export const GATE_NAVIGATION_VERSION='gate-states-v1';
 // Grenades hit physical surfaces, not the invisible player movement clips
@@ -99,7 +103,7 @@ export class SoloGame {
     this.accumulator=0;this.physicsTicks=0;this.jumpQueued=false;this.player.previousPosition=this.player.position.slice();this.pathCache.clear();this.linkCache=new Map(this.preparedLinkCache||[]);
     this.inventory=[this.makeWeapon(this.data.startWeapon||'zombie_colt')];this.slot=0;this.inventory[0].raised=true;this.switching=null;
     this.time=0;this.round=0;this.zombieHealth=this.vars.zombie_health_start;this.phase='ready';this.roundDue=0;this.spawnDue=0;this.remaining=0;
-    this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
+    this.cooldown=0;this.meleeDue=0;this.pendingMelee=null;this.pendingFire=false;this.sprintExitUntil=0;this.reloadEnd=0;this.lastDamage=-100;this.invulnerableUntil=0;this.rebuildDue=0;this.barrierReward=0;this.powerup={};this.drops=[];this.grenades=[];this.ambientDue=5;this.sprinting=false;
     this.resumed=false;this.roundStartedAt=0;this.roundEndedAt=0;this.targetNodeDue=0;this.targetNode=-1;this.spawnDistanceCache=null;this.pendingGrenade=null;this.gesture=null;this.powerupOrder=[];this.powerupIndex=0;this.carpenter=null;this.nextDropId=1;
     this.boxes=new Map(this.interactions.filter(e=>e.targetname==='treasure_chest_use').map(e=>[e.target,{entity:e,phase:'closed',weapon:null}]));
     this.activeBox=this.data.map?.initialBox??null;this.boxUses=0;this.boxMoves=0;this.mazeChests=false;
@@ -138,9 +142,16 @@ export class SoloGame {
     // round_spawning(): solo adds the map's solo bonus, co-op (players-1) per-player sets.
     const players=this.coop?.playerCount()||1,factor=players>1?players-1:this.mapRules?.soloAiFactor??0;
     this.round++;this.roundStartedAt=this.time;this.roundBaseHealth=this.zombieHealth;this.zombieHealth=nextHealth(this.zombieHealth,this.round,this.vars);this.remaining=roundCount(this.round,this.vars.zombie_max_ai,this.vars.zombie_ai_per_player,factor);
-    this.spawnDue=this.time;this.phase='round';this.barrierReward=0;this.player.grenades=Math.min(4,this.player.grenades+2);
+    this.spawnDue=this.time+this.spawnLead();this.phase='round';this.barrierReward=0;this.player.grenades=Math.min(4,this.player.grenades+2);
     this.emit('round',this.round);this.emit('sound',{alias:'chalk'});
   }
+  // round_think() shows the round number before round_spawning() starts:
+  // 6.75 s on round 1 (after start()'s 2 s) and 0.5 s on later rounds.
+  spawnLead(){return this.round===1?4.75:.5;}
+  // round_spawning(): after each spawn, zombie_spawn_delay plus Der Riese's
+  // wait_network_frame(); spawning holds while 32 or more are alive.
+  spawnNetFrame(){return this.mapRules?.spawnNetFrame??0;}
+  maxAlive(){return 32;}
   nearest(position,visible=false,regular=false,{cheap=0,physics=32}={}) {
     const scores=new Float64Array(this.nodes.length);let index=-1,best=Infinity;
     for(let i=0;i<this.nodes.length;i++){const p=this.nodes[i].origin,score=regular&&(this.nodes[i].type===this.negotiationBegin||this.nodes[i].type===this.negotiationEnd)?Infinity:(p[0]-position[0])**2+(p[1]-position[1])**2+(p[2]-position[2])**2;scores[i]=score;if(score<best){best=score;index=i;}}
@@ -173,9 +184,11 @@ export class SoloGame {
     const found=this.nearest(position,true,true,{cheap:16,physics:0});
     return found>=0?found:this.nearest(position,false,true);
   }
-  walkableLink(p,q,navigation=false){
+  // Actor routes: zombies pass player clip but not monster clip.
+  walkableLink(p,q,navigation=false){return this.collision.actor(()=>this.walkableActorLink(p,q,navigation));}
+  walkableActorLink(p,q,navigation){
     const start=[p[0],p[1],p[2]+35.1],end=[q[0],q[1],q[2]+35.1],half=[14,14,34.9];
-    const clear=this.collision.trace(start,end,half,1|0x10000,navigation).fraction>=.98;
+    const clear=this.collision.trace(start,end,half,ACTOR_CONTENTS,navigation).fraction>=.98;
     if(clear&&!navigation)return true;
     if(navigation){
       // Test using actor-sized physics steps: a long diagonal sweep or coarse
@@ -194,7 +207,7 @@ export class SoloGame {
       return false;
     }
     if(Math.abs(p[2]-q[2])>18)return false;
-    return this.collision.trace(start,start.map((v,i)=>v+(i===2?18:0)),half,1|0x10000,navigation).fraction>=.98&&this.collision.trace(start.map((v,i)=>v+(i===2?18:0)),end.map((v,i)=>v+(i===2?18:0)),half,1|0x10000,navigation).fraction>=.98;
+    return this.collision.trace(start,start.map((v,i)=>v+(i===2?18:0)),half,ACTOR_CONTENTS,navigation).fraction>=.98&&this.collision.trace(start.map((v,i)=>v+(i===2?18:0)),end.map((v,i)=>v+(i===2?18:0)),half,ACTOR_CONTENTS,navigation).fraction>=.98;
   }
   path(start,end,inside=false) {
     const a=this.nearest(start,true);
@@ -427,12 +440,12 @@ export class SoloGame {
     if(enemy.moveClock<(enemy.detourUntil||0)&&length>step){
       const turn=enemy.detourSide*Math.PI/3,c=Math.cos(turn),s=Math.sin(turn);[dx,dy]=[dx*c-dy*s,dx*s+dy*c];
     }
-    const previous=enemy.position;let result=this.collision.step(previous,[length?dx/length*step:0,length?dy/length*step:0,enemy.velocityZ*dt],[14,14,35]);
+    const previous=enemy.position;let result=this.collision.actor(()=>this.collision.step(previous,[length?dx/length*step:0,length?dy/length*step:0,enemy.velocityZ*dt],[14,14,35]));
     // Slow walk clips move ~0.2 units per tick, below the step-up tolerances;
     // when that is blocked, retry with a run-sized step that clears the ledge.
     const moved=r=>Math.hypot(r.position[0]-previous[0],r.position[1]-previous[1]);
     if(step<.5&&length>step&&moved(result)<step*.5){
-      const amount=Math.min(1.2,length),attempt=this.collision.step(previous,[dx/length*amount,dy/length*amount,enemy.velocityZ*dt],[14,14,35]);
+      const amount=Math.min(1.2,length),attempt=this.collision.actor(()=>this.collision.step(previous,[dx/length*amount,dy/length*amount,enemy.velocityZ*dt],[14,14,35]));
       if(moved(attempt)>amount*.5)result=attempt;
     }
     enemy.position=result.position;if(result.grounded)enemy.velocityZ=0;
@@ -513,11 +526,9 @@ export class SoloGame {
         const phase=(enemy.id%12)*PHYSICS_STEP;enemy.sightDue=(Math.floor((this.time-phase)/.1)+1)*.1+phase;
       }
       const clear=enemy.clear;
-      if(clear&&distance(enemy.position,player)<58) {
-        enemy.attacking=true;
-        enemy.angle=Math.atan2(player[1]-enemy.position[1],player[0]-enemy.position[0]);
-        if(this.time>=enemy.attackDue){this.damagePlayer(50);enemy.attackDue=this.time+1.1;}
-      } else if(clear){enemy.path=[];this.advancePath(enemy,dt,player);}
+      if(enemy.attack)this.tickAttack(enemy,player);
+      else if(clear&&this.inMeleeReach(enemy,player,MELEE_START_RANGE,Math.PI/3))this.startAttack(enemy);
+      else if(clear){enemy.attacking=false;enemy.path=[];this.advancePath(enemy,dt,player);}
       else {
         // Route on losing sight, and again shortly after finishing a route,
         // instead of standing until the next 1.25 s refresh.
@@ -547,7 +558,7 @@ export class SoloGame {
     for(const [e,p] of push){
       const length=Math.hypot(p[0],p[1]);if(length<.02)continue;const scale=Math.min(1,2/length);
       // Through the collision world, so a shove never puts a zombie in a wall.
-      e.position=this.collision.step(e.position,[p[0]*scale,p[1]*scale,0],[14,14,35]).position;
+      e.position=this.collision.actor(()=>this.collision.step(e.position,[p[0]*scale,p[1]*scale,0],[14,14,35])).position;
     }
   }
   // A save is a snapshot of the whole session at the game clock: live zombies
@@ -646,9 +657,53 @@ export class SoloGame {
     else if(g.phase==='drop'){g.phase='return';g.due=this.time+.5;this.emit('gesture',{phase:'return',key:g.key,duration:.5});}
     else this.gesture=null;
   }
-  damagePlayer(amount) {
+  // melee.gsc / zombie_melee.gsc / zm_melee.gsc: a zombie within
+  // meleeAttackDist (64) and facing within 60 degrees plays one random melee
+  // clip, turning to its enemy. Only the clip's "fire" notes hurt, through
+  // the engine's melee() reach and facing check; missing costs nothing.
+  meleeAnims(enemy){const set=this.mapRules?FACTORY_MELEE:NACHT_MELEE;return [...set.stand,...(/walk/.test(enemy.gait)?set.walk:set.run)];}
+  meleeDamage(){return 50;}
+  inMeleeReach(enemy,player,range,yaw){
+    const dx=player[0]-enemy.position[0],dy=player[1]-enemy.position[1];
+    if(Math.hypot(dx,dy)>range||Math.abs(player[2]-enemy.position[2])>MELEE_HEIGHT)return false;
+    return Math.abs(Math.atan2(Math.sin(Math.atan2(dy,dx)-enemy.angle),Math.cos(Math.atan2(dy,dx)-enemy.angle)))<=yaw;
+  }
+  startAttack(enemy){
+    const anims=this.presentation.animations||{},list=this.meleeAnims(enemy).filter(n=>anims[n]),name=list[Math.floor(Math.random()*list.length)]||'ai_zombie_attack_v1',clip=anims[name]||{duration:1.8,notifies:[]};
+    enemy.attack={name,started:this.time,duration:clip.duration,fires:(clip.notifies||[]).filter(n=>n.name==='fire').map(n=>n.time*clip.duration),next:0,moved:0};
+    if(!enemy.attack.fires.length)enemy.attack.fires=[clip.duration*.5];
+    enemy.attacking=true;this.emit('zombieAttack',enemy);
+  }
+  tickAttack(enemy,player){
+    const a=enemy.attack,t=this.time-a.started,clip=this.presentation.animations?.[a.name];
+    // OrientMode("face enemy"); walk and run swipes keep their root motion.
+    enemy.angle=Math.atan2(player[1]-enemy.position[1],player[0]-enemy.position[0]);
+    const motion=clip?.motion;
+    if(motion?.length>1&&Math.hypot(player[0]-enemy.position[0],player[1]-enemy.position[1])>MELEE_CLOSE){
+      let at=1;while(at<motion.length-1&&motion[at][0]<t)at++;
+      const m0=motion[at-1],m1=motion[at],f=Math.min(1,Math.max(0,(t-m0[0])/((m1[0]-m0[0])||1))),forward=Math.hypot(m0[1]+(m1[1]-m0[1])*f-motion[0][1],m0[2]+(m1[2]-m0[2])*f-motion[0][2]),step=forward-a.moved;
+      if(step>0){const c=Math.cos(enemy.angle),s=Math.sin(enemy.angle);enemy.position=this.collision.actor(()=>this.collision.step(enemy.position,[c*step,s*step,0],[14,14,35])).position;}a.moved=forward;
+    }
+    while(a.next<a.fires.length&&t>=a.fires[a.next]){a.next++;this.meleeHit(enemy,player);}
+    if(t>=a.duration){enemy.attack=null;enemy.attacking=false;}
+  }
+  meleeHit(enemy,player){
+    // level.ignore_enemy_timer: one zombie cannot land two hits within 0.4 s.
+    if(this.time<(enemy.hitAgain||0)||!this.inMeleeReach(enemy,player,MELEE_HIT_RANGE,MELEE_HIT_YAW))return;
+    const eye=[enemy.position[0],enemy.position[1],enemy.position[2]+50],chest=[player[0],player[1],player[2]+40];
+    if(this.collision.actor(()=>this.collision.trace(eye,chest,[0,0,0])).fraction<.98)return;
+    enemy.hitAgain=this.time+.4;this.damagePlayer(this.meleeDamage(),{from:enemy.position.slice(),enemy});
+  }
+  damagePlayer(amount,{from=null}={}) {
     if(this.phase==='dead')return;
-    this.player.health=Math.max(0,this.player.health-amount);this.lastDamage=this.time;this.emit('damage',amount);
+    // playerHealthRegen(): after a hit worth over 10% of max health the player
+    // is briefly invulnerable: 0.5 s on first dropping to the red, 0.3 s
+    // while in the red, 0.35 s otherwise.
+    if(this.time<(this.invulnerableUntil||0))return;
+    const max=this.mapRules?.maxHealth||100,before=this.player.health/max;
+    this.player.health=Math.max(0,this.player.health-amount);this.lastDamage=this.time;this.emit('damage',{amount,from,health:this.player.health,max});
+    const after=this.player.health/max;
+    if(before-after>.1&&this.player.health>0)this.invulnerableUntil=this.time+(after<=.2?(before>.2?.5:.3):.35);
     if(this.player.health===0){this.phase='dead';this.emit('death',{round:this.round,kills:this.player.kills,points:this.player.points});}
   }
   update(dt,input={}) {
@@ -679,7 +734,7 @@ export class SoloGame {
     // A co-op guest takes rounds, zombies, the box and drops from the host.
     if(!this.mirror){
     if(this.phase==='between'&&this.time>=this.roundDue)this.startRound();
-    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<MAX_ALIVE){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay);}
+    if(this.phase==='round'&&this.remaining>0&&this.time>=this.spawnDue&&this.enemies.filter(x=>!x.dead).length<this.maxAlive()){this.spawnEnemy();this.spawnDue=this.time+spawnDelay(this.round,this.vars.zombie_spawn_delay)+this.spawnNetFrame();}
     if(this.phase==='round'&&this.remaining===0&&this.enemies.every(x=>x.dead)) {
       this.phase='between';this.roundEndedAt=this.time;this.roundDue=this.time+this.vars.zombie_between_round_time;
       this.emit('sound',{alias:'round_over'});
@@ -720,7 +775,10 @@ export class SoloGame {
     movementEnd(this,dt);this.collision.playerMovement=false;
     const p=this.player;
     if(p.position[2]<-600&&!this.noclipping)this.damagePlayer(100);
-    if(this.time-this.lastDamage>3)p.health=Math.min(this.mapRules?.maxHealth||100,p.health+30*dt);
+    // playerHealthRegen(): 2.4 s after the last hit health returns to full,
+    // unless it is at 20% or below; then from 5 s it climbs 10% every 0.05 s.
+    {const max=this.mapRules?.maxHealth||100,since=this.time-this.lastDamage;
+      if(p.health<max&&p.health>0){if(p.health/max>.2){if(since>=2.4)p.health=max;}else if(since>=5)p.health=Math.min(max,p.health+max*2*dt);}}
     if(!this.mirror){for(const enemy of this.enemies)this.tickEnemy(enemy,dt);this.separateZombies(dt);}
     this.updateGrenades(dt);
     if(this.pendingFire&&this.time+1e-9>=this.sprintExitUntil){this.pendingFire=false;this.fire();}

@@ -38,7 +38,7 @@ for(const [name,data,zone,asset]of [['nacht','gameplay','nacht','nazi_zombie_pro
   assert(h.opened.has(door.target)&&h.collision.disabled.has(door.target));assert.equal(h.windows[0].boards,2);
   assert.deepEqual(h.drops.map(d=>[d.type,d.expires]),g.drops.map(d=>[d.type,d.expires]));assert.equal(h.powerup.insta_kill,g.powerup.insta_kill);
   if(box)assert.equal([...h.boxes.values()][0].phase,'cycling');
-  if(h.mapRules){const r=h.mapRules;assert(r.power);assert(r.perks.has('specialty_armorvest'));assert.equal(r.maxHealth,250);assert(r.links.has(1));assert(r.activeZones().size>1);assert.equal(r.linkPending.id,2);assert.equal(r.pending.length,g.mapRules.pending.length);}
+  if(h.mapRules){const r=h.mapRules;assert(r.power);assert(r.perks.has('specialty_armorvest'));assert.equal(r.maxHealth,160);assert(r.links.has(1));assert(r.activeZones().size>1);assert.equal(r.linkPending.id,2);assert.equal(r.pending.length,g.mapRules.pending.length);}
   // Replaying the same seconds from the save matches the original session.
   let started=false;h.events.sessionStart=()=>started=true;h.start();assert(started,'Resuming restarts the session audio');
   seed(99);run(g,6);seed(99);run(h,6);

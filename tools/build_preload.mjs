@@ -88,10 +88,10 @@ const names=new Set([...(bo2?[...manifest.characterArms,presentation.actors.body
 for(const character of manifest.playerBodies||[])for(const key of ['body','head','hat','gear'])if(character[key])names.add(character[key]);
 for(const actor of Object.values(presentation.actorVariants||{}))names.add(actor.body);
 for(const e of Object.values(manifest.equipment||{}))names.add(e.model);
-for(const name of manifest.map.propModels||[])names.add(name);
+for(const name of manifest.map?.propModels||[])names.add(name);
 for(const w of Object.values(manifest.weapons))if(w.weaponType==='projectile'&&w.projectileModel)names.add(w.projectileModel);
 for(const name of names)await model(name);
-const animations=new Set([...Object.keys(presentation.animations),...(manifest.playerAnimations||[]),...manifest.entities.map(e=>e.closedAnim).filter(Boolean),...(manifest.map.arthurAnimations||[]),...(manifest.map.propAnimations||[])]);
+const animations=new Set([...Object.keys(presentation.animations),...(manifest.playerAnimations||[]),...manifest.entities.map(e=>e.closedAnim).filter(Boolean),...(manifest.map?.arthurAnimations||[]),...(manifest.map?.propAnimations||[])]);
 for(const actor of Object.values(presentation.actorVariants||{}))for(const name of Object.values(actor.animations))animations.add(name);
 for(const e of Object.values(manifest.equipment||{}))for(const name of [e.animation,e.launchAnimation].filter(Boolean))animations.add(name);
 for(const weapon of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade||{}])for(const [key,value] of Object.entries(weapon))if(key.endsWith('Anim')&&value)animations.add(value);

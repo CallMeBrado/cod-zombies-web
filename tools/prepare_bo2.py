@@ -140,7 +140,7 @@ variables.update(zombie_score_start=500,zombie_health_start=150,zombie_health_in
 animations={}
 for z in reversed(SEARCH):
     for p in (DATA/z/'web-anims').glob('ai_zombie_*.json'):
-        if re.match(r'ai_zombie_(?:walk_v|run_v|sprint_v|attack_v|idle_v|traverse_v|door_tear)',p.stem):animations[p.stem]=animation(z,p.stem)
+        if re.match(r'ai_zombie_(?:walk_v|run_v|sprint_v|attack_v|attack_forward_v|walk_attack_v|run_attack_v|idle_v|traverse_v|traverse_ground_(?:v1_walk|v1_run|climbout_fast)$|door_tear)',p.stem):animations[p.stem]=animation(z,p.stem)
 idle=find('web-anims/ai_zombie_idle_v1_delta.json')
 if idle:
     (DATA/'bo2-buried/web-anims/ai_zombie_idle_v1.json').write_bytes(idle.read_bytes())
@@ -159,7 +159,7 @@ for z in reversed(SEARCH):
         presentation['effects'][effect['name']]=effect
 
 hud=OUTPUT/'hud';hud.mkdir(exist_ok=True)
-art=['loadscreen_buried_zclassic_processing','menu_zm_map_buried_large','menu_zm_map_buried_blur','menu_zm_title_screen','hud_us_grenade','scorebar_zom_5','specialty_juggernaut_zombies','specialty_fastreload_zombies','specialty_doubletap_zombies','specialty_quickrevive_zombies','specialty_marathon_zombies','specialty_mulekick_zombies','specialty_vulture_zombies',*[f'chalkmarks_{i}' for i in range(1,6)]]
+art=['overlay_low_health','hit_direction_zm','loadscreen_buried_zclassic_processing','menu_zm_map_buried_large','menu_zm_map_buried_blur','menu_zm_title_screen','hud_us_grenade','scorebar_zom_5','specialty_juggernaut_zombies','specialty_fastreload_zombies','specialty_doubletap_zombies','specialty_quickrevive_zombies','specialty_marathon_zombies','specialty_mulekick_zombies','specialty_vulture_zombies',*[f'chalkmarks_{i}' for i in range(1,6)]]
 for name in art:
     p=find('images/'+name+'.dds')
     if p:
@@ -197,7 +197,15 @@ for w in [*weapons.values(),grenade,*gestures.values()]:
     for k,v in w.items():
         clip=find('web-anims/'+v+'.json') if k.endswith('Anim') and isinstance(v,str) and v else None
         if clip:required.update(n['name'][6:] for n in json.loads(clip.read_text()).get('notifies',[]) if n['name'].startswith('sndnt#') and n['name'][6:] in aliases)
-sounds={name:entries[:2] for name,entries in aliases.items() if name in required or re.match(r'(?:zmb_|zombie_|evt_|wpn_knife|wpn_grenade|mus_perks)',name)}
+# Zombie vocals, swipes and steps keep their distinct recordings (each file
+# is listed once per pitch row), so a horde does not repeat one moan.
+ZOMBIE_SOUND=re.compile(r'zmb_vocals_zombie_|zmb_attack_whoosh$|fly_step_(?:zombie|crawler)')
+def variants(name,entries):
+    if not ZOMBIE_SOUND.match(name):return entries[:2]
+    seen={};[seen.setdefault(e['url'],e) for e in entries];return list(seen.values())[:12]
+required.update(['fly_step_zombie','fly_step_zombie_sweetner','fly_step_crawler'])
+required.update(f'vox_plr_{i}_exert_pain_medium_{j}' for i in range(4) for j in range(4))
+sounds={name:variants(name,entries) for name,entries in aliases.items() if name in required or re.match(r'(?:zmb_|zombie_|evt_|wpn_knife|wpn_grenade|mus_perks)',name)}
 for name,native in remap.items():
     if native in aliases:sounds[name]=aliases[native][:2]
 voice={name:entries[:1] for name,entries in aliases.items() if re.match(r'vox_plr_[0-3]_(?:ammo_low|ammo_out|level_start|nomoney|revive_down|revive_up|perk_|powerup_|kill_|wpck_).*_[01]$',name)}
@@ -286,7 +294,7 @@ def gore_texture(material):
     image=next(t['image'] for t in json.loads(source.read_text())['textures'] if t['semantic']=='colorMap')
     return '/data/'+find('images/'+image.lstrip(',')+'.dds').relative_to(DATA).as_posix()
 presentation['gore']=dict(neckModel='c_zom_zombie_buried_civilian_g_behead',neckMount='body',headSound='zmb_zombie_head_gib',burst=gore_texture('gfx_fxt_bio_bloodburst'),drops=gore_texture('gfx_fxt_bio_blooddrops'),decals=[gore_texture('wc/gfx_impact_blood_spatter%02d'%n) for n in [1,2,3]])
-remap_more=dict(zmb_attack='zmb_vocals_zombie_attack',amb_spooky_2d='zmb_vocals_zombie_ambience',death='zmb_vocals_zombie_death',mx_stamin_sting='mus_perks_staminup_sting',mx_mule_sting='mus_perks_mulekick_sting',mx_vulture_sting='mus_perks_vulture_sting',grenade_explode='wpn_grenade_explode_default',grenade_explode_bass='wpn_grenade_explode_lfe',grenade_bounce_concrete='wpn_grenade_bounce_concrete')
+remap_more=dict(zmb_attack='zmb_vocals_zombie_attack',death='zmb_vocals_zombie_death',mx_stamin_sting='mus_perks_staminup_sting',mx_mule_sting='mus_perks_mulekick_sting',mx_vulture_sting='mus_perks_vulture_sting',grenade_explode='wpn_grenade_explode_default',grenade_explode_bass='wpn_grenade_explode_lfe',grenade_bounce_concrete='wpn_grenade_bounce_concrete')
 for name,native in remap_more.items():
     if native in aliases:sounds[name]=aliases[native][:2]
 write('manifest.json',manifest);write('presentation.json',presentation)

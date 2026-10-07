@@ -14,7 +14,8 @@ export const POWER_TARGETS=['outside_south_east_door','outside_south_west_door',
 // Map-specific interactions and zone connections recovered from the factory
 // entities/GSC. The shared combat/physics loop remains the same on both maps.
 export class FactoryRules {
-  constructor(game){this.game=game;this.data=game.data.map;}
+  // Der Riese's round_spawning() waits a network frame after each spawn.
+  constructor(game){this.game=game;this.data=game.data.map;this.spawnNetFrame=.05;}
   reset(){this.flags=new Set();this.perks=new Set();this.power=false;this.powerStartedAt=null;this.links=new Set();this.linkPending=null;this.teleportDue=0;this.teleportCooldown=0;this.pap=null;this.machines=null;this.papOn=false;this.pending=[];this.quietPower=false;}
   activeZones(){
     const active=new Set([this.data.initialZone]);let changed=true;
@@ -93,7 +94,7 @@ export class FactoryRules {
       // the perk is set once the bottle's raise (the drink) completes.
       const at=position(e),id=e.script_noteworthy;
       this.sound('bottle_dispense3d',at,RANGE.machine);this.sound(perk.sting,at,RANGE.music,perk.family);
-      g.startGesture(id,()=>{if(g.phase==='dead')return;this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;});
+      g.startGesture(id,()=>{if(g.phase==='dead')return;this.perks.add(id);if(id==='specialty_armorvest')g.player.health=this.maxHealth;});
       return true;
     }
     if(key.startsWith('trigger_teleport_pad_')){
@@ -220,7 +221,8 @@ export class FactoryRules {
   }
   // Der Riese's round_spawning adds 0.5*zombie_ai_per_player*multiplier solo.
   get soloAiFactor(){return .5;}
-  get maxHealth(){return this.perks.has('specialty_armorvest')?250:100;}
+  // zombie_perk_juggernaut_health: Jugger-Nog raises max health to 160.
+  get maxHealth(){return this.perks.has('specialty_armorvest')?160:100;}
   get reloadScale(){return this.perks.has('specialty_fastreload')?.5:1;}
   get fireScale(){return this.perks.has('specialty_rof')?.75:1;}
 }

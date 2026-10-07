@@ -7,13 +7,13 @@ export class TestingGame extends SoloGame {
   newGame(){super.newGame();this.applyMods();}
   applyMods(){
     if(!this.mods)return;
-    if(this.mods.god){this.player.health=this.mapRules?.maxHealth||100;this.lastDamage=-100;}
+    if(this.mods.god){this.player.health=this.mapRules?.maxHealth||100;this.lastDamage=-100;this.invulnerableUntil=0;}
     if(this.mods.points)this.player.points=999999;
     if(this.mods.ammo)for(const w of this.inventory){w.clip=w.definition.clipSize;w.reserve=w.definition.maxAmmo;}
     if(this.mods.grenades)this.player.grenades=4;
   }
   tick(dt,input){this.applyMods();super.tick(dt,input);this.applyMods();}
-  damagePlayer(amount){if(!this.mods?.god)super.damagePlayer(amount);}
+  damagePlayer(amount,options){if(!this.mods?.god)super.damagePlayer(amount,options);}
   spendPoints(cost){this.applyMods();const bought=super.spendPoints(cost);this.applyMods();return bought;}
   setMod(name,on){
     if(!Object.hasOwn(this.mods,name))return;this.mods[name]=!!on;

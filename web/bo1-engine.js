@@ -9,6 +9,8 @@ const distance=(a,b)=>Math.hypot(...a.map((v,i)=>v-b[i]));
 
 // T5's theater owns its progression, solo perks and teleporter lifecycle.
 // Rendering, original animation decoding and fixed-step hull physics are shared.
+const BO_MELEE={stand:['ai_zombie_attack_v2','ai_zombie_attack_v4','ai_zombie_attack_v6','ai_zombie_attack_v1','ai_zombie_attack_forward_v1','ai_zombie_attack_forward_v2'],
+  walk:['ai_zombie_walk_attack_v1','ai_zombie_walk_attack_v2','ai_zombie_walk_attack_v3','ai_zombie_walk_attack_v4'],run:['ai_zombie_run_attack_v1','ai_zombie_run_attack_v2','ai_zombie_run_attack_v3']};
 export class KinoRules extends FactoryRules {
   reset(){
     super.reset();this.flags.add('always_on');this.coreLinked=false;this.teleporterLinked=false;
@@ -111,7 +113,14 @@ export class BlackOpsEngine extends TestingGame {
     const disabled=collision.disabled;
     try{
       collision.disabled=new Set([...disabled,...this.windows.map(w=>w.target),...this.interactions.filter(e=>e.targetname==='zombie_door').map(e=>e.target),...manifest.map.powerTargets]);
-      const ground=p=>{try{return this.settleFeet([p[0],p[1],p[2]+16]);}catch{return p;}};
+      // Path nodes and window marks are AI positions: ground them with the
+      // zombie mask, not on the player clip sealing Kino's spawn areas.
+      const ground=p=>collision.actor(()=>{
+        try{return this.settleFeet([p[0],p[1],p[2]+16]);}
+        // A mark whose hull starts touching a wall cannot settle step by step;
+        // sweep down to the floor instead of leaving it floating.
+        catch{const start=[p[0],p[1],p[2]+51],f=collision.trace(start,[start[0],start[1],start[2]-128],[14,14,35]);return f.fraction<1&&f.normal[2]>.65?[p[0],p[1],f.end[2]-35]:p;}
+      });
       this.nodes.forEach((n,i)=>n.origin=ground([paths.nodes[i].origin[0],paths.nodes[i].origin[1],paths.nodes[i].origin[2]-16]));
       for(const w of this.windows)for(const key of ['outside','begin','entry'])w[key]=ground(w[key]);
     }finally{collision.disabled=disabled;}
@@ -192,6 +201,15 @@ export class BlackOpsEngine extends TestingGame {
     if(this.reloadEnd||this.pendingGrenade||this.gesture||this.switching||this.time<this.meleeDue)this.burstRemaining=0;
     if(this.burstRemaining&&this.time>=this.cooldown){if(this.nativeShot())this.burstRemaining--;else this.burstRemaining=0;}
   }
+  // round_think(): round_start waits 2 s, then the round-number HUD 8.25 s
+  // before round 1's first spawn; later rounds start spawning after 2.5 s.
+  // wait_network_frame() is 0.1 s solo.
+  spawnLead(){return this.round===1?8.25:2.5;}
+  spawnNetFrame(){return .1;}
+  // level._zombie_melee / _zombie_walk_melee / _zombie_run_melee; each hit
+  // is the zombie's meleeDamage (60).
+  meleeAnims(enemy){return [...BO_MELEE.stand,...(/walk/.test(enemy.gait)?BO_MELEE.walk:BO_MELEE.run)];}
+  meleeDamage(){return 60;}
   startRound(){
     super.startRound();
     // Original T5 default_max_zombie_func, distinct from the T4 cuts.
@@ -199,16 +217,16 @@ export class BlackOpsEngine extends TestingGame {
     const players=this.coop?.playerCount()||1,r=this.round,m=Math.max(1,r/5)*(r>=10?r*.15:1),max=this.vars.zombie_max_ai+Math.trunc((players>1?(players-1)*6:3)*m);
     this.remaining=Math.trunc(max*(r===1?.25:r===2?.3:r===3?.5:r===4?.7:r===5?.9:1));
   }
-  damagePlayer(amount){
+  damagePlayer(amount,options={}){
     if(this.attackingEnemy)this.attackingEnemy.hitPlayer=true;
     if(this.mods?.god||this.mapRules.reviveDue)return;
     const r=this.mapRules;
     // Solo Quick Revive revives the player; in co-op teammates revive instead.
     if(!this.coop&&this.player.health<=amount&&r.perks.has('specialty_quickrevive')&&r.revivesUsed<3){
       r.revivesUsed++;r.perks.clear();r.reviveDue=this.time+8;this.player.health=1;this.lastDamage=this.time;
-      this.pendingFire=false;this.sprinting=false;this.message('Downed · Quick Revive');this.emit('damage',amount);this.dialog('general','revive_down');return;
+      this.pendingFire=false;this.sprinting=false;this.message('Downed · Quick Revive');this.emit('damage',{amount,from:options.from||null,health:1,max:r.maxHealth});this.dialog('general','revive_down');return;
     }
-    super.damagePlayer(amount);
+    super.damagePlayer(amount,options);
   }
   fire(){
     if(this.mapRules.reviveDue||this.burstRemaining)return false;

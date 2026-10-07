@@ -22,7 +22,7 @@ g.newGame();g.phase='round';g.invalidateNavigation=()=>{};const r=g.mapRules;
 g.player.position=[-2413,-758,1360.03];assert(g.enabledSpawners().every(e=>e.targetname==='zone_start_spawners'));
 g.player.position=[-400,-200,16];assert(g.enabledSpawners().some(e=>e.targetname==='zone_bank_spawners'));report.checks.push('native occupied-zone spawning');
 r.use(g.interactions.find(e=>e.targetname==='use_power_switch'));assert(r.power);assert(r.flags.has('power_on'));
-g.player.points=20000;const jug=g.interactions.find(e=>e.targetname==='zombie_vending'&&e.script_noteworthy==='specialty_armorvest');r.use(jug);g.time=g.gesture.due;g.updateGesture();assert(r.perks.has('specialty_armorvest'));assert.equal(g.player.health,250);g.gesture=null;
+g.player.points=20000;const jug=g.interactions.find(e=>e.targetname==='zombie_vending'&&e.script_noteworthy==='specialty_armorvest');r.use(jug);g.time=g.gesture.due;g.updateGesture();assert(r.perks.has('specialty_armorvest'));assert.equal(g.player.health,160);g.gesture=null;
 r.perks.add('specialty_additionalprimaryweapon');g.giveWeapon('an94_zm');g.giveWeapon('870mcs_zm');assert.equal(g.inventory.length,3);g.switching=null;
 r.perks.add('specialty_rof');const enemy={health:10000,dead:false};g.firingNative=true;g.hitEnemy(enemy,100);g.firingNative=false;assert.equal(enemy.health,9800);report.checks.push('power, native perk prices, Mule Kick, Double Tap II');
 const key=g.interactions.find(e=>e.buriedItem==='key');r.use(key);assert.equal(r.carry.kind,'key');
@@ -119,6 +119,22 @@ g.giveWeapon('slowgun_zm');g.switching=null;g.events.traceShot=()=>({end:[0,0,0]
 for(let n=0;n<50;n++){g.time+=.1;g.fire();}assert(Math.abs(g.paralyzerHeat-57.5)<1e-6,'5 s of fire reads 57.5');assert(!g.paralyzerLock);
 for(let n=0;n<50;n++){g.time+=.1;g.fire();}assert(g.paralyzerLock);assert.equal(g.paralyzerHeat,115);assert.equal(g.reload(),false);
 g.time+=.3;g.tick(4,{});assert(g.paralyzerLock,'Still locked above 100');g.tick(.4,{});assert(!g.paralyzerLock);assert(g.paralyzerHeat<=100.05&&g.paralyzerHeat>99);
+// Zombie melee: a swing hurts only on its clip's "fire" notes and only while
+// the player is in reach; 60 a hit, then regen returns after 2.4 s.
+{
+  g.newGame();g.phase='round';g.roundDue=Infinity;g.remaining=0;g.player.position=[-400,-200,16];g.player.health=100;const p=g.player.position;
+  const z={id:4242,position:[p[0]+50,p[1],p[2]],angle:Math.PI,gait:'ai_zombie_walk_v1',stage:'hunt',clear:true,sightDue:Infinity,blocked:0,dead:false,health:5000,path:[],age:0,spawnTime:g.time,window:g.windows[0]};
+  g.enemies=[z];g.tickEnemy(z,1/120);assert(z.attack,'A zombie in reach starts a melee clip');assert.equal(g.player.health,100,'Starting a swing does no damage');
+  assert(z.attack.fires.length>0,'Melee clips carry their fire notes');
+  g.time=z.attack.started+z.attack.fires[0]-.01;g.tickEnemy(z,1/120);assert.equal(g.player.health,100);
+  g.time=z.attack.started+z.attack.fires[0]+.01;g.tickEnemy(z,1/120);assert.equal(g.player.health,40,'The fire note lands 60');
+  // Out of reach when the next swing's note comes: a miss.
+  g.time+=5;z.attack=null;g.invulnerableUntil=0;g.player.health=100;g.tickEnemy(z,1/120);const swing=z.attack;assert(swing);
+  g.player.position=[p[0]-200,p[1],p[2]];g.time=swing.started+swing.fires[0]+.01;g.tickEnemy(z,1/120);assert.equal(g.player.health,100,'Backing away dodges the swipe');
+  g.player.health=40;g.lastDamage=g.time;g.time+=2.3;g.tick(1/120,{});assert.equal(g.player.health,40);g.time+=.2;g.tick(1/120,{});assert.equal(g.player.health,100,'Health returns 2.4 s after a hit');
+  assert.equal(g.maxAlive(),24);g.startRound();assert(Math.abs(g.spawnDue-g.time-2.5)<1e-6||g.round===1,'Later rounds wait 2.5 s before spawning');
+  report.checks.push('swipe-timed melee, regen, spawn lead and alive cap');
+}
 // Viewmodel notetrack foley ships with the weapons (the Paralyzer's pullout
 // whir), and each chalk piece is drawn by its own <weapon>_chalk_fx.
 assert(m.sounds.fly_paralyzer_pullout,'Paralyzer pullout notetrack sound');

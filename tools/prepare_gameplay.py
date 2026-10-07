@@ -11,6 +11,8 @@ DATA = ROOT / 'local-data'
 GAME = Path(r'E:\SteamLibrary\steamapps\common\Call of Duty World at War')
 
 
+ZOMBIE_SOUNDS = ['amb_vocals','sprint_vocals','attack_vocals','attack_whoosh','step_zombie','step_sweetner','crawl_vocals','crawl_vocals_slow']
+
 def prepare(game=GAME):
     source = (DATA / 'nacht/maps/_zombiemode.gsc').read_text()
     source = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/|/#[\s\S]*?#/', '', source)
@@ -47,9 +49,12 @@ def prepare(game=GAME):
                     'full_ammo','insta_kill','double_point','nuke','remove_boards','knife_pull_plr','knife_stab_plr','melee_hit',
                     'cha_ching','no_cha_ching','repair_boards'])
     aliases.update(w['meleeSwipeSoundPlayer'] for w in weapons.values() if w['meleeSwipeSoundPlayer'])
+    # Zombie animation notetracks: vocals, swipes and footsteps.
+    aliases.update(ZOMBIE_SOUNDS)
     hud = DATA / 'gameplay/hud'
     hud.mkdir(parents=True, exist_ok=True)
-    image_names = {f'chalkmarks_{i}' for i in range(1,6)} | {'hud_colt','hud_us_grenade','ammocounterback','scorebar_zom_1'}
+    # _gameskill.gsc's red overlay and the engine's damage direction arrow.
+    image_names = {f'chalkmarks_{i}' for i in range(1,6)} | {'hud_colt','hud_us_grenade','ammocounterback','scorebar_zom_1','overlay_low_health','hit_direction'}
     for w in weapons.values():
         material = next((DATA / z / 'materials' / (w['hudIcon']+'.json') for z in ['nacht','common'] if (DATA / z / 'materials' / (w['hudIcon']+'.json')).exists()),None)
         if material:
@@ -76,7 +81,7 @@ def prepare(game=GAME):
         file = next((DATA / zone / 'web-sounds' / (alias + '.json') for zone in ['nacht','common'] if (DATA / zone / 'web-sounds' / (alias + '.json')).exists()), None)
         if file is None:
             continue
-        entries = json.loads(file.read_text())[:4]
+        entries = json.loads(file.read_text())[:12 if alias in ZOMBIE_SOUNDS else 4]
         for entry in entries:
             source_file = entry['file'].replace('\\','/').lstrip(',/')
             wanted[source_file] = None

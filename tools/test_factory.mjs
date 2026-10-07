@@ -37,7 +37,7 @@ report.spawns.zones={receiver:[...atSpawn],wnuen:[...atWnuen]};
 // Advance the gesture and map timelines without running zombies.
 const wait=seconds=>{for(let t=0;t<seconds;t+=1/120){game.time+=1/120;game.updateGesture();game.mapRules.tick();}};
 const sounds=[];game.events.sound=s=>sounds.push(s);
-for(const [perk,health,sting]of [['specialty_armorvest',250,'mx_jugger_sting'],['specialty_fastreload',250,'mx_speed_sting'],['specialty_rof',250,'mx_doubletap_sting']]){
+for(const [perk,health,sting]of [['specialty_armorvest',160,'mx_jugger_sting'],['specialty_fastreload',160,'mx_speed_sting'],['specialty_rof',160,'mx_doubletap_sting']]){
   const machine=game.interactions.find(e=>e.script_noteworthy===perk),before=game.player.points;sounds.length=0;
   purchase(machine);assert(game.player.points<before);assert(!game.mapRules.perks.has(perk),'The perk is set after the drink, not on purchase');
   // perk_give_bottle_begin: the bottle replaces the gun and actions are disabled.
