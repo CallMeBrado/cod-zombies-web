@@ -126,7 +126,8 @@ export class CallOfDeadEngine extends BlackOpsEngine {
   constructor(...args){super(...args,g=>new CoastRules(g));this.engine='black-ops-t5-coast';}
   newGame(){super.newGame();this.projectiles=[];this.nextProjectileId=1;}
   get movementBlocked(){return super.movementBlocked||!!this.mapRules.frozen||!!this.mapRules.transport;}
-  hipSpread(){return super.hipSpread()*(this.mapRules.perks.has('specialty_deadshot')?.65:1);}
+  // Deadshot Daiquiri tightens the hip-fire cone (stanceSpread's min and max).
+  hipSpread(){const spread=super.hipSpread(),k=this.mapRules.perks.has('specialty_deadshot')?.65:1;return {...spread,min:spread.min*k,max:spread.max*k};}
   melee(){const w=this.weapon,d=w.definition;if(this.mapRules.sickle){const upgrade=this.data.map.meleeUpgrade;w.definition={...d,...Object.fromEntries(Object.entries(upgrade).filter(([k])=>k.startsWith('melee')))};}try{return super.melee();}finally{w.definition=d;}}
   meleeAnims(e){return e.kind==='george'?['ai_zombie_boss_attack_swing_overhead_coast','ai_zombie_boss_attack_swing_swipe_coast']:super.meleeAnims(e);}
   meleeDamage(){return this.attackingEnemy?.kind==='george'?50:super.meleeDamage();}

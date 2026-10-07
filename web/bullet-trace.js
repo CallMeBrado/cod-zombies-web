@@ -101,6 +101,9 @@ export class BulletTrace {
     return true;
   }
   trace(origin,direction,max=16000){
+    // A NaN ray passes every bounds test (NaN comparisons are false) and
+    // would walk every triangle tree on the map; it cannot hit anything.
+    if(![...origin,...direction,max].every(Number.isFinite))return null;
     this.worldRay.origin.fromArray(origin);this.worldRay.direction.fromArray(direction).normalize();let best=null;
     for(const e of this.entries){
       if(e.owner){

@@ -115,6 +115,8 @@ export class Bo1Frontend {
   frame(){
     requestAnimationFrame(()=>this.frame());
     const dt=Math.min(.1,this.clock.getDelta());
+    // Out of the lobby (loading or playing), the room and any kept frame go.
+    if(!this.visible()){this.still?.remove();this.still=null;}
     if(!this.ready||!this.visible()){if(this.canvas.style.visibility!=='hidden'){this.canvas.style.visibility='hidden';this.video?.pause();}return;}
     if(this.canvas.style.visibility==='hidden'){this.canvas.style.visibility='';this.video?.play().catch(()=>{});}
     this.time.value+=dt;

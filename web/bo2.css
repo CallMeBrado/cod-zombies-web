@@ -39,7 +39,7 @@ body[data-game=black-ops-2] #selected-map-title,body[data-game=black-ops-2] #map
    flares, asteroid belts (lui_bkg_zm_rocks_*) drifting across, the moon and
    the location globe. */
 #bo2-backdrop{position:fixed;inset:0;z-index:1;overflow:hidden;background:#000;pointer-events:none}
-#bo2-backdrop.hidden{display:none}
+#bo2-backdrop.hidden,body.playing #bo2-backdrop,body.playing .bo2-pins{display:none}
 .bo2-layer{position:absolute;background-repeat:no-repeat;background-position:center;background-size:contain}
 .bo2-space{inset:0;background-size:cover;animation:bo2-breathe 24s ease-in-out infinite alternate}
 .bo2-sun{width:56vh;height:56vh;right:calc(118vh - 30vh - 36vh);bottom:calc(118vh - 44vh - 20vh);mix-blend-mode:screen;opacity:.55;transition:opacity 1.1s}

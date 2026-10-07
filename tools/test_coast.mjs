@@ -42,4 +42,10 @@ g.equipTestWeapon('sniper_explosive_zm');g.cooldown=0;g.meleeDue=0;g.gesture=nul
 g.events.traceShot=(origin,dir)=>({origin,dir,end:origin.map((v,k)=>v+dir[k]*10),wall:true,hits:[]});assert(g.fire());assert.equal(g.projectiles.length,1);
 g.updateProjectiles(1/120);const projectile=g.projectiles[0];assert(projectile.stuck);assert(Math.abs(projectile.due-g.time-3)<.01);
 g.time=projectile.due;g.updateProjectiles(1/120);assert.equal(g.projectiles.length,0);
+// Hip-fire spread stays a {min, max} cone (with and without Deadshot), so a
+// shot's direction is a real ray: a NaN ray walked every triangle tree.
+for(const deadshot of [false,true]){if(deadshot)r.perks.add('specialty_deadshot');else r.perks.delete('specialty_deadshot');
+  const spread=g.hipSpread();assert(Number.isFinite(spread.min)&&Number.isFinite(spread.max)&&spread.min<=spread.max,'Hip spread is a finite cone');}
+let shotRay=null;g.equipTestWeapon('m1911_zm');Object.assign(g,{cooldown:0,meleeDue:0,reloadEnd:0,gesture:null,switching:null,pendingGrenade:null,sprinting:false,pendingFire:false,sprintExitUntil:0,burstRemaining:0,phase:'round'});g.weapon.clip=5;g.events.traceShot=(origin,dir)=>{shotRay=dir;return {origin,dir,end:origin,wall:true,hits:[]};};
+assert(g.fire());assert(shotRay&&shotRay.every(Number.isFinite),'Shots fire along a finite direction');
 console.log('Call of the Dead quick logic check passed: spawn floor, George/rounds/nuke/saves, cold and thaw, moving Pack-a-Punch, Sickle, rewards and Scavenger fuse.');
