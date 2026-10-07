@@ -594,7 +594,7 @@ function frame(time) {
   if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,stance:game.player.stance,time:game.time,reloading:!!game.reloadEnd,offhand});}
   if(game)playerBody?.update(game,state.mode==='playing'||pauseMenu.context==='pause');
   if(game&&game.time>lastLight+.3){lastLight=game.time;
-    const color=map.illumination(game.player.position);weaponView?.object?.traverse(n=>{if(n.isMesh&&!n.material.userData.fixedLight)n.material.color.setRGB(...color.map(v=>Math.max(.09,v*1.5)));});
+    const color=map.illumination(game.player.position);weaponView?.object?.traverse(n=>{if(n.isMesh&&n.material.color&&!n.material.userData.fixedLight)n.material.color.setRGB(...color.map(v=>Math.max(.09,v*1.5)));});
     for(const v of visuals.values())actors.light(v);
   }
   damageFlash=Math.max(0,damageFlash-dt*.75);$('blood').style.opacity=String(damageFlash*.65+(game&&game.player.health<40 ? .25 : 0));

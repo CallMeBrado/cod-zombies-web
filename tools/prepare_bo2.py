@@ -190,6 +190,11 @@ required=set(remap.values())
 for w in [*weapons.values(),grenade,*gestures.values()]:
     required.update(v for k,v in w.items() if 'Sound' in k and isinstance(v,str) and v in aliases)
     required.update(line.split()[-1] for line in str(w.get('notetrackSoundMap','')).splitlines() if line.strip())
+    # Viewmodel clips play their own foley through sndnt# notetracks
+    # (fly_paralyzer_pullout on the Paralyzer's draw).
+    for k,v in w.items():
+        clip=find('web-anims/'+v+'.json') if k.endswith('Anim') and isinstance(v,str) and v else None
+        if clip:required.update(n['name'][6:] for n in json.loads(clip.read_text()).get('notifies',[]) if n['name'].startswith('sndnt#') and n['name'][6:] in aliases)
 sounds={name:entries[:2] for name,entries in aliases.items() if name in required or re.match(r'(?:zmb_|zombie_|evt_|wpn_knife|wpn_grenade|mus_perks)',name)}
 for name,native in remap.items():
     if native in aliases:sounds[name]=aliases[native][:2]
@@ -238,6 +243,11 @@ manifest['map']['wallbuyEffects']={weapon:'maps/zombie/'+fx for weapon,fx in dic
     m14_zm='fx_zmb_wall_buy_m14',rottweil72_zm='fx_zmb_wall_buy_olympia',m16_zm='fx_zmb_wall_buy_m16',mp5k_zm='fx_zmb_wall_buy_mp5k',ak74u_zm='fx_zmb_wall_buy_ak74u',
     beretta93r_zm='fx_zmb_wall_buy_berreta93r',bowie_knife_zm='fx_zmb_wall_buy_bowie',claymore_zm='fx_zmb_wall_buy_claymore',**{'870mcs_zm':'fx_zmb_wall_buy_870mcs'},
     question='fx_zmb_wall_buy_question',drawing='fx_zmb_wall_dyn_chalk_drawing').items()}
+# piece_spawn_chalk_internal(): a chalk piece is a tag_origin playing its
+# weapon's <weapon>_chalk_fx (zm_buried.gsc), else m14_zm_fx.
+manifest['map']['chalkPieceEffects']={weapon:'maps/zombie/'+fx for weapon,fx in dict(
+    tazer_knuckles_zm='fx_zmb_buried_dyn_taseknuck',ak74u_zm='fx_zmb_wall_dyn_ak74u',an94_zm='fx_zmb_wall_dyn_an94',pdw57_zm='fx_zmb_wall_dyn_pdw57',svu_zm='fx_zmb_wall_dyn_svuas',
+    m14_zm='fx_zmb_wall_buy_m14',**{'870mcs_zm':'fx_zmb_wall_dyn_870mcs'}).items()}
 manifest['map']['mazePermutations']=[['blocker_1','blocker_2','blocker_3','blocker_4'],['blocker_5','blocker_6','blocker_7','blocker_8','blocker_9'],['blocker_1','blocker_10','blocker_6','blocker_4','blocker_11'],['blocker_1','blocker_3','blocker_4','blocker_12'],['blocker_5','blocker_6','blocker_12','blocker_13'],['blocker_4','blocker_6','blocker_14']]
 manifest['equipment']=equipment
 triggers=[]

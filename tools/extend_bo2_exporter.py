@@ -144,6 +144,12 @@ if dumper.exists():
     if 'name.find("muzzleflash")' not in dtext:
         dtext=dtext.replace('&& name.find("raygun") == std::string::npos','&& name.find("raygun") == std::string::npos && name.find("muzzleflash") == std::string::npos && name.find("paralyzer") == std::string::npos')
         dumper.write_text(dtext)
+# Chalk pickups are drawn by their own chalk effects (<weapon>_chalk_fx).
+if dumper.exists():
+    dtext=dumper.read_text()
+    if 'name.find("fx_zmb_wall_dyn")' not in dtext:
+        dtext=dtext.replace('&& name.find("raygun") == std::string::npos','&& name.find("raygun") == std::string::npos && name.find("fx_zmb_wall_dyn") == std::string::npos && name.find("fx_zmb_buried_dyn") == std::string::npos')
+        dumper.write_text(dtext)
 # Buried's catwalk and floor collapse play authored fxanim clips.
 if 'webName.find("fxanim_")' not in text:text=text.replace('webName.find("o_zmb_") == 0;', 'webName.find("o_zmb_") == 0 || webName.find("fxanim_") == 0;')
 template.write_text(text)

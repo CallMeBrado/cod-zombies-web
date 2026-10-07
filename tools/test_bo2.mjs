@@ -117,6 +117,11 @@ g.giveWeapon('slowgun_zm');g.switching=null;g.events.traceShot=()=>({end:[0,0,0]
 for(let n=0;n<11;n++){g.time+=.11;g.fire();}assert.equal(g.paralyzerHeat,110,'The heat counter climbs 10 a shot');assert(!g.paralyzerLock);
 for(let n=0;n<2;n++){g.time+=.11;g.fire();}assert(g.paralyzerLock);assert.equal(g.paralyzerHeat,115);assert.equal(g.reload(),false);
 g.paralyzerFiredAt=-100;g.tick(10,{});assert(!g.paralyzerLock);assert(g.paralyzerHeat<=87);
+// Viewmodel notetrack foley ships with the weapons (the Paralyzer's pullout
+// whir), and each chalk piece is drawn by its own <weapon>_chalk_fx.
+assert(m.sounds.fly_paralyzer_pullout,'Paralyzer pullout notetrack sound');
+for(const e of m.entities.filter(e=>e.nativeItemTarget?.includes('chalk'))){const fx=m.map.chalkPieceEffects[e.zombie_weapon_upgrade]||m.map.chalkPieceEffects.m14_zm;assert(p.effects[fx],'Chalk piece effect '+fx);}
+report.checks.push('weapon notetrack foley, chalk piece effects');
 report.checks.push('delayed Ray Gun projectile/splash and Paralyzer overheat/cooling');
 // The factory's one-way chute must land on supported floor and remain
 // walkable through the small sloped brushes at the Quick Revive entrance.

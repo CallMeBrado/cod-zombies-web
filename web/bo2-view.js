@@ -77,7 +77,7 @@ export class BuriedView {
   update(game,dt){
     const rules=game.mapRules,a=rules.arthur;
     for(const items of this.dynamic.values())for(const v of items){
-      if(v.entity.nativeItemTarget||v.entity.buriedPart)v.object.visible=rules.itemVisible({...v.entity,itemId:v.entity.itemId});
+      if(v.entity.nativeItemTarget||v.entity.buriedPart)v.object.visible=!this.chalkPieces?.has(v.entity.itemId)&&rules.itemVisible({...v.entity,itemId:v.entity.itemId});
       if(v.entity.nativeMaze)v.object.visible=!game.collision.disabled.has(v.entity.targetname);
       if(v.entity.chalkMark)v.object.visible=!rules.chalk.has(v.entity.targetname);
     }
@@ -102,7 +102,11 @@ export class BuriedView {
       this.wallbuys=[];
       for(const e of this.manifest.entities.filter(e=>e.targetname==='weapon_upgrade'))this.wallbuys.push({root:this.wallbuyRoot(fx[e.zombie_weapon_upgrade]||fx.m14_zm,e)});
       for(const e of this.manifest.entities.filter(e=>e.chalkMark))this.wallbuys.push({entity:e,drawn:null,root:this.wallbuyRoot(fx.question,e)});
+      // Chalk pieces are drawn only by their chalk effect (piece_spawn_chalk_internal).
+      const pieces=this.manifest.map.chalkPieceEffects||{};this.chalkPieces=new Map();
+      for(const e of this.manifest.entities.filter(e=>e.nativeItemTarget?.includes('chalk'))){const root=this.wallbuyRoot(pieces[e.zombie_weapon_upgrade]||pieces.m14_zm,e);if(root)this.chalkPieces.set(e.itemId,{entity:e,root});}
     }
+    for(const p of this.chalkPieces.values()){p.root.visible=game.mapRules.itemVisible(p.entity);if(p.root.visible)this.effects.update(p.root,game.time);}
     for(const w of this.wallbuys){
       if(w.entity){const drawn=game.mapRules.chalk.get(w.entity.targetname)||null;
         if(drawn!==w.drawn){w.root&&this.effects.dispose(w.root);w.drawn=drawn;w.root=this.wallbuyRoot(drawn?fx[drawn]||fx.m14_zm:fx.question,w.entity);}}
