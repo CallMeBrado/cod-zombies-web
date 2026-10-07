@@ -35,3 +35,54 @@ body[data-game=black-ops-2] .map-info{left:auto;right:calc(var(--unit)*52);width
 body[data-game=black-ops-2] #lobby-players{width:min(36vw,calc(var(--unit)*240))}
 body[data-game=black-ops-2] #map-preview{left:auto;right:calc(var(--unit)*52);width:min(45vw,calc(var(--unit)*280))}
 body[data-game=black-ops-2] #selected-map-title,body[data-game=black-ops-2] #map-description{left:auto;right:calc(var(--unit)*52);width:min(45vw,calc(var(--unit)*280))}
+/* The zombies menu backdrop (bo2-menu.js): lui_bkg_zm space, the sun and its
+   flares, asteroid belts (lui_bkg_zm_rocks_*) drifting across, the moon and
+   the location globe. */
+#bo2-backdrop{position:fixed;inset:0;z-index:1;overflow:hidden;background:#000;pointer-events:none}
+#bo2-backdrop.hidden{display:none}
+.bo2-layer{position:absolute;background-repeat:no-repeat;background-position:center;background-size:contain}
+.bo2-space{inset:0;background-size:cover;animation:bo2-breathe 24s ease-in-out infinite alternate}
+.bo2-sun{width:56vh;height:56vh;right:calc(118vh - 30vh - 36vh);bottom:calc(118vh - 44vh - 20vh);mix-blend-mode:screen;opacity:.55;transition:opacity 1.1s}
+.bo2-flare{width:150vh;height:150vh;right:calc(118vh - 30vh - 82vh);bottom:calc(118vh - 44vh - 66vh);mix-blend-mode:screen;opacity:.3;animation:bo2-flare 7s ease-in-out infinite alternate;transition:opacity 1.1s}
+.bo2-flare-left{width:70vh;height:70vh;left:-12vh;top:4vh;mix-blend-mode:screen;opacity:.35}
+.bo2-rocks{left:-10%;width:120%;height:28vh;background-size:auto 100%;background-repeat:repeat-x;transform:rotate(-7deg)}
+.bo2-rocks-back{top:52vh;opacity:.75;animation:bo2-drift 220s linear infinite}
+.bo2-rocks-front{top:62vh;opacity:.95;animation:bo2-drift 140s linear infinite}
+.bo2-rocks-forward{top:76vh;height:34vh;animation:bo2-drift 90s linear infinite}
+.bo2-moon{width:24vh;height:24vh;right:44vw;top:6vh;animation:bo2-moon 60s ease-in-out infinite alternate}
+.bo2-globe{position:absolute;width:118vh;height:118vh;right:-30vh;bottom:-44vh;transition:width 1.1s cubic-bezier(.6,0,.3,1),height 1.1s cubic-bezier(.6,0,.3,1),right 1.1s cubic-bezier(.6,0,.3,1),bottom 1.1s cubic-bezier(.6,0,.3,1)}
+body[data-bo2-globe=select] .bo2-globe{width:86vh;height:86vh;right:calc(50% - 43vh);bottom:calc(50% - 47vh)}
+body[data-bo2-globe=select] .bo2-rocks{opacity:.35}
+body[data-bo2-globe=select] .bo2-sun,body[data-bo2-globe=select] .bo2-flare{opacity:0}
+body[data-bo2-globe=select] .bo2-moon{right:7vw;top:10vh}
+.bo2-moon{transition:right 1.4s cubic-bezier(.6,0,.3,1),top 1.4s cubic-bezier(.6,0,.3,1)}
+@keyframes bo2-drift{from{background-position-x:0}to{background-position-x:-400vh}}
+@keyframes bo2-flare{from{opacity:.2}to{opacity:.36}}
+@keyframes bo2-moon{from{transform:translate(0,0) rotate(0)}to{transform:translate(-6vw,3vh) rotate(18deg)}}
+@keyframes bo2-breathe{from{transform:scale(1)}to{transform:scale(1.04)}}
+/* Location pins on the globe (SelectMapZombie): the marker and signpost. */
+.bo2-pins{position:fixed;inset:0;z-index:3;pointer-events:none}
+.bo2-pins.hidden{display:none}
+.bo2-cycle{position:absolute;left:50%;bottom:4vh;transform:translateX(-50%);display:none;gap:30vh;pointer-events:auto}
+body[data-bo2-globe=select] .bo2-cycle{display:flex}
+#overlay .bo2-cycle button{width:5vh;height:5vh;padding:0;border:1px solid #ef803588;border-radius:50%;background:#000a;color:#f4e3cf;font-size:2vh;text-align:center;cursor:pointer}
+#overlay .bo2-cycle button:hover,#overlay .bo2-cycle button:focus-visible{color:var(--bo-accent);border-color:var(--bo-accent);background:#1a0d05cc}
+.bo2-pin{position:absolute;left:0;top:0;display:none;width:0;height:0;padding:0;border:0;background:none;pointer-events:auto;cursor:pointer;color:#f4e3cf}
+.bo2-pin.shown{display:block}
+.bo2-pin-marker{position:absolute;left:-1.1vh;top:-1.1vh;width:2.2vh;height:2.2vh;border-radius:50%;background:radial-gradient(#fff 0 18%,#ff9a3c 30%,#ff6a0033 62%,transparent 70%);box-shadow:0 0 1.6vh #ff7a1d;animation:bo2-pulse 1.6s ease-in-out infinite}
+.bo2-pin img{position:absolute;left:-6vh;bottom:1.6vh;width:12vh;height:12vh;object-fit:contain;filter:drop-shadow(0 0 .6vh #000)}
+.bo2-pin-name{position:absolute;left:50%;top:1.7vh;transform:translateX(-50%);white-space:nowrap;font:700 1.8vh/1 'Arial Narrow',Arial,sans-serif;letter-spacing:.15vh;text-shadow:0 0 .6vh #000,0 0 1.2vh #000}
+.bo2-pin-note{position:absolute;left:50%;top:4vh;transform:translateX(-50%);white-space:nowrap;font:1.2vh/1 Arial,sans-serif;color:#9a9089;text-shadow:0 0 .6vh #000}
+.bo2-pin:not(.playable){filter:saturate(.25) brightness(.65)}
+.bo2-pin.current .bo2-pin-marker{width:3.2vh;height:3.2vh;left:-1.6vh;top:-1.6vh}
+.bo2-pin.current .bo2-pin-name{color:var(--bo-accent)}
+.bo2-pin.denied{animation:bo2-deny .35s}
+@keyframes bo2-pulse{50%{transform:scale(1.25);opacity:.75}}
+@keyframes bo2-deny{25%{margin-left:-.6vh}75%{margin-left:.6vh}}
+/* With the backdrop up, the menu floats over space instead of the map art. */
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-context=start] #overlay{background:linear-gradient(90deg,#000000cc,#0000006e 32%,transparent 58%);background-image:linear-gradient(90deg,#000000cc,#0000006e 32%,transparent 58%);backdrop-filter:none}
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] #map-list{display:none}
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] #menu-maps{display:block}
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .map-detail{position:absolute;left:calc(var(--unit)*52);bottom:calc(var(--unit)*60);top:auto;width:min(36vw,calc(var(--unit)*230));background:linear-gradient(90deg,#000000b0,#0000);padding:calc(var(--unit)*10)}
+body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .map-detail img{display:none}
+@media(prefers-reduced-motion:reduce){.bo2-layer,.bo2-pin-marker{animation:none!important}.bo2-globe{transition:none}}

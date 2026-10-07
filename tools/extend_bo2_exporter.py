@@ -152,6 +152,8 @@ if dumper.exists():
         dumper.write_text(dtext)
 # Buried's catwalk and floor collapse play authored fxanim clips.
 if 'webName.find("fxanim_")' not in text:text=text.replace('webName.find("o_zmb_") == 0;', 'webName.find("o_zmb_") == 0 || webName.find("fxanim_") == 0;')
+# The BO1 frontend's interrogation chair clips (the zombies menu camera).
+if 'webName.find("int_interrogation_")' not in text:text=text.replace('webName.find("fxanim_") == 0;', 'webName.find("fxanim_") == 0 || webName.find("int_interrogation_") == 0 || webName.find("ch_interrogation_") == 0;')
 template.write_text(text)
 loader = ROOT / '.tools/oat-source/src/ObjLoading/Game/T6/ObjLoaderT6.cpp'
 text = loader.read_text()

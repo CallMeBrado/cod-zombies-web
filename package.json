@@ -32,6 +32,7 @@
     "test:launch": "node tools/test_launch.mjs && node tools/test_pause_keys.mjs && node tools/test_routes.mjs",
     "prepare:bo1": "python -B tools/prepare_bo1.py && node tools/build_preload.mjs --map kino",
     "test:bo1": "node tools/test_bo1.mjs",
+    "prepare:menus": "python -B tools/prepare_menus.py",
     "extract:verruckt": "python -B tools/extract_verruckt.py",
     "prepare:verruckt": "python -B tools/prepare_verruckt.py && python -B tools/prepare_launch_media.py && node --max-old-space-size=6144 tools/build_preload.mjs --map verruckt",
     "test:verruckt": "node tools/test_verruckt.mjs",

@@ -84,7 +84,7 @@ const server = http.createServer(async (req, res) => {
       folder = path.join(root, 'local-data'); relative = pathname.slice(6);
       // Publish game assets, while keeping extraction reports, logs and process files local.
       const assetFolder = path.relative(folder, path.resolve(folder, relative)).split(path.sep)[0];
-      if (!['gameplay', 'nacht', 'der-riese', 'verruckt', 'verruckt-patch', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo1-doa','bo1-doa-patch','bo1-doa-english','bo1-doa-common','bo1-cosmodrome','bo1-cosmodrome-patch','bo1-cosmodrome-english','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
+      if (!['gameplay', 'nacht', 'der-riese', 'verruckt', 'verruckt-patch', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo1-doa','bo1-doa-patch','bo1-doa-english','bo1-doa-common','bo1-cosmodrome','bo1-cosmodrome-patch','bo1-cosmodrome-english','bo1-frontend','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
         res.writeHead(404); res.end('File not found.'); return;
       }
     } else if (pathname.startsWith('/vendor/')) {

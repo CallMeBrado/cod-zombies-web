@@ -1,5 +1,6 @@
 """Export the locally installed BO1 zombies assets without running the game.
---map kino (default) or --map ascension (zombie_cosmodrome)."""
+--map kino (default), --map ascension (zombie_cosmodrome) or --map frontend
+(the interrogation room behind the zombies menu)."""
 from pathlib import Path
 import argparse, subprocess
 
@@ -21,6 +22,11 @@ ZONES = {
         ('Common/zombie_cosmodrome', 'bo1-cosmodrome', ['Common/common', 'Common/common_zombie']),
         ('Common/zombie_cosmodrome_patch', 'bo1-cosmodrome-patch', ['Common/common', 'Common/common_zombie', 'Common/zombie_cosmodrome']),
         ('English/en_zombie_cosmodrome', 'bo1-cosmodrome-english', ['Common/zombie_cosmodrome']),
+    ],
+    # The frontend (interrogation room) behind the zombies menu.
+    'frontend': [
+        ('Common/frontend', 'bo1-frontend', ['Common/common']),
+        ('English/en_frontend', 'bo1-frontend-english', ['Common/frontend']),
     ],
 }
 parser = argparse.ArgumentParser()

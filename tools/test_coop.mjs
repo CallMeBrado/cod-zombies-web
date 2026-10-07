@@ -18,7 +18,7 @@ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.
 const call=async(path,body={})=>(await fetch(`${base}/api/lobby/kino/${path}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 
-const hostJoin=await call('join',{character:0}),guestJoin=await call('join',{character:2}),match=(await call(hostJoin.you+'/start')).match;
+const hostJoin=await call('join',{character:0}),guestJoin=await call('join',{character:2,lobby:hostJoin.lobby}),match=(await call(hostJoin.you+'/start')).match;
 await call(hostJoin.you,{loaded:match.id});await call(guestJoin.you,{loaded:match.id});
 const make=(join,character)=>{
   const events=[],g=new BlackOpsEngine(manifest,new CollisionWorld(collision,manifest.entities),paths,{dialog:e=>events.push(['dialog',e]),death:e=>events.push(['death',e]),open:e=>events.push(['open',e.target])},presentation);

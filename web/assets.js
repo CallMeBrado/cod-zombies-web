@@ -51,7 +51,20 @@ async function diffuse(name) {
   for(const zone of assetZones)try{return await textureUrl(`/data/${zone}/images/${encodeURIComponent(name.replace(/^,/,''))}.dds`);}catch{}
   throw new Error('Original texture unavailable: '+name);
 }
-function film(shader) {
+export function film(shader,vision=null) {
+  if(vision){
+    // A T5 .vision's film pass: saturation, then the dark -> mid -> light
+    // tints by luminance, then contrast about middle grey.
+    const v=k=>`vec3(${vision[k].map(x=>x.toFixed(4)).join(',')})`,f=x=>x.toFixed(4);
+    shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
+      outgoingLight*=${f(vision.preExposure??1)};
+      float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
+      outgoingLight=mix(vec3(luma),outgoingLight,${v('saturation')});
+      vec3 tint=luma<${f(vision.midStart)}?mix(${v('darkTint')},${v('midTint')},smoothstep(0.,${f(Math.max(.001,vision.midStart))},luma)):mix(${v('midTint')},${v('lightTint')},smoothstep(${f(vision.midEnd)},1.,luma));
+      outgoingLight=max(vec3(0.),(outgoingLight*tint-.18)*${v('contrast')}+.18)*${f(vision.exposure??.5)};
+      gl_FragColor.rgb=outgoingLight;
+      #include <tonemapping_fragment>`);return;
+  }
   if(mapChoice.engine==='dead-ops')return;
   if(mapChoice.game==='black-ops-2'){
     shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
@@ -77,14 +90,14 @@ function film(shader) {
     gl_FragColor.rgb=outgoingLight;
     #include <tonemapping_fragment>`);
 }
-export function shadeModel(object,color) {
+export function shadeModel(object,color,vision=null) {
   object.traverse(node=>{if(!node.isMesh)return;
     const convert=old=>{const foliage=/tree|pine|foliage|grass/i.test(old.name);const mat=new THREE.MeshBasicMaterial({map:old.map,color:new THREE.Color(...color),vertexColors:!!node.geometry.attributes.color,
       transparent:old.transparent,depthWrite:old.depthWrite,opacity:old.opacity,alphaTest:foliage?.3:old.alphaTest,side:foliage?THREE.DoubleSide:old.side,
       blending:old.blending,blendSrc:old.blendSrc,blendDst:old.blendDst,visible:old.visible});mat.name=old.name;
       mat.userData.fixedLight=/zombie.*eye/.test(old.name);if(mat.userData.fixedLight)mat.color.setRGB(1,1,1);
       else if(old.userData.heatGlow)heatGlowing(mat,old.userData.heatGlow);
-      else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else mat.onBeforeCompile=film;return mat;};
+      else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else if(vision){mat.onBeforeCompile=shader=>film(shader,vision);mat.customProgramCacheKey=()=>'vision';}else mat.onBeforeCompile=film;return mat;};
     node.material=Array.isArray(node.material)?node.material.map(convert):convert(node.material);
   });
 }
@@ -202,10 +215,12 @@ export function applyHideTags(root,tags){
   });
   return removed;
 }
-export async function loadMap(scene,progress) {
-  const world=await get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.json',true);
+// source: another world to load than the selected map (the Black Ops
+// frontend behind its menu), with that world's own vision.
+export async function loadMap(scene,progress,source={zone:source.zone,asset:source.asset,vision:null}) {
+  const world=await get('/data/'+source.zone+'/web-world/'+source.asset+'.json',true);
   const bullets=new BulletTrace();
-  const [vb,ib]=await Promise.all([get('/data/'+mapChoice.zone+'/web-world/'+world.vertices),get('/data/'+mapChoice.zone+'/web-world/'+world.indices)]);
+  const [vb,ib]=await Promise.all([get('/data/'+source.zone+'/web-world/'+world.vertices),get('/data/'+source.zone+'/web-world/'+world.indices)]);
   const view=new DataView(vb),idx=new Uint16Array(ib),positions=new Float32Array(world.vertexCount*3),uv=new Float32Array(world.vertexCount*2),uv1=new Float32Array(world.vertexCount*2),colorSize=mapChoice.game==='black-ops-2'?4:3,colors=new Float32Array(world.vertexCount*colorSize);
   for(let i=0;i<world.vertexCount;i++) {
     for(let k=0;k<3;k++)positions[i*3+k]=view.getFloat32(i*32+k*4,true);
@@ -214,12 +229,12 @@ export async function loadMap(scene,progress) {
     // T6 blend overlays fade by vertex alpha, so Buried keeps all four bytes.
     for(let k=0;k<colorSize;k++)colors[i*colorSize+k]=view.getUint8(i*32+28+k)/255;
   }
-  const lights=await get('/data/'+mapChoice.zone+'/web-world/'+mapChoice.asset+'.lights.json',true),lightmaps=[];
+  const lights=await get('/data/'+source.zone+'/web-world/'+source.asset+'.lights.json',true),lightmaps=[];
   for(const [index,lm] of world.lightmaps.entries()) {
-    const load=async name=>{const t=decode(await get('/data/'+mapChoice.zone+'/images/'+encodeURIComponent(name.replace(/^\*/, '_'))+'.dds'));
+    const load=async name=>{const t=decode(await get('/data/'+source.zone+'/images/'+encodeURIComponent(name.replace(/^\*/, '_'))+'.dds'));
       t.colorSpace=THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;t.channel=1;return t;};
     if(mapChoice.game==='black-ops'){
-      const native=world.nativeLightmaps[index],folder='/data/'+mapChoice.zone+'/web-world/';
+      const native=world.nativeLightmaps[index],folder='/data/'+source.zone+'/web-world/';
       const [a,b]=await Promise.all([get(folder+native.secondary.file),get(folder+native.secondaryB.file)]);
       const secondary=new THREE.DataTexture(decodeKinoLightmap(a,b,native.secondary.width,native.secondary.height),native.secondary.width,native.secondary.height,THREE.RGBAFormat,THREE.FloatType);
       secondary.colorSpace=THREE.NoColorSpace;secondary.minFilter=secondary.magFilter=THREE.LinearFilter;secondary.channel=1;secondary.needsUpdate=true;
@@ -341,9 +356,9 @@ export async function loadMap(scene,progress) {
           baked+=primary*wawLightColor*max(0.,dot(normalize(wawWorldNormal),L))*attenuation;
           vec4 lightMapTexel=vec4(baked*PI,1.);`);
       }
-      film(shader);
+      film(shader,source.vision);
     };
-    mat.customProgramCacheKey=()=>[!!lm,!!emissive,hasNormal,vertexColors,alpha,arrays?'array':'',layered,!!falloff].join('|');
+    mat.customProgramCacheKey=()=>[!!lm,!!emissive,hasNormal,vertexColors,alpha,arrays?'array':'',layered,!!falloff,source.vision?'vision':''].join('|');
     return mat;
   };
   const material=(s)=>{
@@ -485,7 +500,7 @@ export async function loadMap(scene,progress) {
   // culling and each placement's original transform and baked illumination.
   const batches=new Map(),parts=new Map();
   for(const name of unique){
-    const object=cloneModel(await model(name));shadeModel(object,[1,1,1]);object.updateMatrixWorld(true);
+    const object=cloneModel(await model(name));shadeModel(object,[1,1,1],source.vision);object.updateMatrixWorld(true);
     const meshes=[];object.traverse(mesh=>{if(!mesh.isMesh)return;
       let geometry=mesh.geometry;
       if(mesh.isSkinnedMesh){

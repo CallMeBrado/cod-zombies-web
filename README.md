@@ -92,7 +92,16 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Original shuffled drop rotation.
   - Spawn sound and looping hum while a drop sits on the ground.
 - **HUD:** chalk round tally with the white flash between rounds, score with +point popups, ammo, grenades, perk icons and a moving crosshair.
-- **Shared lobby:** everyone who opens the same map on the same server (on your network or through the public site) joins one pre-game lobby, up to 4 players. The PLAYERS list shows each player, who hosts (the first to arrive; it passes on when they leave) and whether they are READY, LOADING, WAITING or IN GAME. In Black Ops each player gets a different character. Only the host can Start Game: everyone in the lobby loads the map, players who finish first wait on the loading screen, and all of them go in together. Saves load only when you are alone in the lobby.
+- **Lobbies:** co-op is opt-in, so you can always start a solo game, and a tab left open elsewhere can't block you.
+  - Every browser that opens a map starts in its own private lobby.
+  - The PLAYERS panel lists OTHER LOBBIES on the same map and server, each with JOIN.
+  - INVITE A FRIEND / COPY INVITE LINK copies a `?lobby=` link that joins your lobby directly. Friends on your network need this computer's network address instead of `localhost`.
+  - LEAVE LOBBY returns you to your own lobby.
+  - A shared lobby holds up to 4 players and shows who hosts: the first player to arrive, passing on when they leave. It also shows whether each player is READY, LOADING, WAITING or IN GAME.
+  - In Black Ops each player gets a different character.
+  - Only the host can Start Game. Everyone in the lobby loads the map, players who finish first wait on the loading screen, and all of them go in together.
+  - A lobby that is mid-game can't be joined.
+  - Saves load only when you are alone in your lobby.
 - **Online co-op:** a match started from a shared lobby is one game. The host's browser runs the world (rounds, zombies, doors, barriers, the box, power-ups, power and teleporters) and every other browser mirrors it, reporting its own hits, purchases and repairs; the host pays each player's points and kills. Zombies hunt the nearest player who is not down. Players start on the map's separate spawn markers, see each other's character, stance, dives, weapon and gunfire, and every player's score is listed above your own. Max ammo refills everyone, a nuke pays everyone 400 and a carpenter 200; the box weapon belongs to whoever paid. Zombies per round grow with the player count as in the original scripts. Last stand: lethal damage downs you with a pistol and a 30-second bleed-out; a teammate holds Use for 3 seconds (1.5 with Quick Revive) to revive you; bleeding out leaves you watching a teammate until the next round; the game ends when everyone is down. Co-op Quick Revive costs 1500 and no longer self-revives. The game keeps running behind the pause menu; Quit leaves the match. Players' browsers exchange state with the server about 25 times a second through ordinary requests, so it works through proxies. Teammates are solid: you cannot walk through a standing teammate, and their body stops your shots (friendly fire does no damage). Teammates are the original characters (Nacht's four Marines with their helmets and gear, Der Riese's and Kino's Dempsey, Nikolai, Takeo and Richtofen) animated with the games' own third-person player clips: idle, aiming, running and strafing in four directions, sprinting, crouching, prone crawling, diving and the last-stand crawl, with pistol variants, holding their current weapon. `tools/prepare_player_animations.py` (run by the build) exports those clips and lists each map's characters.
 - **Step smoothing:** as in the original, stepping onto stairs, ledges and low props (up to the 18-unit step) moves the player instantly but the view glides over 0.2 s instead of popping.
 - **Player stances:** crouch and prone in both games, with lower camera/shot/grenade origins, smaller collision hulls, slower movement and native weapon stance spread. Crouch uses C, prone uses Ctrl, and Stand/Jump uses Space. Standing up under low cover is blocked. Controller B/Circle taps crouch, holds prone; A/Cross stands before jumping. Rebind these in Options. Saves retain stance; older saves default to standing.
@@ -104,6 +113,19 @@ The game is a JavaScript reimplementation. The original game scripts (`.gsc`) ar
   - Mouse and aim sensitivity, invert, hold/toggle aim.
   - Volume, field of view, render scale, fullscreen.
   - FPS counter.
+- **Menus:** each game's zombies menu matches the original as closely as possible.
+  - **Sounds:** every menu plays its original hover, select and back sounds, with the lobby music looping until a game starts:
+    - World at War: `mouse_over` / `mouse_click` and "Brave Soldat".
+    - Black Ops: `uin_navigation_*` and `mus_zmb_mainmenu`.
+    - Black Ops II: `cac_main_nav` / `cac_submenu_edit_sel` / `cac_cmn_backout` and "Damned 100AE".
+  - **Black Ops:** the lobby sits in the frontend map's interrogation room, seen from the chair.
+    - The room is graded by `zombie_frontend_menus.vision`'s red film.
+    - The TV wall plays the frontend cinematic's zombie footage, bars and logos tile by tile, changing every few seconds as `frontend.gsc` does.
+  - **Black Ops II:** the lobby floats in the zombies menu's space backdrop from `ui_zm.ff`: the sun and flares, drifting asteroid belts, the moon, and the lava-cracked globe slowly turning.
+    - SELECT MAP moves the globe to the centre with each location's signpost pinned at its `mapstable.csv` coordinates.
+    - Click a pin, or use the arrows or arrow keys, to spin the globe to a location (with the original globe spin and map switch sounds).
+    - Locations not in this build are shown but can't be chosen.
+  - `npm run prepare:menus` exports and converts all of this from the installed games.
 - **Launching a map:** selecting a map opens its lobby without downloading the game pack. START GAME plays the installed game's original loading movie and soundtrack while downloading assets. The progress bar measures downloaded bytes, then completed preparation stages. Once the map is ready, SKIP INTRO starts immediately; otherwise it waits for the movie to end. Der Riese's original loading clip is a silent still frame and remains on screen while the map loads. Saved-game loading uses the same flow across both games. `npm run prepare:launch` converts the original movies on E:; the normal launcher also prepares them when necessary.
 - **Save game:** three named server slots per map, shared by everyone who has access to the site, with no extra sign-in. Pause → SAVE GAME, enter a name, then choose a slot. Resume from LOAD GAME on any browser or device. Saves keep live zombies, round progress, drops, timers and map state, with thumbnail and statistics. Files live under `local-data/saves/` on E: and persist across server restarts; existing browser saves import into empty slots once. A changed slot rejects stale writes from another device; overwrites and deletions retain a recovery backup.
 - **Character voices (Black Ops):** solo Kino plays as a random one of Dempsey, Nikolai, Takeo or Richtofen (add `&character=0`–`3` to pick), with that character's arms and voice. Lines follow `_zombiemode_audio.gsc`: kill types and their chances, kill streaks, weapon and favourite-weapon pickups, Pack-a-Punch, perks, power-ups, refused purchases, ammo warnings, going down and the level-start line. `npm run prepare:voice` rebuilds the voice files.
@@ -232,7 +254,7 @@ npm run test:bo2
 | **Effects** | Lightning "trail" elements are drawn as camera-facing sprites rather than true ribbons. |
 | **Sound ranges** | The extracted sound definitions have no min/max distances, so hearing ranges are chosen per sound type. |
 | **Saves** | Can't save mid-drink, during Pack-a-Punch, with a grenade in hand or during a burst. Save after the action finishes. |
-| **Multiplayer** | Online co-op for up to four players on the same server: a shared pre-game lobby, the host runs the match, and downed teammates enter last stand (30 s bleedout, revivable, back next round). Solo has no last stand: going down ends the game. Teammates' grenades and original muzzle-flash effects aren't shown yet. |
+| **Multiplayer** | Online co-op for up to four players on the same server: opt-in pre-game lobbies (join from the list or an invite link), the host runs the match, and downed teammates enter last stand (30 s bleedout, revivable, back next round). Solo has no last stand: going down ends the game. Teammates' grenades and original muzzle-flash effects aren't shown yet. |
 | **Other maps** | Shi No Numa and additional Black Ops / Black Ops II maps haven't been started. |
 | **Setup automation** | Der Riese extraction isn't scripted yet; see [Setup](#setup). |
 
@@ -373,7 +395,7 @@ npm test                 # Full suite: startup, gameplay, physics, weapons, save
 npm run test:der-riese   # Der Riese progression, perks, teleporters, Pack-a-Punch and all spawn routes
 npm run test:controllers # Input switching, mappings, menus, triggers and analog movement at 30–240 FPS
 npm run test:coop        # Host and guest Kino games through the relay: shared zombies, kills, doors, power, revive, game over
-npm run test:lobby       # Shared lobby: joining, characters, host-only start, load-in together, timeouts
+npm run test:lobby       # Lobbies: private by default, join/leave/invite, characters, host-only start, load-in together, timeouts
 npm run test:movement    # Crouch/prone, low cover, saves, controller tap/hold and native BO1 dives
 npm run test:dive        # Native trajectory/recovery, cooldown, ledges, collision events, grunts and character rigs
 npm run prepare:map      # Rebuild both maps' preload packs and zombie navigation

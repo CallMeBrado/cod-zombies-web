@@ -45,6 +45,9 @@ import {GameOverSequence} from './game-over.js';
 import {AscensionRules} from './bo1-ascension.js';
 import {VerrucktRules} from './waw-verruckt.js';
 import {VerrucktView} from './waw-verruckt-view.js';
+import {MenuAudio} from './menu-audio.js';
+import {Bo1Frontend} from './bo1-frontend.js';
+import {Bo2Menu} from './bo2-menu.js';
 const mapChoice=selectedMap();
 const bo2=mapChoice.game==='black-ops-2',blackOps=bo2||mapChoice.game==='black-ops';
 // The original overlay_low_health and hit_direction art (BO2's hit_direction_zm is additive).
@@ -115,11 +118,20 @@ lobby.nameFor=(player,mine)=>blackOps?characterNames[player.character??(mine?cha
 // character the lobby assigns. Starting a game is still a solo game.
 // Only the host starts: everyone in the lobby loads, then all go in together.
 let matchGo=null,lobbyMode=null;
-const presence=new LobbyPresence(mapChoice.id,{character:blackOps?character:null,
+const presence=new LobbyPresence(mapChoice.id,{character:blackOps?character:null,invite:new URL(location.href).searchParams.get('lobby'),
   onChange:shared=>{const me=shared.players.find(p=>p.id===shared.you);if(blackOps&&me&&me.character!==character&&!gameLoading){character=me.character;presence.character=character;}lobby.setShared(shared);syncLobbyStart(shared);},
-  onFull:full=>{lobby.setShared(null);$('message').textContent=`This lobby already has ${full.max} players. You can still play solo.`;},
+  onFull:full=>{$('message').textContent=`That lobby already has ${full.max} players. You can still play solo.`;},
   onStart:match=>{if(!['loading','starting','playing'].includes(state.mode))startGame(null,match);},
   onGo:()=>matchGo?.resolve()});
+// Co-op is opt-in: join another player's lobby from the list, leave it, or
+// share an invite link to this one (?lobby=).
+lobby.onJoin=id=>presence.move(id).then(error=>{if(error)$('message').textContent=error;});
+lobby.onLeave=()=>presence.move(null).then(error=>{if(error)$('message').textContent=error;});
+lobby.onInvite=()=>{
+  if(!presence.lobbyId)return;const url=new URL(location.href);url.searchParams.set('map',mapChoice.id);url.searchParams.set('lobby',presence.lobbyId);
+  const done=copied=>{$('message').textContent=(copied?'Invite link copied: ':'Invite link: ')+url.href+(/^(localhost|127\.|\[::1\])/.test(location.hostname)?' (friends on your network need this computer\'s network address instead of localhost)':'');};
+  navigator.clipboard?.writeText(url.href).then(()=>done(true),()=>done(false))??done(false);
+};
 function syncLobbyStart(shared){
   const others=shared.players.length>1,waiting=shared.match&&!shared.match.go&&shared.match.players.includes(shared.you);
   if(waiting&&matchGo?.loaded)launch.waiting(`Map ready · waiting for players (${shared.match.loaded.length}/${shared.match.players.length})`);
@@ -695,7 +707,7 @@ function frame(time) {
   if(game&&state.ready)buriedView?.update(game,paused?0:dt);
   requestAnimationFrame(frame);
 }
-window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get verrucktView(){return verrucktView;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
+window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get verrucktView(){return verrucktView;},get frontend(){return frontend;},get bo2Menu(){return bo2Menu;},get menuAudio(){return menuAudio;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
   dive:{telemetry:game?.lastDive,phase:game?.dive?.phase||'ready',weaponRecovering:!!game?.diveRecovery,audio:diveAudio?.diagnostics(),body:playerBody?.diagnostics()},
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,
@@ -712,6 +724,16 @@ Object.assign(window.wawPreview,{
   setDiveThirdPerson:on=>{diveThirdPerson=!!on;playerBody?.setThirdPerson(diveThirdPerson);cameraPose();return diveThirdPerson;}
 });
 if(bo2)window.bo2Preview=window.wawPreview;else if(blackOps)window.bo1Preview=window.wawPreview;
+// The original menu sounds and lobby music; Black Ops' lobby sits in the
+// frontend's interrogation room.
+const inLobby=()=>document.body.dataset.menuContext==='start'&&!['loading','starting','playing'].includes(state.mode);
+const menuAudio=new MenuAudio(bo2?'bo2':blackOps?'bo1':'waw',{volume:()=>settings.value.volume});menuAudio.attach($('overlay'));
+setInterval(()=>menuAudio.music(state.lobbyReady&&inLobby()&&!document.hidden),250);
+const frontend=blackOps&&!bo2&&mapChoice.engine!=='dead-ops'?new Bo1Frontend({visible:inLobby}):null;
+if(frontend)menuAudio.ready.then(menu=>menu?.world&&frontend.load(menu)).catch(error=>console.warn('Black Ops frontend unavailable:',error));
+// Black Ops II: the zombies menu's space backdrop and location globe.
+let bo2Menu=null;
+if(bo2)menuAudio.ready.then(menu=>{if(menu?.art?.globe_map_zm)bo2Menu=new Bo2Menu(menu,{maps:BO2_MAPS,sounds:menuAudio,visible:inLobby,onChoose:map=>lobby.choose(map)});}).catch(error=>console.warn('Black Ops II menu unavailable:',error));
 async function bootLobby(){
   // Only menu artwork, fonts and the save catalogue are needed before Start.
   saves.prepare().then(()=>{$('resume-save').hidden=pauseMenu.context==='pause'||!saves.count();}).catch(error=>{state.savesError=error.message;});
