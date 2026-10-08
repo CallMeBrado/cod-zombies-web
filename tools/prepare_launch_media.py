@@ -22,6 +22,7 @@ MOVIES = {
     'shangri-la': ('Call of Duty Black Ops', 'zombie_temple_load'),
     'dead-ops': ('Call of Duty Black Ops', 'zombietron_load'),
     'buried': ('Call of Duty Black Ops II', 'zm_buried_load'),
+    'origins': ('Call of Duty Black Ops II', 'zm_tomb_load'),
     'die-rise': ('Call of Duty Black Ops II', 'zm_highrise_load'),
 }
 # BO2's loading movies are silent video; the soundtrack is the streamed
@@ -31,6 +32,7 @@ DATA = ROOT / 'local-data'
 SOUNDTRACKS = {
     'buried': [DATA / 'bo2-dlc/sound/bik/load/zm_buried_load_lr.SN65.pc.snd.flac',
                DATA / 'bo2-english/english/sound/bik/load/zm_buried_load_c.SN65.pc.snd.flac'],
+    'origins': [DATA / 'bo2-origins/sound/bik/load/zm_tomb_load_lr.SN65.pc.snd.flac', DATA / 'bo2-origins-english/english/sound/bik/load/zm_tomb_load_c.SN65.pc.snd.flac'],
     'die-rise': [DATA / 'bo2-die-rise/sound/zmb/level/zm_highrise/load_movie.SL65.pc.snd.flac'],
 }
 parser=argparse.ArgumentParser()

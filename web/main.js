@@ -1,3 +1,6 @@
+import {OriginsView} from './bo2-origins-view.js';
+import {attachWeaponModels} from './weapon-attachments.js';
+import {OriginsEngine} from './bo2-origins-engine.js';
 import * as THREE from 'three';
 import { get,loadMap,model,cloneModel,originalAnimation,OriginalAudio,shadeModel,applyHideTags,weaponHeat } from './assets.js';
 import { CollisionWorld } from './collision.js';
@@ -470,7 +473,7 @@ function updateDrop(drop,v){
   updatePickupView(drop,v,game.time,effects);
 }
 async function prepareBox(manifest){
-  for(const [name,d]of Object.entries(manifest.weapons)){const object=cloneModel(await model(d.worldModel));applyHideTags(object,d.hideTags);shadeModel(object,[.7,.7,.7]);boxTemplates.set(name,object);}
+  for(const [name,d]of Object.entries(manifest.weapons)){const object=cloneModel(await model(d.worldModel));applyHideTags(object,d.hideTags);if(d.originsElement)await attachWeaponModels(object,d,'World');shadeModel(object,[.7,.7,.7]);boxTemplates.set(name,object);}
   for(const e of manifest.entities.filter(e=>e.targetname==='treasure_chest_use')){
     // Buried's box lid, leave and arrive play the zbarrier's own clips (BuriedView).
     if(bo2){const item=dynamic.get(e.target)?.[0];if(!item)throw new Error('Buried mystery box missing.');const v=createBoxView({object:new THREE.Object3D(),entity:item.entity},item.entity,boxTemplates,effects,180);scene.add(v.weaponRoot,v.glow);boxVisuals.set(e.target,v);continue;}
@@ -544,7 +547,7 @@ async function init() {
   if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=characterArms[character];
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);zombieVox=new ZombieVox(audio,ZOMBIE_VOX[bo2?'black-ops-2':blackOps?'black-ops':mapChoice.id==='der-riese'?'der-riese':'nacht']);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);weaponView.effects=effects;actors=new ZombieActors(scene,map,presentation);actors.onNote=(enemy,alias)=>{if(!paused)zombieVox?.note(enemy,alias,game.time);};actors.active=visuals;
   if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
-  if(bo2){buriedView=new (mapChoice.id==='tranzit'?TranzitView:mapChoice.id==='nuketown'?NuketownView:mapChoice.id==='die-rise'?DieRiseView:BuriedView)(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
+  if(bo2){buriedView=new (mapChoice.id==='origins'?OriginsView:mapChoice.id==='tranzit'?TranzitView:mapChoice.id==='nuketown'?NuketownView:mapChoice.id==='die-rise'?DieRiseView:BuriedView)(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
@@ -560,9 +563,10 @@ async function init() {
   if(mapChoice.id==='shangri-la'){shangriView=new ShangriView(scene,map,dynamic,effects);await shangriView.prepare(manifest,presentation);}
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
   await prepared(4,'Preparing map collision, navigation and audio…');
-  game=new (mapChoice.id==='shangri-la'?ShangriEngine:mapChoice.id==='moon'?MoonEngine:mapChoice.id==='shi-no-numa'?ShiNoNumaGame:mapChoice.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
+  game=new (mapChoice.id==='origins'?OriginsEngine:mapChoice.id==='shangri-la'?ShangriEngine:mapChoice.id==='moon'?MoonEngine:mapChoice.id==='shi-no-numa'?ShiNoNumaGame:mapChoice.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     templeView:({delta})=>{state.yaw+=delta;},
     templeDropCycle:drop=>{const v=dropVisuals.get(drop),template=dropTemplates.get(drop.type);if(v&&template){v.object.clear();v.object.add(cloneModel(template));}},
+    originsTeleport:e=>{state.yaw=e.yaw;state.pitch=0;cameraPose();},
     moonTeleport:e=>{state.yaw=e.yaw;state.pitch=0;cameraPose();},
     dialog:e=>voice?.speak(e).catch(console.warn),
     platformTurn:e=>{state.yaw+=e.delta;},buriedItem:e=>buriedView?.item(e),chalkDust:target=>buriedView?.chalkDust(target,game.time),

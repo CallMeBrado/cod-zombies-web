@@ -55,10 +55,10 @@ export class BuriedView {
   // elsewhere, its "away" piece (p6_anim_zm_magic_box_fake). The teddy bear
   // replaces the weapon when the box moves.
   async prepareBoxes(manifest){
-    const fake=await model('p6_anim_zm_magic_box_fake').catch(()=>null),teddy=await model('zombie_teddybear').catch(()=>null);
+    const fake=this.manifest.map.boxFakeModel===null?null:await model(this.manifest.map.boxFakeModel||'p6_anim_zm_magic_box_fake').catch(()=>null),teddy=await model('zombie_teddybear').catch(()=>null);
     for(const e of manifest.entities.filter(e=>e.targetname==='treasure_chest_use')){
       const item=this.dynamic.get(e.target)?.[0];if(!item)continue;
-      const posed=new Posed(item.object);for(const n of ['open','close','leave','arrive'])try{await posed.add('o_zombie_magic_box_'+n);}catch(error){console.warn(error);}
+      const posed=new Posed(item.object);for(const n of ['open','close','leave','arrive'])try{await posed.add((this.manifest.map.boxAnimationPrefix||'o_zombie_magic_box_')+n);}catch(error){console.warn(error);}
       const origin=item.entity.origin.split(/\s+/).map(Number),yaw=Number((item.entity.angles||'0 0 0').split(/\s+/)[1]);
       const light=this.map.illumination([origin[0],origin[1],origin[2]+20]);
       let away=null;if(fake){away=cloneModel(fake);shadeModel(away,light);away.position.fromArray(origin);away.rotation.set(0,0,THREE.MathUtils.degToRad(yaw));this.scene.add(away);}
@@ -140,11 +140,11 @@ export class BuriedView {
     const clips=this.manifest.map.boxClips||{},float=this.boxSettings.floatHeight||40;
     for(const [target,v]of this.boxes){
       const box=game.boxes.get(target),active=target===game.activeBox||!!game.powerup.fire_sale;let clip=null,time=0,shown=active||['cycling','offered','closing'].includes(box.phase);
-      if(box.phase==='cycling'||box.phase==='offered'||box.phase==='teddy'){clip='o_zombie_magic_box_open';time=game.time-box.started;}
-      else if(box.phase==='closing'){clip='o_zombie_magic_box_close';time=game.time-box.closedAt;}
-      else if(box.phase==='leaving'){time=game.time-box.started;shown=time<(clips.leave||7.5);clip='o_zombie_magic_box_leave';}
-      else if(box.phase==='arriving'){clip='o_zombie_magic_box_arrive';time=game.time-box.started;shown=true;}
-      else if(active){clip='o_zombie_magic_box_close';time=99;}
+      if(box.phase==='cycling'||box.phase==='offered'||box.phase==='teddy'){clip=(this.manifest.map.boxAnimationPrefix||'o_zombie_magic_box_')+'open';time=game.time-box.started;}
+      else if(box.phase==='closing'){clip=(this.manifest.map.boxAnimationPrefix||'o_zombie_magic_box_')+'close';time=game.time-box.closedAt;}
+      else if(box.phase==='leaving'){time=game.time-box.started;shown=time<(clips.leave||7.5);clip=(this.manifest.map.boxAnimationPrefix||'o_zombie_magic_box_')+'leave';}
+      else if(box.phase==='arriving'){clip=(this.manifest.map.boxAnimationPrefix||'o_zombie_magic_box_')+'arrive';time=game.time-box.started;shown=true;}
+      else if(active){clip=(this.manifest.map.boxAnimationPrefix||'o_zombie_magic_box_')+'close';time=99;}
       v.item.object.visible=shown;if(v.away)v.away.visible=!shown;
       if(shown&&clip)v.posed.pose(clip,time);
       // treasure_chest_move(): the bear flies 500 up over 4 s (3 s of it

@@ -73,7 +73,10 @@
     "test:moon": "node tools/test_moon.mjs",
     "extract:shangri-la": "python -B tools/extract_bo1.py --map shangri-la",
     "prepare:shangri-la": "python -B tools/prepare_bo1.py --map shangri-la && node --max-old-space-size=8192 tools/build_preload.mjs --map shangri-la",
-    "test:shangri-la": "node tools/test_effect_velocity.mjs && node --max-old-space-size=8192 tools/test_shangri.mjs && node tools/test_shangri_server.mjs"
+    "test:shangri-la": "node tools/test_effect_velocity.mjs && node --max-old-space-size=8192 tools/test_shangri.mjs && node tools/test_shangri_server.mjs",
+    "extract:origins": "python -B tools/extract_origins.py",
+    "prepare:origins": "python -B tools/prepare_origins.py && python -B tools/prepare_launch_media.py && node --max-old-space-size=8192 tools/build_preload.mjs --map origins",
+    "test:origins": "node --max-old-space-size=8192 tools/test_origins.mjs && node tools/test_origins_server.mjs && node tools/test_launch.mjs && node tools/test_server_saves.mjs && node tools/test_lobby.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

@@ -30,12 +30,17 @@ export async function validateMapModels(id){
   }
   const clean=name=>name.replace(/^,/,''),assetUrl=relative=>'/data/'+relative.split('/').map(encodeURIComponent).join('/');
   const packed=(folder,name,suffix)=>zones.map(z=>assetUrl(`${z}/${folder}/${clean(name)}${suffix}`)).find(url=>urls.has(url));
+  for(const effect of Object.values(presentation.effects||{}))for(const element of effect.elements||[])for(const url of element.textures||[]){
+    const resolved=new URL(url,'http://asset'),key=resolved.pathname.split('/').map(s=>encodeURIComponent(decodeURIComponent(s))).join('/');
+    assert(!resolved.hash&&!resolved.search&&urls.has(key),'Effect texture URL missing from pack: '+effect.name+' / '+url);
+  }
   const names=new Set([...Object.values(presentation.powerups||{}),...world.staticModels.map(m=>m.model),
     ...Object.values(manifest.weapons).map(w=>w.secondaryModel).filter(Boolean),
     ...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),
     ...(manifest.characterArms||[]),presentation.actors?.body,presentation.actors?.head,
     presentation.gore?.neckModel,presentation.box?.teddyModel,...(manifest.map?.propModels||[])]);
   for(const weapon of Object.values(manifest.weapons||{})){
+    if(weapon.originsElement)for(const [key,value]of Object.entries(weapon))if(/^attach(?:View|World)Model\d+$/.test(key)&&value)names.add(value);
     for(const key of ['gunModel','knifeModel','worldModel'])if(weapon[key])names.add(weapon[key]);
     if(weapon.weaponType==='projectile'&&weapon.projectileModel)names.add(weapon.projectileModel);
   }

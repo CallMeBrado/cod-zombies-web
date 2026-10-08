@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import {MAPS,BO1_MAPS} from '../web/maps.js';
+import {MAPS,BO1_MAPS,BO2_MAPS} from '../web/maps.js';
 import {createLobbyApi} from './lobby-api.mjs';
 
 // Every browser starts in its own lobby; co-op is opt-in (join, invite link).
-let clock=0;const api=createLobbyApi({maps:[...MAPS,...BO1_MAPS],now:()=>clock});
+let clock=0;const api=createLobbyApi({maps:[...MAPS,...BO1_MAPS,...BO2_MAPS],now:()=>clock});
 const server=http.createServer(async(req,res)=>{if(!await api(req,res,new URL(req.url,'http://localhost'))){res.writeHead(404);res.end();}});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
 const call=async(map,path,body={},headers={})=>{const r=await fetch(`${base}/api/lobby/${map}/${path}`,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)});return {status:r.status,value:r.status===204?null:await r.json()};};
@@ -51,6 +51,7 @@ const back=(await move('kino',invited.you,null)).value;assert.notEqual(back.lobb
 assert.equal((await poll('kino',a.you)).players.length,1);
 // Other maps are separate; World at War players are numbered without characters.
 const n=await join('nacht');assert.equal(me(n).character,null);assert.equal(n.players.length,1);assert.equal(n.open.length,0);
+const origins=await join('origins',2);assert.equal(me(origins).character,2);assert.equal(origins.players.length,1);assert.equal(origins.open.length,0);assert.equal((await call('origins',origins.you+'/leave')).status,204);
 // A fifth player finds the lobby full.
 const c=await join('kino',null,{lobby:a.lobby}),d=await join('kino',null,{lobby:a.lobby}),e=await join('kino',null,{lobby:a.lobby});
 assert.equal((await poll('kino',a.you)).players.length,4);assert.equal(new Set((await poll('kino',a.you)).players.map(p=>p.character)).size,4,'Four players, four characters');

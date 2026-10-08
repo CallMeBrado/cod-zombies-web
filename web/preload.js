@@ -2,6 +2,9 @@
 // Parsed assets and decoded models remain in memory across solo restarts.
 import {selectedMap} from './maps.js';
 const files=new Map(),jsonFiles=new Map();
+// Exported effects can contain literal '&' while pack indexes escape it.
+// Normalize each segment independently so encoded slashes cannot change paths.
+export function assetPath(path){return path.split('/').map(segment=>{try{return encodeURIComponent(decodeURIComponent(segment));}catch{return segment;}}).join('/');}
 export const preloadState={ready:false,files:0,bytes:0,loadedBytes:0,totalBytes:0,completedPacks:0,downloadMs:0,url:null,hits:0,networkFallbacks:0};
 export async function readPackResponse(response,expectedBytes,onBytes=()=>{}){
   if(!response.ok)throw new Error(`Map preload failed (${response.status}).`);
@@ -39,7 +42,7 @@ export async function preloadAssets(progress=()=>{},onDownload=()=>{}){
   if(base>buffer.byteLength)throw new Error('Incomplete prepared map.');
   const index=JSON.parse(new TextDecoder().decode(new Uint8Array(buffer,12,length)));
   for(const entry of index){if(entry.offset<0||entry.length<0||base+entry.offset+entry.length>buffer.byteLength)throw new Error('Incomplete prepared map.');
-    files.set(entry.url,new Uint8Array(buffer,base+entry.offset,entry.length));}
+    files.set(assetPath(entry.url),new Uint8Array(buffer,base+entry.offset,entry.length));}
   totalBytes+=buffer.byteLength;completed++;preloadState.completedPacks=completed;report();
   }
   const workers=Array.from({length:Math.min(3,packs.length)},async()=>{while(next<packs.length)await download(packs[next++]);});
@@ -48,14 +51,14 @@ export async function preloadAssets(progress=()=>{},onDownload=()=>{}){
   progress('Preparing map from loaded assets…');
 }
 export async function assetResponse(url){
-  const resolved=new URL(url,location.href),bytes=files.get(resolved.pathname);
+  const resolved=new URL(url,location.href),bytes=files.get(assetPath(resolved.pathname));
   if(resolved.origin===location.origin&&bytes){preloadState.hits++;return new Response(bytes);}
   if(preloadState.ready&&resolved.origin===location.origin&&resolved.pathname.startsWith('/data/'))return new Response('Asset not present in this prepared build.',{status:404});
   preloadState.networkFallbacks++;
   return fetch(url);
 }
 export async function assetData(url,json=false){
-  const key=new URL(url,location.href).pathname,bytes=files.get(key);
+  const resolved=new URL(url,location.href),key=assetPath(resolved.pathname),bytes=resolved.origin===location.origin?files.get(key):null;
   if(bytes){
     preloadState.hits++;
     if(json){if(!jsonFiles.has(key))jsonFiles.set(key,JSON.parse(new TextDecoder().decode(bytes)));return jsonFiles.get(key);}

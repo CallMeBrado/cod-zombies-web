@@ -5,6 +5,7 @@ import {Arthur} from './bo2-arthur.js';
 import {NuketownRules} from './bo2-nuketown.js';
 import {TranzitRules} from './bo2-tranzit.js';
 import {DieRiseRules} from './bo2-die-rise.js';
+import {OriginsRules} from './bo2-origins.js';
 import {ACTOR_CONTENTS} from './collision.js';
 
 export const BO2_CHARACTERS=['Russman','Stuhlinger','Misty','Marlton'];
@@ -259,7 +260,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     if(!navigation)return super.walkableLink(p,q,false);
     // Nuketown's perimeter has player-only clips; the native zombie routes
     // pass those. Keep the actor mask throughout the T6 physics walk.
-    if(['nuketown','tranzit','die-rise'].includes(this.data.map.id)&&this.collision.mask!==ACTOR_CONTENTS)return this.collision.actor(()=>this.walkableLink(p,q,navigation));
+    if(['nuketown','tranzit','die-rise','origins'].includes(this.data.map.id)&&this.collision.mask!==ACTOR_CONTENTS)return this.collision.actor(()=>this.walkableLink(p,q,navigation));
     const length=Math.hypot(q[0]-p[0],q[1]-p[1]);if(length>1024||Math.abs(q[2]-p[2])>256)return false;
     let at=p.slice(),velocity=0;
     for(let i=0;i<Math.ceil(length/.475)+120;i++){
@@ -308,7 +309,8 @@ export class BlackOps2Engine extends BlackOpsEngine {
     return super.nearest(position,visible,regular,options);
   }
   constructor(manifest,collision,paths,events={},presentation={}){
-    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='tranzit'?new TranzitRules(g):manifest.map.id==='die-rise'?new DieRiseRules(g):manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
+    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='origins'?new OriginsRules(g):manifest.map.id==='tranzit'?new TranzitRules(g):manifest.map.id==='die-rise'?new DieRiseRules(g):manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
+    if(manifest.map.id==='origins')this.mapRules.installInteractions();
     if(manifest.map.id==='tranzit'){this.mapRules.installInteractions();const trace=collision.trace.bind(collision);
       collision.trace=(start,end,half=[0,0,0],mask=collision.mask,ignoreTerrain=false)=>this.mapRules.busTrace(start,end,half,trace(start,end,half,mask,ignoreTerrain));}
     // Die Rise's elevator cars and escape pod are moving solid platforms.

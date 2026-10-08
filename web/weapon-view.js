@@ -1,3 +1,4 @@
+import {attachWeaponModels} from './weapon-attachments.js';
 import * as THREE from 'three';
 import {model,cloneModel,originalAnimation,shadeModel,applyHideTags} from './assets.js';
 const DIAL_AXIS=new THREE.Vector3(0,1,0);
@@ -44,6 +45,7 @@ export class WeaponView {
     // bind positions; hand tracks use their authored local positions.
     gun.traverse(bone=>{if(bone.isBone)bone.userData.animationTranslationBase=bone.position.toArray();});
     object.getObjectByName('tag_weapon').add(gun);
+    if(weapon.definition.originsElement)await attachWeaponModels(gun,weapon.definition);
     if(weapon.definition.secondaryModel){const second=cloneModel(await model(weapon.definition.secondaryModel));applyHideTags(second,weapon.definition.hideTags);second.traverse(b=>{if(b.isBone)b.userData.animationTranslationBase=b.position.toArray();});(object.getObjectByName(weapon.definition.secondaryTag)||object.getObjectByName('tag_weapon')).add(second);}
     const knife=knifeTemplate?cloneModel(knifeTemplate):new THREE.Group();knife.name='Original Ka-Bar knife';(object.getObjectByName('tag_knife_attach')||object.getObjectByName('tag_weapon')).add(knife);knife.visible=false;
     const root=new THREE.Group(),orientation=new THREE.Group();

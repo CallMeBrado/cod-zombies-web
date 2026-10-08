@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 from zipfile import ZipFile
 import subprocess
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / 'local-data'
@@ -71,7 +72,7 @@ def load_effect(source, zones, effect_blending=False):
                     subprocess.run([str(ROOT/'.tools/oat/ImageConverter.exe'),'--no-color',str(raw)],check=True,stdout=subprocess.DEVNULL)
                     target = raw.with_suffix('.dds')
             if target:
-                textures.append('/data/'+target.relative_to(DATA).as_posix())
+                textures.append('/data/'+quote(target.relative_to(DATA).as_posix(), safe='/'))
         element['textures'] = textures
     return effect
 

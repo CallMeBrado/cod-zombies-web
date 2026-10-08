@@ -507,6 +507,47 @@ remaining ground fire uses native flame artwork with a reconstructed emitter.
 The eclipse/EE quest, mud slowdown, spike traps and water-wheel machinery
 are not fully implemented. These limitations do not prevent round play.
 
+## Black Ops II: Origins
+
+Select Origins in the Black Ops II map menu, or open
+`/black-ops-2/?map=origins`. This first playable build uses the owned `zm_tomb`
+map, original characters, Mauser C96, weapons, models, animations, lightmaps,
+sounds and loading movie. The movie includes both the music/effects and
+English dialogue stems mixed to stereo. Assets load only after Start Game.
+
+Implemented: round play, native barrier routes, doors and local spawns, six
+generator captures, local perk power, all-six-generator Pack-a-Punch, the
+Origins mystery box, mud slowdown, shovel/dig spots, records and gramophone,
+excavation access, Crazy Place portals and a first Panzer implementation.
+Map progression and live special enemies are included in named server saves.
+The normal testing menu includes Origins weapons and staff variants.
+
+This is an **in-development reconstruction**, not a complete Origins port.
+The giant robots, tank, shield/Maxis Drone, generator attacks, Easter egg and
+staff upgrade quests are not implemented. Wind parts in robot heads are not
+yet obtainable through normal play. Staff assembly and basic elemental
+attacks are present for testing; charge attacks, snow-dependent digging,
+golden-shovel rewards and parts from the plane/tank are unfinished. Wunderfizz
+uses an immediate random perk selection, and the Panzer has simplified
+armor/flamethrower behavior without the claw attack. Animated weather and
+the vista's scrolling smoke shader are also unfinished. These limitations do
+not prevent standard rounds, generators or Pack-a-Punch.
+
+To reproduce the assets, apply `tools/extend_origins_exporter.py` **after**
+`tools/extend_bo2_exporter.py`, then rebuild the local OAT Unlinker. Origins
+requires the `dlczm4.ipak` lookup and its staff/map effect exports. Run
+`npm run extract:origins`, `npm run prepare:origins` and `npm run test:origins`.
+Shared BO2 exports and the prepared Buried base must already be present.
+Assets, preload caches, scratch files, logs and saves stay on E: outside Git.
+
+The Origins tests check the shipped asset pack, 30–240 FPS floor stability,
+three complete starting-room rounds, generator timing/decay and local power,
+doors, Pack-a-Punch, excavation items, portals, Panzer spawning, full session
+restore, HTTP routes, stereo media, named saves and lobby registration.
+Staff assembly tests supply parts as a fixture; they do not claim the
+unfinished collection quests work end to end. Browser smoke checks cover
+loading/skip, firing/reloading, movement and map interactions.
+
 ## Project layout
 
 ```

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {LaunchGate} from '../web/launch-screen.js';
-import {readPackResponse,preloadAssets,preloadState,assetData} from '../web/preload.js';
+import {readPackResponse,preloadAssets,preloadState,assetData,assetPath} from '../web/preload.js';
 import {mediaRange} from './media-response.mjs';
 
 for(const order of [['loaded','ended'],['ended','loaded']]){
@@ -25,7 +25,7 @@ function pack(url,length){
   const index=new TextEncoder().encode(JSON.stringify([{url,offset:0,length}])),bytes=new Uint8Array(12+index.length+length),view=new DataView(bytes.buffer);
   bytes.set(new TextEncoder().encode('WWPK'));view.setUint32(4,1,true);view.setUint32(8,index.length,true);bytes.set(index,12);bytes.fill(8,12+index.length);return bytes;
 }
-const small=pack('/data/small.bin',30),large=pack('/data/large.bin',9000),packs=[{url:'/small.pack',bytes:small.length},{url:'/large.pack',bytes:large.length}];
+const small=pack('/data/small.bin',30),large=pack('/data/texture%26sprite.dds',9000),packs=[{url:'/small.pack',bytes:small.length},{url:'/large.pack',bytes:large.length}];
 const oldFetch=globalThis.fetch,oldDocument=globalThis.document,oldLocation=globalThis.location,updates=[];
 try{
   globalThis.document={documentElement:{dataset:{preload:encodeURIComponent(JSON.stringify(packs))}}};
@@ -36,6 +36,13 @@ try{
   assert(updates.some(u=>u.loadedBytes>0&&u.completedPacks===0),'Progress must advance while a pack is still streaming');
   const firstFinished=updates.find(u=>u.completedPacks===1);assert(firstFinished.loadedBytes/firstFinished.totalBytes<.1,'Progress must measure unequal pack bytes, not count completed packs');
   for(let i=1;i<updates.length;i++)assert(updates[i].loadedBytes>=updates[i-1].loadedBytes);
-  assert.equal((await assetData('/data/large.bin')).byteLength,9000);
+  assert.equal((await assetData('/data/texture&sprite.dds')).byteLength,9000);
+  assert.equal((await assetData('/data/texture%26sprite.dds')).byteLength,9000);
+  assert.equal(preloadState.networkFallbacks,0,'Raw and escaped native texture names use the same packed bytes');
+  assert.notEqual(assetPath('/data/a%2Fb'),assetPath('/data/a/b'),'Encoded slash must remain inside its segment');
+  assert.equal(assetPath('/data/a%2526b'),'/data/a%2526b','Decode only one level');
+  let requested;globalThis.fetch=async url=>{requested=url;return new Response(new Uint8Array([1,2]));};
+  assert.equal((await assetData('https://example.test/data/texture%26sprite.dds')).byteLength,2);
+  assert.equal(requested,'https://example.test/data/texture%26sprite.dds','Cross-origin URLs must not use local pack entries');
 }finally{globalThis.fetch=oldFetch;globalThis.document=oldDocument;globalThis.location=oldLocation;}
 console.log('Launch checks passed: both completion orders, ready-only skip, single start, streamed byte progress, unequal packs, truncation failures and movie byte ranges.');

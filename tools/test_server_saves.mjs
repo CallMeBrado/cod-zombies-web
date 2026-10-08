@@ -26,5 +26,7 @@ try{
   const importer=new ServerSaveStore(local,maps,fetcher);await importer.prepare();assert.equal(importer.get('kino',1).state.player.points,7650);await importer.remove('kino',1);await importer.prepare();assert.equal(importer.get('kino',1),null,'Deleted imported saves must not reappear');
   const swamp={...save,map:'shi-no-numa',title:'Shi No Numa',name:'Shi registration test',slot:2,state:{...save.state,inventory:[{name:'zombie_colt',clip:8,reserve:32}]}};
   await browserA.put('shi-no-numa',2,swamp);await browserB.refresh();assert.deepEqual(browserB.get('shi-no-numa',2).state,swamp.state);await browserB.remove('shi-no-numa',2);
+  const origins={...save,map:'origins',title:'Origins',name:'Origins progression test',slot:1,state:{...save.state,rules:{generators:{1:{phase:'on',progress:100}},collected:['gramophone_vinyl_player'],shovel:true}}};
+  await browserA.put('origins',1,origins);await browserB.refresh();assert.deepEqual(browserB.get('origins',1).state,origins.state);await browserB.remove('origins',1);
   console.log('Server saves passed: shared names/full state across browsers, disk persistence, stale-device conflicts, backups, validation and one-time browser migration. Test files: '+directory);
 }finally{server.close();}
