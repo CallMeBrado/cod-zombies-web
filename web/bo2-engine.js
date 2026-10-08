@@ -4,6 +4,7 @@ import {BuriedEquipment} from './bo2-equipment.js';
 import {Arthur} from './bo2-arthur.js';
 import {NuketownRules} from './bo2-nuketown.js';
 import {TranzitRules} from './bo2-tranzit.js';
+import {DieRiseRules} from './bo2-die-rise.js';
 import {ACTOR_CONTENTS} from './collision.js';
 
 export const BO2_CHARACTERS=['Russman','Stuhlinger','Misty','Marlton'];
@@ -254,10 +255,11 @@ export class BlackOps2Engine extends BlackOpsEngine {
     return at;
   }
   walkableLink(p,q,navigation=false){
+    if(this.kinematicPaths)return this.kinematicLink(p,q,navigation?8:16);
     if(!navigation)return super.walkableLink(p,q,false);
     // Nuketown's perimeter has player-only clips; the native zombie routes
     // pass those. Keep the actor mask throughout the T6 physics walk.
-    if(['nuketown','tranzit'].includes(this.data.map.id)&&this.collision.mask!==ACTOR_CONTENTS)return this.collision.actor(()=>this.walkableLink(p,q,navigation));
+    if(['nuketown','tranzit','die-rise'].includes(this.data.map.id)&&this.collision.mask!==ACTOR_CONTENTS)return this.collision.actor(()=>this.walkableLink(p,q,navigation));
     const length=Math.hypot(q[0]-p[0],q[1]-p[1]);if(length>1024||Math.abs(q[2]-p[2])>256)return false;
     let at=p.slice(),velocity=0;
     for(let i=0;i<Math.ceil(length/.475)+120;i++){
@@ -266,8 +268,34 @@ export class BlackOps2Engine extends BlackOpsEngine {
       at=r.grounded?this.projectGround(r.position):r.position;if(r.grounded)velocity=0;if(at[2]<Math.min(p[2],q[2])-72)return false;
     }return false;
   }
+  // Die Rise's leaning towers are floored with creased meshes that catch a
+  // swept box. Its authored node links are followed along the floor instead:
+  // a move holds while the floor continues (steps of at most 22 units) and
+  // nothing stands at chest height; otherwise the physics walk takes over.
+  get kinematicPaths(){return !!this.data.map.kinematicPaths;}
+  kinematicStep(from,to){
+    return this.collision.actor(()=>{
+      if(this.collision.trace([from[0],from[1],from[2]+40],[to[0],to[1],from[2]+40],[6,6,12]).fraction<1)return null;
+      const top=[to[0],to[1],from[2]+22],floor=this.collision.trace(top,[to[0],to[1],from[2]-48],[0,0,0]);
+      if(floor.fraction===1||floor.allSolid||floor.normal[2]<.5)return null;
+      return floor.end;
+    });
+  }
+  kinematicLink(p,q,spacing=8){
+    const length=Math.hypot(q[0]-p[0],q[1]-p[1]);if(length>1024||Math.abs(q[2]-p[2])>256)return false;
+    let at=p.slice();const n=Math.max(1,Math.ceil(length/spacing));
+    for(let i=1;i<=n;i++){const t=i/n,next=this.kinematicStep(at,[p[0]+(q[0]-p[0])*t,p[1]+(q[1]-p[1])*t]);if(!next)return false;at=next;}
+    return Math.abs(at[2]-q[2])<24;
+  }
   advancePath(e,dt,target){
     if(this.mapRules.startTraversal?.(e))return false;
+    if(this.kinematicPaths&&!e.velocityZ){
+      let destination=e.path[0]||target,dx=destination[0]-e.position[0],dy=destination[1]-e.position[1],length=Math.hypot(dx,dy);
+      while(length<1&&Math.abs(destination[2]-e.position[2])<18&&e.path.length){e.path.shift();destination=e.path[0]||target;dx=destination[0]-e.position[0];dy=destination[1]-e.position[1];length=Math.hypot(dx,dy);}
+      if(length<1&&Math.abs(destination[2]-e.position[2])<18)return true;
+      const step=Math.min(e.speed*dt,length),next=length?this.kinematicStep(e.position,[e.position[0]+dx/length*step,e.position[1]+dy/length*step]):null;
+      if(next){e.angle=Math.atan2(dy,dx);e.position=next;e.velocityZ=0;return Math.hypot(next[0]-target[0],next[1]-target[1])<1&&Math.abs(next[2]-target[2])<18;}
+    }
     const done=super.advancePath(e,dt,target);
     if(e.velocityZ===0){const floor=this.projectGround(e.position);if(e.position[2]-floor[2]>18)e.position=floor;}
     return done;
@@ -280,9 +308,12 @@ export class BlackOps2Engine extends BlackOpsEngine {
     return super.nearest(position,visible,regular,options);
   }
   constructor(manifest,collision,paths,events={},presentation={}){
-    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='tranzit'?new TranzitRules(g):manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
+    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='tranzit'?new TranzitRules(g):manifest.map.id==='die-rise'?new DieRiseRules(g):manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
     if(manifest.map.id==='tranzit'){this.mapRules.installInteractions();const trace=collision.trace.bind(collision);
       collision.trace=(start,end,half=[0,0,0],mask=collision.mask,ignoreTerrain=false)=>this.mapRules.busTrace(start,end,half,trace(start,end,half,mask,ignoreTerrain));}
+    // Die Rise's elevator cars and escape pod are moving solid platforms.
+    if(manifest.map.id==='die-rise'){this.mapRules.installInteractions();const trace=collision.trace.bind(collision);
+      collision.trace=(start,end,half=[0,0,0],mask=collision.mask,ignoreTerrain=false)=>this.mapRules.platformTrace(start,end,half,trace(start,end,half,mask,ignoreTerrain));}
     if(manifest.map.id!=='buried')return;
     // Only original, authored hedge gates contribute these solid bounds.
     for(const hull of manifest.map.collisionHulls||[])if(!collision.brushes.some(b=>b.target===hull.target))collision.add(hull,[0,0,0],hull.target);
@@ -348,6 +379,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     const previous=this.weapon;this.inventory.push(this.makeWeapon(name));this.slot=this.inventory.length-1;this.beginSwitch(previous);
   }
   damagePlayer(amount,options={}){
+    if(!this.mods?.god&&!this.mapRules.reviveDue&&this.mapRules.interceptDown?.(amount,options))return;
     const r=this.mapRules,from=options.from;if(r.shield>0&&options.enemy&&from){const direction=Math.atan2(from[1]-this.player.position[1],from[0]-this.player.position[0]);
       if(Math.cos(direction-this.yaw)<-.25){r.shield--;this.emit('sound',{alias:'wpn_riotshield_hit'});if(!r.shield)this.message('Zombie Shield broken');return;}}
     return super.damagePlayer(amount,options);
@@ -364,16 +396,17 @@ export class BlackOps2Engine extends BlackOpsEngine {
     }
   }
   spawnEnemy(){
-    if(this.mapRules.spawnEnemy)return this.mapRules.spawnEnemy();
+    // A map's own spawner returns false to leave a round to the shared rules.
+    if(this.mapRules.spawnEnemy){const handled=this.mapRules.spawnEnemy();if(handled!==false)return;}
     const before=this.nextId;
-    const spawners=this.enabledSpawners(),inside=spawners.filter(e=>e.nativeNoteworthy==='riser_location');
+    const spawners=this.enabledSpawners(),inside=spawners.filter(e=>e.nativeNoteworthy==='riser_location'||e.nativeNoteworthy==='find_flesh');
     const reachable=at=>this.walkableLink(at,this.player.position)||this.path(at,this.player.position,true).length>0;
     const windows=super.availableWindows().filter(w=>reachable(w.entry));
     if(inside.length&&(!windows.length||Math.random()<inside.length/Math.max(1,spawners.length))){
       for(const spawner of inside.sort(()=>Math.random()-.5)){
         let at;const p=pos(spawner);for(const height of [80,32]){try{const candidate=this.settleFeet([p[0],p[1],p[2]+height]);if(reachable(candidate)){at=candidate;break;}}catch{}}
         if(!at||distance(at,this.player.position)<110)continue;const gait=this.zombieGait();
-        const enemy={id:this.nextId++,position:at,previousPosition:at.slice(),health:this.zombieHealth,window:this.windows[0],stage:'rise',...this.riseClip(gait),path:[],attackDue:0,navDue:0,angle:Number((spawner.angles||'0 0 0').split(' ')[1])*Math.PI/180,dead:false,age:0,spawnTime:this.time,gait:gait.name,speed:gait.speed};
+        const enemy={id:this.nextId++,position:at,previousPosition:at.slice(),health:this.zombieHealth,window:this.windows[0],...(spawner.nativeNoteworthy==='find_flesh'?{stage:'hunt'}:{stage:'rise',...this.riseClip(gait)}),path:[],attackDue:0,navDue:0,angle:Number((spawner.angles||'0 0 0').split(' ')[1])*Math.PI/180,dead:false,age:0,spawnTime:this.time,gait:gait.name,speed:gait.speed};
         if(this.recycleHealth.length)enemy.health=this.recycleHealth.shift();this.enemies.push(enemy);this.remaining--;this.emit('spawn',enemy);return;
       }
     }if(!windows.length)return;
@@ -391,7 +424,9 @@ export class BlackOps2Engine extends BlackOpsEngine {
   // Buried spawns its own risers (riser_location spawners).
   get t5Risers(){return false;}
   // Buried's zombie_ai_limit: spawning holds at 24 alive.
-  maxAlive(){return 24;}
+  maxAlive(){return this.mapRules.maxAlive?.()??24;}
+  // A special round (Die Rise's leapers) sets its own count.
+  startRound(){super.startRound();const own=this.mapRules.roundOverride?.();if(own!=null)this.remaining=own;}
   tickEnemy(e,dt){
     if(!e.dead&&['denizen','avogadro'].includes(e.kind)&&this.mapRules.tickSpecial?.(e,dt))return;
     if(e.nativeTraversal&&!e.dead){e.age+=dt;this.mapRules.advanceTraversal(e,dt);return;}
@@ -484,7 +519,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     this.updateProjectiles(dt);
   }
   emit(type,value){
-    if(type==='explosion'&&value?.position)this.mapRules.explosive?.(value.position);
+    if(type==='explosion'&&value?.position)this.mapRules.explosive?.(value.position,value);
     if(type==='shot'&&this.firingNative&&this.weapon.definition.weaponType==='projectile'){
       const d=this.weapon.definition,p={id:this.nextProjectileId++,weapon:this.weapon.name,position:value.origin.slice(),previousPosition:value.origin.slice(),direction:value.dir.slice(),velocity:value.dir.map(v=>v*(d.projectileSpeed||2300)),due:this.time+(d.projectileLifetime||5),hitIds:[]};
       this.projectiles.push(p);super.emit('buriedProjectile',p);value={...value,rays:[]};

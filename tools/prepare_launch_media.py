@@ -20,6 +20,7 @@ MOVIES = {
     'moon': ('Call of Duty Black Ops', 'zombie_moon_load'),
     'dead-ops': ('Call of Duty Black Ops', 'zombietron_load'),
     'buried': ('Call of Duty Black Ops II', 'zm_buried_load'),
+    'die-rise': ('Call of Duty Black Ops II', 'zm_highrise_load'),
 }
 # BO2's loading movies are silent video; the soundtrack is the streamed
 # bik_<movie> alias: a left/right stem and its secondary centre stem
@@ -28,6 +29,7 @@ DATA = ROOT / 'local-data'
 SOUNDTRACKS = {
     'buried': [DATA / 'bo2-dlc/sound/bik/load/zm_buried_load_lr.SN65.pc.snd.flac',
                DATA / 'bo2-english/english/sound/bik/load/zm_buried_load_c.SN65.pc.snd.flac'],
+    'die-rise': [DATA / 'bo2-die-rise/sound/zmb/level/zm_highrise/load_movie.SL65.pc.snd.flac'],
 }
 for name, (game, movie) in MOVIES.items():
     source = GAMES / game / 'main' / 'video' / (movie + '.bik')

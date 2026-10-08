@@ -150,6 +150,12 @@ if dumper.exists():
     if 'name.find("fx_zmb_wall_dyn")' not in dtext:
         dtext=dtext.replace('&& name.find("raygun") == std::string::npos','&& name.find("raygun") == std::string::npos && name.find("fx_zmb_wall_dyn") == std::string::npos && name.find("fx_zmb_buried_dyn") == std::string::npos')
         dumper.write_text(dtext)
+# Die Rise: the Sliquifier's goo, the leapers, the elevators and the key glint.
+if dumper.exists():
+    dtext=dumper.read_text()
+    if 'name.find("liquifier")' not in dtext:
+        dtext=dtext.replace('&& name.find("raygun") == std::string::npos','&& name.find("raygun") == std::string::npos && name.find("liquifier") == std::string::npos && name.find("fx_zmb_goo") == std::string::npos && name.find("fx_zmb_leaper") == std::string::npos && name.find("fx_highrise_elevator") == std::string::npos && name.find("fx_highrise_key_glint") == std::string::npos')
+        dumper.write_text(dtext)
 # Buried's catwalk and floor collapse play authored fxanim clips.
 if 'webName.find("fxanim_")' not in text:text=text.replace('webName.find("o_zmb_") == 0;', 'webName.find("o_zmb_") == 0 || webName.find("fxanim_") == 0;')
 # The BO1 frontend's interrogation chair clips (the zombies menu camera).
@@ -174,6 +180,11 @@ if 'Local browser export: Buried' not in text:
         // while the fastfile references the multiplayer dlc3 package.
         if(zone.m_name.find("buried")!=std::string::npos)LoadIPakForZone(searchPath,"dlczm3",zone);
         LoadIPakForZone(searchPath,"patch_zm",zone);''')
+# Die Rise (DLC 1) likewise keeps its textures in dlczm1.
+if 'Local browser export: Die Rise' not in text:
+    text = text.replace('        LoadIPakForZone(searchPath,"patch_zm",zone);','''        // Local browser export: Die Rise's DLC textures live in dlczm1.
+        if(zone.m_name.find("highrise")!=std::string::npos)LoadIPakForZone(searchPath,"dlczm1",zone);
+        LoadIPakForZone(searchPath,"patch_zm",zone);''',1)
 loader.write_text(text)
 text=loader.read_text()
 if 'LoadSoundBankForZone(searchPath,"cmn_root.all.sabs"' not in text:

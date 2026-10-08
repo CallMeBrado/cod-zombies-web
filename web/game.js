@@ -229,7 +229,7 @@ export class SoloGame {
       const [best,at]=pop();if(done[at]||best>costs[at])continue;
       if(at===b)break;done[at]=1;
       for(const link of this.nodes[at].links) {
-        const n=link.node;if(n>=costs.length||done[n])continue;
+        const n=link.node;if(n>=costs.length||done[n]||this.mapRules?.blockedNode?.(n))continue;
         const negotiation=!!this.mapRules?.negotiationLink?.(at,n,link);
         if(!negotiation&&(this.nodes[at].type===this.negotiationBegin||this.nodes[n].type===this.negotiationEnd))continue;
         {
@@ -382,6 +382,7 @@ export class SoloGame {
   // zombie_think: the three exterior goals nearest the spawner, stopping where
   // the next one is more than 500 units farther than the previous.
   spawnerWindows(origin){
+    const own=this.mapRules?.spawnerWindows?.(origin);if(own)return own;
     const nodes=this.windows.slice().sort((a,b)=>distance(a.outside,origin)-distance(b.outside,origin)).slice(0,3),out=[nodes[0]];
     for(let i=1;i<nodes.length;i++){if(distance(nodes[i].outside,origin)-distance(nodes[i-1].outside,origin)>500)break;out.push(nodes[i]);}
     return out.filter(Boolean);
