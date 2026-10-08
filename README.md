@@ -629,3 +629,33 @@ natural starting-room rounds. HTTP checks cover the BO1 route, cached pack,
 stereo native intro and protected private paths. Lobby and named server-save
 regressions include Five. Browser checks cover loading, gameplay presentation,
 shooting, reload, elevators and DEFCON/Pack-a-Punch interactions.
+
+### Infinite Warfare / Spaceland: solo survival test
+
+The home page links to `/infinite-warfare/?map=spaceland`. This is a playable first IW7 survival build using the installed `cp_zmb` map: 403,042 world triangles, 17,010 static placements, 916 unique prop meshes, native diffuse/emissive textures and night sky. Start Game loads assets and the original stereo intro; entry remains gated on asset/shader/navigation readiness, with a skip button when ready.
+
+Solo scenes use IW7's original health, spawn-count, spawn-interval and movement-mode formulas. Scene one shamblers and later walker/runner/sprinter mixes use native root-motion speed and cadence. The Kendall 44 and M1 use native weapon damage, ranges, magazines, reserves and reload timers. Combat includes headshots, flesh collaterals, automatic empty-magazine reload, melee, point feedback, player damage/regeneration, death and restart. E near the M1 wall purchase at the entrance buys the rifle or its ammo; 1/2 changes weapons. Mouse and standard mapped controllers are supported, with controller button prompts. R reloads, F knifes and C plays the character's native card gesture.
+
+The importer preserves native DObj bone attachments and all eight vertex influences, assembles the original multipart zombies, and exports 828 original zombie/weapon/character animation clips. The browser loads required clips rather than downloading the entire catalogue. The four original characters have their own arms, opening/card gestures and melee animations. NPC and gun-hierarchy translation tracks are bind-pose offsets; viewhands use absolute local positions. Zero-rotation bones reset to identity. Native sprint offsets are additive. Attacks use the original `hit` note timing and 45 damage. Weapon poses reset before applying action tracks to prevent slide/attachment state leaking across shots and reloads. All 24 actor slots are prepared before entry to avoid first-spawn shader compilation during combat.
+
+This remains an **early survival port**, not complete stock-game parity. Baked lightmaps/light grids, native Havok/nav data, complete ASM state blending/IK, VFX, weapon recoil/view kick, grenades, full ragdolls/dismemberment, special enemies/clown waves, perks, gates, rides, quests, fortune-card effects, the complete weapon roster, co-op and server saves still need IW7 integration. The current opening plays original load-in and card clips; it is not the complete stock intro state machine. Native primary lights and brighter ambient/exposure improve visibility while baked lighting is ported. The horde uses a bounded time-sliced flow field over temporary render collision. Spawn entries prioritize the original nearby group, then project onto reachable floor; exact barricade traversal/spawn-volume behavior remains pending. Corpses play original death clips and retire after five seconds. V/Home remain exploration test controls.
+
+Textures currently cap at 512 pixels. Spatial batches and instancing use a temporary 2,400-unit draw distance. Initial selected-character assets total about 349 MiB plus the movie; response bytes drive progress. Native sound aliases are decoded from IW7 SAB v4 FLAC frames into stereo Ogg. The Bink intro separately mixes the first English speaker group, preserving all channels without mixing languages.
+
+All tools, scripts, caches and extracted assets stay under ignored `.tools`, `.cache` and `local-data` on E:. Game assets are excluded from Git. The offline loader can prepare assets without the live game. Cordycep's executable-dump operation terminates matching game processes: never repeat it while someone is playing.
+
+Initialize [Cordycep](https://github.com/Scobalula/Cordycep)'s IW handler against the installation. Load `code_pre_gfx`, `code_post_gfx`, `global`, `common`, `global_cp`, `common_core_mp`, `common_cp` and `cp_zmb` with locale prefix `english\eng_`; combat also requires `mp_weapon_view_iw7_g18_r_tr`, `mp_weapon_view_iw7_m1_tr`, `mp_weapon_world_iw7_m1_tr` and `weapon_iw7_m1_tr`. Commands use the **offline loader PID**, never the live game's PID:
+
+```powershell
+npm run inspect:spaceland -- --pid <loader-PID>
+npm run extract:spaceland -- --pid <loader-PID>
+npm run prepare:spaceland
+npm run prepare:spaceland-sky -- --pid <loader-PID>
+npm run prepare:spaceland-combat -- --pid <loader-PID>
+npm run prepare:spaceland-sounds -- --pid <loader-PID>
+npm run test:spaceland
+```
+
+Python needs NumPy, Pillow and lz4; sky decoding uses texture2ddecoder on E:. [gsc-tool](https://github.com/xensik/gsc-tool) decompiles privately exported scripts. FFmpeg/FFprobe and the installed bink2w64.dll prepare media. Layouts were checked against [iw7-mod database types](https://github.com/auroramod/iw7-mod); mesh, bone, animation and sound decoding follow [Greyhound](https://github.com/Scobalula/Greyhound).
+
+Automated checks cover every world mesh/index/reference/texture/placement, native spawn floors at 30–240 FPS, rigs and weights, native clip keys, zombie bind heights, first-person poses, three scenes, health/count scaling, headshots, collaterals, solid occlusion, reloads, melee, M1 purchase/switch, damage/regeneration/death/reset, navigation around obstacles and native audio files. HTTP checks cover versioned modules, native movie ranges, extracted assets, private-path protection and existing Five/Origins routes. Browser checks verify loading/entry, native rigs/cards, combat, round progression, pause/restart and frame pacing.

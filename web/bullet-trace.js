@@ -42,7 +42,7 @@ export function textureAlpha(texture,uv){
   const image=texture.image,mip=texture.mipmaps?.[0],width=mip?.width??image?.width,height=mip?.height??image?.height;
   if(!width||!height)return 1;
   const x=Math.min(width-1,Math.max(0,Math.floor(uv.x*width))),y=Math.min(height-1,Math.max(0,Math.floor(uv.y*height)));
-  const data=mip?.data??image?.data;if(!data)return 1;
+  const data=mip?.data??image?.data??texture.userData?.alphaPixels;if(!data)return 1;
   if(!texture.isCompressedTexture){
     if(data.length!==width*height*4)return 1;
     const a=data[(y*width+x)*4+3];return data instanceof Float32Array?a:a/255;

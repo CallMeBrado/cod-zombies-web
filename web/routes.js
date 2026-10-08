@@ -7,5 +7,6 @@ export function pageRoute(url){
   if(['/world-at-war','/world-at-war/','/world-at-war/index.html'].includes(url.pathname))return {template:'index.html',game:'world-at-war'};
   if(['/black-ops','/black-ops/','/black-ops/index.html'].includes(url.pathname))return {template:url.searchParams.get('map')==='dead-ops'?'doa.html':'bo1.html',game:'black-ops'};
   if(['/black-ops-2','/black-ops-2/','/black-ops-2/index.html'].includes(url.pathname))return {template:'bo2.html',game:'black-ops-2'};
+  if(['/infinite-warfare','/infinite-warfare/','/infinite-warfare/index.html'].includes(url.pathname))return {template:'iw7.html',game:'infinite-warfare'};
   return null;
 }

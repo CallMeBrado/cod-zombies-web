@@ -33,7 +33,7 @@ function lanUrls() {
 }
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
   '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml',
-  '.png': 'image/png', '.wav': 'audio/wav', '.flac':'audio/flac', '.glb': 'model/gltf-binary' };
+  '.png': 'image/png', '.jpg':'image/jpeg', '.wav': 'audio/wav', '.flac':'audio/flac', '.glb': 'model/gltf-binary' };
 const builds=new Map();
 async function currentBuild(){
   const preload=JSON.parse(await readData('preload.json'));

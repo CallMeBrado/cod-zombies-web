@@ -1,0 +1,9 @@
+export class SpacelandAudio {
+  constructor(){this.context=null;this.buffers=new Map();this.aliases={};this.voices=new Set();this.voiceNames=new WeakMap();this.paused=false;}
+  async unlock(){this.context??=new AudioContext();await this.context.resume();}
+  async load(aliases,download){this.aliases=aliases;const urls=[...new Set(Object.values(aliases).flat().map(v=>v.url))];let index=0;await Promise.all(Array.from({length:4},async()=>{while(index<urls.length){const url=urls[index++],buffer=await download(url);this.buffers.set(url,await this.context.decodeAudioData(buffer));}}));}
+  play(name,volume=1,depth=0){const choices=this.aliases[name];if(this.paused||!choices?.length||volume<=0||depth>4)return;const foot=n=>['zmb_walk','zmb_run'].includes(n),footsteps=[...this.voices].filter(s=>foot(this.voiceNames.get(s)));if(foot(name)&&footsteps.length>=8)return;if(this.voices.size>=32){if(foot(name)||!footsteps.length)return;const oldest=footsteps[0];this.voices.delete(oldest);oldest.stop();}const d=choices[Math.floor(Math.random()*choices.length)],buffer=this.buffers.get(d.url);if(!buffer)return;const source=this.context.createBufferSource(),gain=this.context.createGain();source.buffer=buffer;gain.gain.value=Math.min(1,volume*d.volume);source.connect(gain);gain.connect(this.context.destination);this.voices.add(source);this.voiceNames.set(source,name);source.onended=()=>{source.disconnect();gain.disconnect();this.voices.delete(source);};source.start();if(d.secondary)this.play(d.secondary,volume,depth+1);if(['mus_zombies_newwave','mus_zombies_endwave'].includes(name))this.play(name+'_lsrs',volume*.707,depth+1);}
+  pause(){this.paused=true;this.context?.suspend();}
+  resume(){this.paused=false;this.context?.resume();}
+  stop(){for(const v of this.voices)v.stop();this.voices.clear();}
+}

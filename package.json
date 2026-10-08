@@ -79,7 +79,14 @@
     "test:origins": "node --max-old-space-size=8192 tools/test_origins.mjs && node tools/test_origins_server.mjs && node tools/test_launch.mjs && node tools/test_server_saves.mjs && node tools/test_lobby.mjs",
     "extract:five": "python -B tools/extract_bo1.py --map five",
     "prepare:five": "python -B tools/prepare_bo1.py --map five && node --max-old-space-size=8192 tools/build_preload.mjs --map five",
-    "test:five": "node --max-old-space-size=8192 tools/test_five.mjs && node tools/test_five_server.mjs"
+    "test:five": "node --max-old-space-size=8192 tools/test_five.mjs && node tools/test_five_server.mjs",
+    "inspect:spaceland": "python -B tools/inspect_iw7.py",
+    "extract:spaceland": "python -B tools/extract_spaceland.py",
+    "prepare:spaceland": "python -B tools/prepare_spaceland_test.py && python -B tools/prepare_spaceland_media.py",
+    "prepare:spaceland-sky": "python -B tools/prepare_spaceland_sky.py",
+    "test:spaceland": "node --max-old-space-size=8192 tools/test_spaceland.mjs && node tools/test_spaceland_combat.mjs && node tools/test_spaceland_server.mjs",
+    "prepare:spaceland-combat": "python -B tools/prepare_spaceland_combat.py",
+    "prepare:spaceland-sounds": "python -B tools/prepare_spaceland_sounds.py"
   },
   "dependencies": {
     "three": "0.186.1"

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Zombies in Spaceland</title>
+<link rel="stylesheet" href="/runtime/__BUILD__/iw7-test.css"><script type="importmap">{"imports":{"three":"/vendor/0.186.1/build/three.module.js"}}</script></head>
+<body><canvas id="viewport" tabindex="0" aria-label="Zombies in Spaceland"></canvas>
+<main id="menu"><a class="back" href="/">← ALL GAMES</a><p class="brand">CALL OF DUTY <strong>INFINITE WARFARE</strong></p><div class="title"><p>ZOMBIES</p><h1>ZOMBIES IN<br><span>SPACELAND</span></h1><span class="badge">SURVIVAL TEST</span></div>
+<p class="description">Survive the scenes. Welcome to the park.</p><p class="scope">Original map, character rigs and combat animations. Early solo survival; quests, rides, perks and special enemy rounds are still in development.</p>
+<label class="character-label" for="character">CHARACTER</label><select id="character"><option value="nerd">POINDEXTER</option><option value="valley_girl">SALLY</option><option value="rapper">ANDRE</option><option value="jock">AJ</option></select>
+<button id="start">START GAME</button><p class="controls">WASD move · Mouse aim / fire · Shift sprint · Space jump<br>R reload · F knife · E use · C cards · 1 / 2 switch · Esc pause</p></main>
+<section id="loading" hidden><video id="intro" playsinline preload="none"></video><div class="loading-panel"><h2>ZOMBIES IN SPACELAND</h2><p id="load-message" role="status">Preparing native assets…</p><progress id="progress" max="1" value="0" aria-label="Native asset download"></progress><p id="bytes"></p><button id="skip" disabled>WAITING FOR THE WORLD…</button></div></section>
+<section id="pause" hidden><h2>PAUSED</h2><button id="resume">RESUME</button><button id="reset">RESTART GAME</button><button id="quit">RETURN TO MENU</button></section>
+<div id="hud" hidden><span id="mode">ZOMBIES IN SPACELAND</span><span id="stats"></span><span id="crosshair">+</span><span id="hitmarker">×</span><div id="round-panel"><small>SCENE</small><span id="round">1</span></div><div id="score"><span id="points">$ 500</span><div id="score-popups"></div></div><div id="ammo-panel"><span id="weapon">Kendall 44</span><strong id="ammo">8 / 32</strong></div><progress id="health" max="1" value="1" aria-label="Health"></progress><span id="prompt"></span><p id="help"></p><div id="damage"></div></div>
+<section id="game-over" hidden><h2>GAME OVER</h2><p id="result"></p><button id="restart">PLAY AGAIN</button><a href="/">ALL GAMES</a></section>
+<script type="module" src="/runtime/__BUILD__/iw7-test.js"></script></body></html>

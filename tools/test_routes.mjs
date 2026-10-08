@@ -9,5 +9,6 @@ assert.deepEqual(route('/?load=1'),{redirect:'/world-at-war/?load=1'});
 for(const path of ['/black-ops','/black-ops/','/black-ops/index.html'])assert.deepEqual(route(path),{template:'bo1.html',game:'black-ops'});
 assert.deepEqual(route('/black-ops/?map=dead-ops'),{template:'doa.html',game:'black-ops'});
 for(const path of ['/black-ops-2','/black-ops-2/','/black-ops-2/index.html'])assert.deepEqual(route(path),{template:'bo2.html',game:'black-ops-2'});
+for(const path of ['/infinite-warfare','/infinite-warfare/','/infinite-warfare/index.html','/infinite-warfare/?map=spaceland'])assert.deepEqual(route(path),{template:'iw7.html',game:'infinite-warfare'});
 for(const path of ['/black-ops-ii/','/api/status','/runtime/abcdef/main.js','/data/gameplay/manifest.json'])assert.equal(route(path),null);
 console.log('Routes passed: collection home, WaW landing, legacy map/load links and independent runtime/asset routes.');
