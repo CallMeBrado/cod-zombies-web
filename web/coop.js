@@ -18,7 +18,7 @@ export const BLEEDOUT_SECONDS=30,REVIVE_SECONDS=3,QUICK_REVIVE_SECONDS=1.5,REVIV
 const WORLD_SOUNDS=new Set(['round_over','chalk','remove_boards','lid_open','lid_close','music_box','spawn_powerup','powerup_grabbed','carp_end','switch_flip','bridge_lower',
   'electrical_surge','perks_power_on','evt_teleporter_activate_start','evt_teleporter_activate_finish','clock_tick_1sec','bolt','spawn','pre_spawn','sam_nospawn',
   'full_ammo','insta_kill','ma_vox','insta_vox','dp_vox','nuke_vox','carp_vox','evt_teleporter']);
-const worldSound=alias=>WORLD_SOUNDS.has(alias)||alias.startsWith('pa_')||alias.startsWith('zmb_vox_ann_');
+const worldSound=alias=>WORLD_SOUNDS.has(alias)||alias.startsWith('pa_')||alias.startsWith('zmb_vox_ann_')||alias.startsWith('zmb_bus_');
 
 export class Coop {
   constructor(game,session,{host,localId,slot=0,character=null}){
@@ -85,7 +85,7 @@ export class Coop {
   // host runs them. A paid teleport moves only the player who used it.
   worldUse(e){
     const r=this.game.mapRules,name=e.targetname;if(!r)return false;
-    if(name==='use_power_switch'||name==='trigger_teleport_core')return true;
+    if(name==='use_power_switch'||name==='tranzit_power'||name==='trigger_teleport_core')return true;
     if(name.startsWith('trigger_teleport_pad_'))return r.teleporterLinked!==undefined?!r.teleporterLinked:!r.links?.has(Number(name.at(-1)));
     return false;
   }

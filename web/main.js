@@ -35,6 +35,7 @@ import {BlackOps2Engine,BO2_CHARACTERS,BO2_ARMS,BO2_PERKS} from './bo2-engine.js
 import {BlackOps2Hud} from './bo2-hud.js';
 import {BuriedView} from './bo2-view.js';
 import {NuketownView} from './bo2-nuketown-view.js';
+import {TranzitView} from './bo2-tranzit-view.js';
 import {ServerSaveStore} from './server-saves.js';
 import {LaunchScreen} from './launch-screen.js';
 import {PlayerVoice,CHARACTERS,CHARACTER_ARMS} from './player-voice.js';
@@ -519,6 +520,7 @@ function updateAudio(){
   // Machine loops (rollers hum, take-it timer) live at the machine; restart
   // one if the audio session cut it (death, resume).
   if(audio.context?.state==='running'&&game.phase!=='dead')for(const l of loops.values())if(audio.sounds[l.spec.alias]&&(!l.record||l.record.ended))l.record=audio.play(l.spec.alias,1,{...l.spec,loop:true});
+  for(const l of loops.values())if(l.spec.followBus&&game.mapRules.bus){l.spec.position=game.mapRules.bus.position;l.record?.setPosition(l.spec.position);}
 }
 async function init() {
   const began=performance.now();
@@ -531,7 +533,7 @@ async function init() {
   if(blackOps)for(const d of [...Object.values(manifest.weapons),...Object.values(manifest.gestures||{}),manifest.grenade])d.handsModel=characterArms[character];
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);zombieVox=new ZombieVox(audio,ZOMBIE_VOX[bo2?'black-ops-2':blackOps?'black-ops':mapChoice.id==='der-riese'?'der-riese':'nacht']);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);weaponView.effects=effects;actors=new ZombieActors(scene,map,presentation);actors.onNote=(enemy,alias)=>{if(!paused)zombieVox?.note(enemy,alias,game.time);};actors.active=visuals;
   if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
-  if(bo2){buriedView=new (mapChoice.id==='nuketown'?NuketownView:BuriedView)(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
+  if(bo2){buriedView=new (mapChoice.id==='tranzit'?TranzitView:mapChoice.id==='nuketown'?NuketownView:BuriedView)(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
@@ -545,7 +547,7 @@ async function init() {
   await prepared(4,'Preparing map collision, navigation and audio…');
   game=new (mapChoice.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
     dialog:e=>voice?.speak(e).catch(console.warn),
-    buriedItem:e=>buriedView?.item(e),chalkDust:target=>buriedView?.chalkDust(target,game.time),
+    platformTurn:e=>{state.yaw+=e.delta;},buriedItem:e=>buriedView?.item(e),chalkDust:target=>buriedView?.chalkDust(target,game.time),
     buriedEquipment:e=>buriedView?.place(e),buriedEquipmentRemove:id=>buriedView?.remove(id),buriedEquipmentLaunch:e=>buriedView?.launch(e),
     buriedProjectile:e=>buriedView?.projectile(e),buriedProjectileRemove:id=>buriedView?.removeProjectile(id),projectileImpact:r=>{combatEffects.impact(r,game.time);if(r.hit)blood.burst(r.end,r.dir,game.time,r.hit.head);},
     coastProjectile:e=>coastView?.projectile(e),coastProjectileRemove:id=>coastView?.removeProjectile(id),

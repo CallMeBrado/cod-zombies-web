@@ -16,9 +16,17 @@ export async function readPackResponse(response,expectedBytes,onBytes=()=>{}){
 }
 export async function preloadAssets(progress=()=>{},onDownload=()=>{}){
   if(preloadState.ready)return;
-  const config=document.documentElement.dataset.preload;if(!config)throw new Error('The server has no prepared map. Run the Zombies launcher.');
-  const packs=JSON.parse(decodeURIComponent(config)).map(p=>typeof p==='string'?{url:p}:p);
-  const title=selectedMap().title;progress('Loading prepared '+title+'…');const began=performance.now();
+  const map=selectedMap(),title=map.title;progress('Loading prepared '+title+'…');const began=performance.now();
+  // Read the chosen map at Start Game. A long-running server may still have
+  // an older map registry and embed another map's packs in the lobby HTML.
+  let configured;
+  if(map.id!=='nacht'){
+    const response=await fetch('/data/'+map.data+'/preload.json?build='+document.documentElement.dataset.build,{cache:'no-store'});
+    if(!response.ok)throw new Error('The '+title+' pack is not prepared on the server.');
+    configured=(await response.json()).packs;
+  }else{const config=document.documentElement.dataset.preload;if(config)configured=JSON.parse(decodeURIComponent(config));}
+  if(!Array.isArray(configured)||!configured.length)throw new Error('The server has no prepared map. Run the Zombies launcher.');
+  const packs=configured.map(p=>typeof p==='string'?{url:p}:p);
   let completed=0,totalBytes=0,next=0;const abort=new AbortController();
   Object.assign(preloadState,{loadedBytes:0,totalBytes:packs.reduce((n,p)=>n+(p.bytes||0),0),completedPacks:0});
   const report=()=>onDownload({loadedBytes:preloadState.loadedBytes,totalBytes:preloadState.totalBytes,completedPacks:completed,totalPacks:packs.length});report();

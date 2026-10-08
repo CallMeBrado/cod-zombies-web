@@ -39,7 +39,8 @@ function prepareBoneBounds(mesh,nodes){
 // Refit those cheap bounds; skin vertices only in leaves intersected by a shot.
 // Final hit tests still intersect the exact animated model triangles.
 export class PosedTrace {
-  constructor(root){
+  constructor(root,{visibleOnly=false}={}){
+    this.visibleOnly=visibleOnly;
     this.meshes=[];root.traverse(mesh=>{if(!mesh.isMesh||mesh.userData.goreOnly)return;const nodes=topology(mesh.geometry);prepareBoneBounds(mesh,nodes);this.meshes.push({mesh,nodes,vertices:new Float32Array(mesh.geometry.attributes.position.count*3),stamps:new Uint32Array(mesh.geometry.attributes.position.count),bounds:new Float64Array(nodes.length*6),coarse:new Float64Array(6),coarseGeneration:-1,boundsGeneration:-1});});
     this.tick=-1;this.generation=0;this.inverse=new THREE.Matrix4();this.boneMatrix=new THREE.Matrix4();this.box=new THREE.Box3();this.ray=new THREE.Ray();this.v=new THREE.Vector3();this.a=new THREE.Vector3();this.b=new THREE.Vector3();this.c=new THREE.Vector3();this.point=new THREE.Vector3();this.stack=[];
     this.directionMatrix=new THREE.Matrix3();this.localDirection=new THREE.Vector3();
@@ -71,6 +72,7 @@ export class PosedTrace {
   trace(worldRay,max,tick){
     this.refit(tick);let best=null;
     for(const entry of this.meshes){const {mesh,nodes,vertices,bounds,stamps}=entry;
+      if(this.visibleOnly){let visible=true;for(let node=mesh;node;node=node.parent)if(!node.visible){visible=false;break;}if(!visible)continue;}
       this.ray.copy(worldRay).applyMatrix4(this.inverse.copy(mesh.matrixWorld).invert());
       const localMax=max*this.localDirection.copy(worldRay.direction).applyMatrix3(this.directionMatrix.setFromMatrix4(this.inverse)).length();
       // The union of all bone influence bounds encloses the posed mesh. A

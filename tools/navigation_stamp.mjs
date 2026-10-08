@@ -39,5 +39,6 @@ export async function navigationStamp(root,chosen,manifest){
     hash.update(source.slice(start,source.indexOf('  newGame(){',start)));hash.update(BlackOpsEngine.prototype.settleFeet.toString());
   }
   if(chosen.game==='black-ops-2')for(const method of ['settleFeet','projectGround','walkableLink'])hash.update(BlackOps2Engine.prototype[method].toString());
+  if(chosen.id==='tranzit')hash.update(await readFile(path.join(root,'web/bo2-tranzit.js')));
   return hash.digest('hex');
 }

@@ -80,21 +80,22 @@ for name, (game, movie) in MOVIES.items():
 
 # The installed Nuketown Zombies release has no loading WEBM. Use its own
 # original menu/loading artwork and native underscore, never another map's movie.
-nuketown_manifest=DATA/'gameplay/bo2-nuketown/manifest.json'
-if nuketown_manifest.exists():
+for map_id in ['nuketown','tranzit']:
+    nuketown_manifest=DATA/('gameplay/bo2-'+map_id+'/manifest.json')
+    if not nuketown_manifest.exists():continue
     manifest=json.loads(nuketown_manifest.read_text())
-    poster=DATA/'gameplay/bo2-nuketown/hud/nuketown-load.png'
+    poster=DATA/('gameplay/bo2-'+map_id+'/hud/'+map_id+'-load.png')
     sound=manifest['sounds'].get('mx_zombie_wave_1',[{}])[0].get('url')
     soundtrack=DATA/sound.removeprefix('/data/') if sound else None
     if poster.exists() and soundtrack and soundtrack.exists():
-        destination=OUTPUT/'nuketown.mp4'; metadata=OUTPUT/'nuketown.json'
-        stamp={'presentation':'native-nuketown-still-v1','source':str(poster),'mtime':poster.stat().st_mtime_ns,'soundtrack':[str(soundtrack),soundtrack.stat().st_mtime_ns]}
+        destination=OUTPUT/(map_id+'.mp4'); metadata=OUTPUT/(map_id+'.json')
+        stamp={'presentation':'native-'+map_id+'-still-v1','source':str(poster),'mtime':poster.stat().st_mtime_ns,'soundtrack':[str(soundtrack),soundtrack.stat().st_mtime_ns]}
         previous=json.loads(metadata.read_text()).get('sourceStamp') if metadata.exists() else None
         if not destination.exists() or previous!=stamp:
-            print('Preparing original Nuketown artwork and soundtrack on E:...',flush=True)
-            temporary=OUTPUT/'nuketown.tmp.mp4'
+            print('Preparing original '+map_id+' artwork and soundtrack on E:...',flush=True)
+            temporary=OUTPUT/(map_id+'.tmp.mp4')
             subprocess.run(['ffmpeg','-nostdin','-y','-loglevel','error','-loop','1','-i',str(poster),'-i',str(soundtrack),
                 '-t','20','-vf','scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
                 '-r','24','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-ac','2','-c:a','aac','-b:a','192k','-movflags','+faststart',str(temporary)],check=True)
             os.replace(temporary,destination)
-            metadata.write_text(json.dumps({'sourceStamp':stamp,'duration':20,'hasAudio':True,'url':'/data/launch/nuketown.mp4'},indent=2))
+            metadata.write_text(json.dumps({'sourceStamp':stamp,'duration':20,'hasAudio':True,'url':'/data/launch/'+map_id+'.mp4'},indent=2))

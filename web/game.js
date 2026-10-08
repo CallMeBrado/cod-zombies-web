@@ -797,7 +797,7 @@ export class SoloGame {
     }
     movementEnd(this,dt);this.collision.playerMovement=false;
     const p=this.player;
-    if(p.position[2]<-600&&!this.noclipping)this.damagePlayer(100);
+    if(p.position[2]<(this.data.map?.fallDeathZ??-600)&&!this.noclipping)this.damagePlayer(100);
     // playerHealthRegen(): 2.4 s after the last hit health returns to full,
     // unless it is at 20% or below; then from 5 s it climbs 10% every 0.05 s.
     {const max=this.mapRules?.maxHealth||100,since=this.time-this.lastDamage;
@@ -878,7 +878,7 @@ export class SoloGame {
     if(enemy.dead)return;
     // A co-op guest reports the hit; the host owns zombie health.
     if(this.coop?.forwardHit(enemy,damage,head,melee))return;
-    if(this.powerup.insta_kill)damage=enemy.health;
+    if(this.powerup.insta_kill&&!enemy.ignoreInstaKill)damage=enemy.health;
     enemy.health-=damage;
     const scalar=this.powerup.double_points?2:1,shooter=this.coop?.shooter()||this.player;
     if(enemy.health>0){this.awardPoints(Math.ceil(this.vars.zombie_score_damage/10)*10*scalar);return;}

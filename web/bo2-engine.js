@@ -3,6 +3,7 @@ import {PERKS} from './map-rules.js';
 import {BuriedEquipment} from './bo2-equipment.js';
 import {Arthur} from './bo2-arthur.js';
 import {NuketownRules} from './bo2-nuketown.js';
+import {TranzitRules} from './bo2-tranzit.js';
 import {ACTOR_CONTENTS} from './collision.js';
 
 export const BO2_CHARACTERS=['Russman','Stuhlinger','Misty','Marlton'];
@@ -256,7 +257,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     if(!navigation)return super.walkableLink(p,q,false);
     // Nuketown's perimeter has player-only clips; the native zombie routes
     // pass those. Keep the actor mask throughout the T6 physics walk.
-    if(this.data.map.id==='nuketown'&&this.collision.mask!==ACTOR_CONTENTS)return this.collision.actor(()=>this.walkableLink(p,q,navigation));
+    if(['nuketown','tranzit'].includes(this.data.map.id)&&this.collision.mask!==ACTOR_CONTENTS)return this.collision.actor(()=>this.walkableLink(p,q,navigation));
     const length=Math.hypot(q[0]-p[0],q[1]-p[1]);if(length>1024||Math.abs(q[2]-p[2])>256)return false;
     let at=p.slice(),velocity=0;
     for(let i=0;i<Math.ceil(length/.475)+120;i++){
@@ -266,7 +267,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     }return false;
   }
   advancePath(e,dt,target){
-    if(this.data.map.id==='nuketown'&&this.mapRules.startTraversal(e))return false;
+    if(this.mapRules.startTraversal?.(e))return false;
     const done=super.advancePath(e,dt,target);
     if(e.velocityZ===0){const floor=this.projectGround(e.position);if(e.position[2]-floor[2]>18)e.position=floor;}
     return done;
@@ -279,7 +280,9 @@ export class BlackOps2Engine extends BlackOpsEngine {
     return super.nearest(position,visible,regular,options);
   }
   constructor(manifest,collision,paths,events={},presentation={}){
-    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
+    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='tranzit'?new TranzitRules(g):manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
+    if(manifest.map.id==='tranzit'){this.mapRules.installInteractions();const trace=collision.trace.bind(collision);
+      collision.trace=(start,end,half=[0,0,0],mask=collision.mask,ignoreTerrain=false)=>this.mapRules.busTrace(start,end,half,trace(start,end,half,mask,ignoreTerrain));}
     if(manifest.map.id!=='buried')return;
     // Only original, authored hedge gates contribute these solid bounds.
     for(const hull of manifest.map.collisionHulls||[])if(!collision.brushes.some(b=>b.target===hull.target))collision.add(hull,[0,0,0],hull.target);
@@ -313,6 +316,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
   placeEquipment(){return this.mapRules.equipment?.place()||false;}
   movePlayerOverride(p,input,dt){
     if(this.mods?.noclip)return super.movePlayerOverride(p,input,dt);
+    if(this.mapRules.movePlayer?.(p,input,dt))return true;
     if(this.data.map.id!=='buried')return false;
     // The factory chute is slick: gravity accelerates along its real slope.
     // The low exit needs the crouched hull rather than stopping at its lip.
@@ -343,7 +347,14 @@ export class BlackOps2Engine extends BlackOpsEngine {
     if(!this.mapRules.perks.has('specialty_additionalprimaryweapon')||this.inventory.length>=3||this.inventory.some(w=>w.name===name))return super.giveWeapon(name);
     const previous=this.weapon;this.inventory.push(this.makeWeapon(name));this.slot=this.inventory.length-1;this.beginSwitch(previous);
   }
+  damagePlayer(amount,options={}){
+    const r=this.mapRules,from=options.from;if(r.shield>0&&options.enemy&&from){const direction=Math.atan2(from[1]-this.player.position[1],from[0]-this.player.position[0]);
+      if(Math.cos(direction-this.yaw)<-.25){r.shield--;this.emit('sound',{alias:'wpn_riotshield_hit'});if(!r.shield)this.message('Zombie Shield broken');return;}}
+    return super.damagePlayer(amount,options);
+  }
   hitEnemy(enemy,damage,head=false,melee=false){
+    if(enemy.kind==='avogadro'){if(!melee||this.killMod==='nuke')return;damage=this.mapRules.meleeUpgrade==='tazer_knuckles_zm'?2:1;}
+    if(enemy.ignoreNuke&&this.killMod==='nuke')return;
     if(this.firingNative&&this.weapon.definition.weaponType==='projectile'&&!melee)return;
     if(!enemy.dead)enemy.damaged=true;
     if(this.firingNative&&!melee&&this.mapRules.perks.has('specialty_rof')&&!this.weapon.name.startsWith('slowgun'))damage*=2;
@@ -382,6 +393,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
   // Buried's zombie_ai_limit: spawning holds at 24 alive.
   maxAlive(){return 24;}
   tickEnemy(e,dt){
+    if(!e.dead&&['denizen','avogadro'].includes(e.kind)&&this.mapRules.tickSpecial?.(e,dt))return;
     if(e.nativeTraversal&&!e.dead){e.age+=dt;this.mapRules.advanceTraversal(e,dt);return;}
     if(e.kind==='ghost'&&!e.dead){
       e.age+=dt;const target=this.player.position,d=target.map((v,k)=>v-e.position[k]),length=Math.hypot(...d);e.angle=Math.atan2(d[1],d[0]);
@@ -456,7 +468,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
   }
   tick(dt,input){
     super.tick(dt,input);if(this.phase==='ready'||this.phase==='dead')return;
-    if(this.player.grounded&&!this.mods?.noclip&&!this.dive){const floor=this.projectGround(this.player.position);if(this.player.position[2]-floor[2]>18)this.player.position=floor;}
+    if(this.player.grounded&&!this.mods?.noclip&&!this.dive&&!this.mapRules.riding){const floor=this.projectGround(this.player.position);if(this.player.position[2]-floor[2]>18)this.player.position=floor;}
     if(this.paralyzerFiring&&this.time-this.paralyzerFiredAt>.15){this.paralyzerFiring=false;this.emit('stopLoop',{id:'paralyzer'});this.emit('sound',{alias:this.data.weapons.slowgun_zm?.loopFireEndSoundPlayer});}
     // Slowed in the air: a fraction of gravity, and a rise or fall bleeds off.
     if(this.time<(this.slowedUntil||0)&&!this.player.grounded)this.player.velocityZ*=Math.exp(-8*dt);
@@ -472,6 +484,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     this.updateProjectiles(dt);
   }
   emit(type,value){
+    if(type==='explosion'&&value?.position)this.mapRules.explosive?.(value.position);
     if(type==='shot'&&this.firingNative&&this.weapon.definition.weaponType==='projectile'){
       const d=this.weapon.definition,p={id:this.nextProjectileId++,weapon:this.weapon.name,position:value.origin.slice(),previousPosition:value.origin.slice(),direction:value.dir.slice(),velocity:value.dir.map(v=>v*(d.projectileSpeed||2300)),due:this.time+(d.projectileLifetime||5),hitIds:[]};
       this.projectiles.push(p);super.emit('buriedProjectile',p);value={...value,rays:[]};
@@ -504,7 +517,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
   }
   melee(){
     const w=this.weapon,d=w.definition,upgrade=this.data.meleeUpgrades?.[this.mapRules.meleeUpgrade];
-    if(upgrade)w.definition={...d,meleeDamage:upgrade.meleeDamage};try{return super.melee();}finally{w.definition=d;}
+    if(upgrade)w.definition={...d,meleeDamage:upgrade.meleeDamage};try{const result=super.melee();if(result)this.mapRules.knifeDenizen?.();return result;}finally{w.definition=d;}
   }
   canSave(){return !this.mapRules.equipment?.building&&!this.equipmentFlight&&!this.slideVelocity&&!this.projectiles.length&&super.canSave();}
   saveState(){return {...super.saveState(),paralyzerHeat:this.paralyzerHeat,paralyzerLock:this.paralyzerLock,recycleHealth:this.recycleHealth};}

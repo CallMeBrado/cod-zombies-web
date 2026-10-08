@@ -4,7 +4,7 @@ A browser runtime for **Call of Duty Zombies**, with World at War, Black Ops and
 
 World at War has **Nacht der Untoten**, **Verrückt** and **Der Riese**. Black Ops adds **Kino der Toten**, **Ascension** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
 
-The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / Buried and Nuketown Zombies** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
+The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / TranZit, Buried and Nuketown Zombies** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
 ![Nacht der Untoten in the browser](docs/images/nacht-gameplay.jpg)
 
@@ -250,6 +250,16 @@ npm run test:bo2
 
 `tools/decompile_bo2.py` optionally produces local script references using gsc-tool. Those scripts stay under ignored `local-data/bo2-scripts/` and are not served or packaged. All extraction, navigation, cache and prepared asset output remains under this project's directory on E:.
 
+### Black Ops II: TranZit
+
+Select **TRANZIT** on the BO2 globe, or open `/black-ops-2/?map=tranzit`. Classic Green Run runs on the shared T6 engine with separate `TranzitRules`. Its original world, location fastfiles, baked lighting, collision, 38 window barriers, 50 spawn volumes, weapons, viewmodels, voices and character bodies come from the installed files. Start Game loads the measured asset pack and original TranZit artwork/underscore; this installation has no TranZit loading video. Extraction, caches and prepared assets remain on E:.
+
+The native bus and animated T.E.D.D. follow the authored 278-node loop through Bus Depot, Diner, Farm, Power Station and Town, with the original 40–180 second stop range, horn, motor and driver recordings. Use opens its doors and boards/exits near either doorway. Riders can move inside a simplified interior hull; the platform turns their view with the bus. Native animated bus geometry governs shots through the doors/windows. Ordinary zombies use the occupied zones, barriers and prepared navigation. Fog gets denser on the connecting roads; native lava volumes damage the player. Denizens attach in the fog and can be knifed off. After power, an approximate Avogadro encounter ignores bullets, nukes and Insta-kill and takes four knife hits or two Galvaknuckle hits.
+
+Scavenge one part at a time and hold Use at its matching workbench. Supported assemblies are the Turbine, power switch, Pack-a-Punch, Zombie Shield, turret, electric trap and bus plow/hatch/ladder attachments. A Turbine locally powers electric doors and perks; one placed at the power-station hatch opens the bank's PAP access after main power. Explosives open the vault doors. Turret/trap damage requires a nearby Turbine. The Shield blocks rear zombie swipes, and the bus plow kills zombies ahead of it. Four-perk purchases, solo Quick Revive, Stamin-Up, Double Tap II, Mystery Box/Fire Sale, weapon upgrades, shared controls and named server saves use the common systems. Saves preserve the moving bus/rider, part choices, built items and placed equipment. In co-op, the host assembles buildables while clients can ride the shared bus and buy their own perks.
+
+This is a playable reconstruction with approximate bus interior/door motion, Denizen and Avogadro choreography/visual effects. Full bus-window climbing attacks, roof/ladder traversal, Denizen lamp teleports, Tombstone recovery, Jet Gun assembly, EMP/monkey/Claymore/Semtex equipment and the Easter eggs remain pending. The bank and weapon locker use their native entities where present; balances are per saved match, not a separate persistent native profile. Native T6 map effects are not yet fully exported. Prepare with `npm run extract:tranzit` and `npm run prepare:tranzit`; `npm run test:tranzit` checks the shipped model/material/texture pack, floor/spawn, spread, parts/power, all five bus stops, rider collision and save restoration. Fire Sale uses the original BO2 pickup exported from Nuketown or Buried because TranZit's fastfiles omit it.
+
 ### Black Ops II: Nuketown Zombies
 
 Select **Nuketown** on BO2's globe, or open `/black-ops-2/?map=nuketown`. The map runs on the shared T6 movement, combat, controller, projectile, ragdoll and save systems, with separate `NuketownRules`; Buried's Arthur, mansion and buildable rules do not participate.
@@ -425,6 +435,8 @@ npm run test:movement    # Crouch/prone, low cover, saves, controller tap/hold a
 npm run test:dive        # Native trajectory/recovery, cooldown, ledges, collision events, grunts and character rigs
 npm run prepare:map      # Rebuild both maps' preload packs and zombie navigation
 ```
+
+For new maps, run the map's asset/gameplay checks and the relevant shared regression suite, then test loading, starting a round, movement, firing/reloading, spawning and map-specific interactions in the browser before handoff. A quick logic pass alone is not sufficient for map additions.
 
 The route tests run zombies from every spawn at every gait speed the map uses, through the windows and to the player. Any stuck route fails the suite.
 

@@ -72,8 +72,9 @@ async function model(name){
       const uri=decodeURIComponent(image.uri).replace('/images/,','/images/');
       const target=path.relative(data,path.resolve(data,zone,'model_export',uri));
       if(!await add(target,false))await texture(path.basename(uri).replace(/^,/, '').replace(/\.dds$/i,''));
-    }return;
+    }return true;
   }
+  return false;
 }
 await add(chosen.data+'/manifest.json');await add(chosen.data+'/presentation.json');await add(chosen.data+'/navigation.json');if(!blackOps)await add('ui/fonts/normalFont.json');
 if(chosen.id==='der-riese')await add(chosen.data+'/power-navigation.json');
@@ -97,7 +98,8 @@ for(const e of Object.values(manifest.equipment||{}))names.add(e.model);
 for(const name of manifest.map?.propModels||[])names.add(name);
 if(manifest.map?.meleeUpgrade?.gunModel)names.add(manifest.map.meleeUpgrade.gunModel);
 for(const w of Object.values(manifest.weapons))if(w.weaponType==='projectile'&&w.projectileModel)names.add(w.projectileModel);
-for(const name of names)await model(name);
+const powerupModels=new Set(Object.values(presentation.powerups));
+for(const name of names)if(!await model(name)&&powerupModels.has(name))throw new Error('Required original powerup model unavailable: '+name);
 const animations=new Set([...Object.keys(presentation.animations),...(manifest.playerAnimations||[]),...manifest.entities.map(e=>e.closedAnim).filter(Boolean),...(manifest.map?.arthurAnimations||[]),...(manifest.map?.propAnimations||[])]);
 for(const actor of Object.values(presentation.actorVariants||{}))for(const name of Object.values(actor.animations))animations.add(name);
 for(const e of Object.values(manifest.equipment||{}))for(const name of [e.animation,e.launchAnimation].filter(Boolean))animations.add(name);

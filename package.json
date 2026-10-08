@@ -58,7 +58,10 @@
     "prepare:dive": "python -B tools/prepare_dive.py && node tools/build_preload.mjs --map kino --assets-only",
     "extract:cotd": "python -B tools/extract_bo1.py --map call-of-the-dead",
     "prepare:cotd": "python -B tools/prepare_bo1.py --map call-of-the-dead && node tools/build_preload.mjs --map call-of-the-dead",
-    "test:cotd": "node tools/test_coast.mjs"
+    "test:cotd": "node tools/test_coast.mjs",
+    "extract:tranzit": "python -B tools/extract_tranzit.py",
+    "prepare:tranzit": "python -B tools/prepare_tranzit.py && node --max-old-space-size=8192 tools/build_preload.mjs --map tranzit",
+    "test:tranzit": "node tools/test_tranzit.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

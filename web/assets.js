@@ -726,6 +726,8 @@ export class OriginalAudio {
     node.onended=release;node.start(when);
     record.stop=(fade=.05)=>{if(!this.sources.has(source))return;const now=this.context.currentTime;gain.gain.setValueAtTime(gain.gain.value,now);gain.gain.linearRampToValueAtTime(0,now+fade);try{node.stop(now+fade);}catch{release();}};
     record.setVolume=value=>{if(!this.sources.has(source))return;gain.gain.setTargetAtTime(Math.max(0,value)*(s.volume??1),this.context.currentTime,.025);record.volume=Math.max(0,value)*(s.volume??1);};
+    record.setPosition=position=>{if(!panner||!this.sources.has(source))return;record.position=position;const [x,y,z]=position;
+      if(panner.positionX){panner.positionX.value=x;panner.positionY.value=y;panner.positionZ.value=z;}else panner.setPosition(x,y,z);};
     return record;
   }
   // Character voice lines are decoded when first spoken (a character has
