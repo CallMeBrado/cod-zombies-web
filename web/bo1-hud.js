@@ -35,6 +35,7 @@ export class BlackOpsHud {
     if(!game.events.controllerPrompts?.())this.text(game.prompt(),cx,294,14,'center');if(!game.weapon.clip&&!game.reloadEnd&&!game.events.controllerPrompts?.())this.text((game.events.bindingName?.('reload')||'R')+' · Reload',cx,276,14,'center');
     if(game.data.map.id==='moon'){const r=game.mapRules;if(r.equipment)this.text((r.equipment==='pes'?(r.pes?'P.E.S. ACTIVE':'P.E.S. · '+(game.events.bindingName?.('equipment')||'5')):'HACKER'),12,360,12);if(r.oxygen>5)this.text('OXYGEN '+Math.max(0,Math.ceil((r.perks.has('specialty_armorvest')?17:15)-r.oxygen)),cx,75,20,'center','#f66');if(game.weapon.definition.alternate)this.text((game.events.bindingName?.('alternateWeapon')||'4')+' · '+(game.weapon.name.startsWith('microwavegundw')?'Combine Wave Gun':'Split Zap Guns'),cx,320,12);}
     const left=game.mapRules.projectionUntil-game.time;if(left>0)this.text('TELEPORTING IN '+Math.ceil(left),cx,50,17,'center');
+    if(game.data.map.id==='five'){this.text('DEFCON '+game.mapRules.defcon,cx,35,16,'center');if(game.mapRules.thiefRound)this.text('PENTAGON THIEF',cx,55,13,'center','#e8b57b');if(game.mapRules.trapCarry!=null)this.text('TRAP PART',12,360,12);}
     const active=Object.entries(game.powerup).map(([k,t])=>k.replaceAll('_',' ')+' '+Math.ceil(t-game.time));if(game.mapRules.deathMachine)active.push('DEATH MACHINE '+Math.ceil(game.mapRules.deathMachineUntil-game.time));if(active.length)this.text(active.join('   '),cx,455,14,'center');
   }
 }

@@ -16,6 +16,7 @@ MOVIES = {
     'verruckt': ('Call of Duty World at War', 'nazi_zombie_asylum_load'),
     'shi-no-numa': ('Call of Duty World at War', 'nazi_zombie_sumpf_load'),
     'kino': ('Call of Duty Black Ops', 'zombie_theater_load'),
+    'five': ('Call of Duty Black Ops', 'zombie_pentagon_load'),
     'ascension': ('Call of Duty Black Ops', 'zombie_cosmodrome_load'),
     'call-of-the-dead': ('Call of Duty Black Ops', 'zombie_coast_load'),
     'moon': ('Call of Duty Black Ops', 'zombie_moon_load'),

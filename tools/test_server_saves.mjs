@@ -14,6 +14,8 @@ try{
   const browserA=new ServerSaveStore(storage(),maps,fetcher),browserB=new ServerSaveStore(storage(),maps,fetcher);await browserA.prepare();await browserB.prepare();assert.equal(browserA.count(),0);
   const save={name:'Brad · round 12',map:'kino',slot:0,title:'Kino der Toten',summary:{round:12,points:7650,kills:93},state:{version:2,player:{position:[1,2,3],points:7650},inventory:[{name:'m1911_zm',clip:4,reserve:20}],enemies:[{id:17,health:80,stage:'hunt',position:[4,5,6]}]},thumb:null};
   await browserA.put('kino',0,save);await browserB.refresh();assert.equal(browserB.get('kino',0).name,save.name);assert.deepEqual(browserB.get('kino',0).state,save.state);
+  const five={...save,map:'five',title:'Five',name:'Five elevator progression',slot:1,state:{...save.state,rules:{power:true,defcon:5,cars:{elevator2:{stop:'down',z:-320,moving:false}},nextThiefRound:9}}};
+  await browserA.put('five',1,five);await browserB.refresh();assert.deepEqual(browserB.get('five',1).state,five.state);await browserB.remove('five',1);
   const old=browserB.get('kino',0).revision;await browserA.put('kino',0,{...save,name:'Later round'});
   await assert.rejects(browserB.put('kino',0,{...save,name:'Stale device'}),/changed on another device/);
   const backup=JSON.parse(await readFile(directory+'/kino/0.json.backup','utf8'));assert.equal(backup.revision,old);

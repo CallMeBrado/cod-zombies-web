@@ -3,6 +3,12 @@
 zone: the map's own extracted fastfile; search: zones searched for its
 assets, newest first; english: its localized zone (voice and sounds)."""
 BO1_MAPS = {
+    'five': dict(id='five',zone='bo1-five',asset='zombie_pentagon',data='gameplay/bo1-five',english='bo1-five-english',
+        search=['bo1-five-patch','bo1-five','bo1-common','bo1-base','bo1-five-english','bo1-english','bo1-ui'],
+        bodies=[{'name':'John F. Kennedy','body':'c_usa_pent_jfk_fb_zt'},
+                {'name':'Robert McNamara','body':'c_usa_pent_mcnamara_fb_zt'},
+                {'name':'Richard Nixon','body':'c_usa_pent_nixon_fb_zt'},
+                {'name':'Fidel Castro','body':'c_cub_pent_castro_fb_zt'}]),
     'shangri-la': dict(id='shangri-la',zone='bo1-temple',asset='zombie_temple',data='gameplay/bo1-temple',english='bo1-temple-english',
         search=['bo1-temple-patch','bo1-temple','bo1-common','bo1-base','bo1-temple-english','bo1-english','bo1-ui'],
         bodies=[{'name':'Dempsey','body':'c_usa_dempsey_body'},

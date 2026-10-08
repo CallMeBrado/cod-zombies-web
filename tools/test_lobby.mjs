@@ -16,6 +16,7 @@ const me=s=>s.players.find(p=>p.id===s.you);
 // Two Kino players each get their own lobby: neither blocks the other's start,
 // and each sees the other's lobby as open.
 const a=await join('kino',0),b=await join('kino',0);
+const five=await join('five',3);assert.equal(me(five).character,3);assert.equal(five.players.length,1);assert.equal(five.open.length,0);assert.equal((await call('five',five.you+'/leave')).status,204);
 assert.equal(a.players.length,1);assert.equal(b.players.length,1);assert.notEqual(a.lobby,b.lobby,'Separate private lobbies');
 assert.equal(b.host,b.you,'Alone, you host your own lobby');
 const seenByA=await poll('kino',a.you);assert.deepEqual(seenByA.open.map(l=>l.id),[b.lobby]);assert(seenByA.open[0].joinable);

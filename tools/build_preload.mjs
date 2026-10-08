@@ -13,6 +13,7 @@ import {MAPS,BO1_MAPS,BO2_MAPS,mapById} from '../web/maps.js';
 import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {CallOfDeadEngine} from '../web/bo1-coast.js';
 import {MoonEngine} from '../web/bo1-moon.js';
+import {FiveEngine} from '../web/bo1-five.js';
 import {ShangriEngine} from '../web/bo1-shangri.js';
 import {BlackOps2Engine} from '../web/bo2-engine.js';
 import {ShiNoNumaGame} from '../web/waw-shi-no-numa.js';
@@ -40,7 +41,7 @@ const navSources=[chosen.zone+'/web-world/'+chosen.asset+'.collision.json',chose
 const navStamp=await navigationStamp(root,chosen,manifest);let navigation,navigationGame;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
 if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&&navigation?.version)){
   const began=performance.now(),collision=await read(navSources[0]),paths=await read(navSources[1]);
-  const game=new (chosen.id==='origins'?OriginsEngine:chosen.id==='shangri-la'?ShangriEngine:chosen.id==='moon'?MoonEngine:chosen.id==='shi-no-numa'?ShiNoNumaGame:chosen.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
+  const game=new (chosen.id==='five'?FiveEngine:chosen.id==='origins'?OriginsEngine:chosen.id==='shangri-la'?ShangriEngine:chosen.id==='moon'?MoonEngine:chosen.id==='shi-no-numa'?ShiNoNumaGame:chosen.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
   navigation={...game.preparedNavigation(),sourceStamp:navStamp};await writeFile(path.join(data,chosen.data+'/navigation.json'),JSON.stringify(navigation));
   console.log(`Prepared ${navigation.links.length} directed navigation links and ${navigation.routes.length} window routes on E: in ${((performance.now()-began)/1000).toFixed(1)} seconds.`);
 }

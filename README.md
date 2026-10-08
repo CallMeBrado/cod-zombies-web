@@ -583,3 +583,49 @@ For the detailed history of how the port was built, see [`docs/development-log.m
 - **Call of Duty: World at War** and all its assets belong to Activision and Treyarch. This project doesn't distribute them.
 - **[OpenAssetTools](https://github.com/Laupetin/OpenAssetTools)** is GPL-3.0. The exporter patch in `tools/oat-web-world.patch` is also GPL-3.0 (see `tools/OAT-PATCH-LICENSE`).
 - **[three.js](https://github.com/mrdoob/three.js)** is MIT licensed.
+
+
+## Black Ops: Five
+
+Select **Five** from the Black Ops map menu, or open
+`/black-ops/?map=five`. Native assets, converted loading movie, generated
+navigation and caches live on E: under `local-data/bo1-five*`,
+`local-data/gameplay/bo1-five`, `local-data/launch` and `.cache/preload`.
+The first download is approximately 304 MiB compressed and is cached.
+
+This playable survival reconstruction includes the Pentagon offices, War
+Room and laboratories; Kennedy, McNamara, Nixon and Castro; both elevators
+with moving native collision, 250-point fares and five-second rides; power,
+perks, four DEFCON switches, timed Pack-a-Punch access and eight native
+portal destinations. It includes Winter’s Howl/Fury area damage and freezing,
+Nova crawlers, a Pentagon Thief round with weapon theft/recovery and Max
+Ammo/Fire Sale/Bonfire Sale rewards, laboratory mystery-box starts, and
+collectible trap parts. Map progression and elevator rides survive server saves.
+
+This is still a browser reconstruction. The Thief’s complete cross-floor
+portal chase, co-op target-only visibility and grab sequence, frozen-body
+shattering, the crawlers’ stock gas visual/behavior, animated monitor content,
+all floor-specific vision changes and the music Easter egg remain unfinished.
+Monkey Bombs, claymores, launchers and the starting pistol Pack-a-Punch
+upgrade are unavailable in this preview. Trap effects and door timing are
+approximations. Solo survival is tested;
+Five’s elevators, portals and special rounds have not been co-op playtested.
+
+Rebuild the local OAT exporter with `tools/extend_bo1_exporter.py`, followed
+by `tools/extend_five_exporter.py` and `tools/build_exporter.ps1`, before the
+first extraction:
+
+```powershell
+npm run extract:five
+npm run prepare:five
+npm run test:five
+```
+
+Tests exercise native asset coverage, 30–240 FPS spawn stability, conference
+chair overlap recovery, both elevators and walking off at their destinations,
+mid-ride session restoration, all portals, DEFCON reset and safe Pack-a-Punch
+room exits, upgrades and sale pricing, Thief theft/recovery, freezing and three
+natural starting-room rounds. HTTP checks cover the BO1 route, cached pack,
+stereo native intro and protected private paths. Lobby and named server-save
+regressions include Five. Browser checks cover loading, gameplay presentation,
+shooting, reload, elevators and DEFCON/Pack-a-Punch interactions.

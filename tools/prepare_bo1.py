@@ -18,6 +18,7 @@ KINO = M['id'] == 'kino'
 COAST = M['id'] == 'call-of-the-dead'
 MOON = M['id'] == 'moon'
 TEMPLE = M['id'] == 'shangri-la'
+FIVE = M['id'] == 'five'
 SEARCH = M['search']
 OUTPUT = DATA / M['data']
 OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -122,7 +123,7 @@ weapons = {n: weapon(n) for n in sorted(names)}
 knife = weapon('knife_zm')
 for name, w in weapons.items():
     # T5 stores reserve ammo in magazines, unlike T4's bullet counts.
-    if name.startswith(('ray_gun','thundergun','microwavegun','shrink_ray')): w['startAmmo'] += w['clipSize']
+    if name.startswith(('ray_gun','thundergun','microwavegun','shrink_ray','freezegun')): w['startAmmo'] += w['clipSize']
     elif name!='minigun_zm': w['startAmmo'] = (w['startAmmo']+1)*w['clipSize']; w['maxAmmo'] *= w['clipSize']
     w['handsModel'] = 'viewmodel_usa_pow_arms'
     w['knifeModel'] = knife['gunModel']
@@ -141,7 +142,7 @@ for name, w in weapons.items():
 grenade = weapon('frag_grenade_zm'); grenade['handsModel'] = 'viewmodel_usa_pow_arms'
 gesture_names={'specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastreload':'zombie_perk_bottle_sleight',
                'specialty_rof':'zombie_perk_bottle_doubletap','specialty_quickrevive':'zombie_perk_bottle_revive','knuckle_crack':'zombie_knuckle_crack'}
-if not KINO:
+if not KINO and not FIVE:
     # PhD Flopper and Stamin-Up (zombie_vending specialty_flakjacket / specialty_longersprint).
     gesture_names.update(specialty_flakjacket='zombie_perk_bottle_nuke',specialty_longersprint='zombie_perk_bottle_marathon')
 if COAST or MOON or TEMPLE: gesture_names['specialty_deadshot']='zombie_perk_bottle_deadshot'
@@ -182,6 +183,7 @@ actors=dict(body='c_ger_honorguard_body1',head='c_ger_zombie_head1') if KINO els
 if COAST: actors=dict(body='c_zom_soldier_body',head='c_zom_head_1')
 if MOON: actors=dict(body='c_zom_moon_militarypolice_body_bloat',head='c_zom_moon_head1')
 if TEMPLE: actors=dict(body='c_viet_zombie_vc_grunt',head='c_viet_zombie_vc_grunt_head')
+if FIVE: actors=dict(body='c_usa_pent_zombie_militarypolice_body',head='c_ger_zombie_head1')
 presentation = dict(animations=animations, effects={}, actors=actors,
                     powerups=dict(full_ammo='zombie_ammocan',insta_kill='zombie_skull',double_points='zombie_x2_icon',nuke='zombie_bomb',carpenter='zombie_carpenter'),
                     box=dict(openAngle=105,openTime=.5,floatHeight=40,riseTime=3,offerTime=12,closeTime=.5,cooldown=3,cycleDelays=[.05]*20+[.1]*10+[.2]*5+[.3]*3))
@@ -261,6 +263,8 @@ if MOON:
 if TEMPLE:
     remap['mx_zombie_wave_1']='mus_temple_underscore';aliases.add('mus_temple_underscore')
     aliases.update(p.stem for z in SEARCH[:2]+[M['english']] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'temple|tem_|napalm|sonic|monkey|minecart|waterslide|shrink|stone|waterwheel|pap_|mus_perks_deadshot|mus_z',p.stem))
+if FIVE:
+    aliases.update(p.stem for z in SEARCH[:2]+[M['english']] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'pent|thief|tech|defcon|elevator|freez|quad|bonfire|fire_sale',p.stem))
 sounds={};sound_output=OUTPUT/'sounds';sound_output.mkdir(exist_ok=True);cache={}
 def convert_audio(entry):
     filename=entry['file'].replace('\\','/').lstrip(',/')
@@ -353,6 +357,9 @@ if MOON:
 if TEMPLE:
     import prepare_shangri_data
     prepare_shangri_data.adapt(manifest,presentation,collision,SEARCH,find)
+if FIVE:
+    import prepare_five_data
+    prepare_five_data.adapt(manifest,presentation,collision,SEARCH,find)
 (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
 # Character voice lines are a separate, lazily decoded table (tools/prepare_voice.py).
 import prepare_voice
