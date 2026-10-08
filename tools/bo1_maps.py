@@ -3,6 +3,12 @@
 zone: the map's own extracted fastfile; search: zones searched for its
 assets, newest first; english: its localized zone (voice and sounds)."""
 BO1_MAPS = {
+    'shangri-la': dict(id='shangri-la',zone='bo1-temple',asset='zombie_temple',data='gameplay/bo1-temple',english='bo1-temple-english',
+        search=['bo1-temple-patch','bo1-temple','bo1-common','bo1-base','bo1-temple-english','bo1-english','bo1-ui'],
+        bodies=[{'name':'Dempsey','body':'c_usa_dempsey_body'},
+                {'name':'Nikolai','body':'c_rus_nikolai_body'},
+                {'name':'Takeo','body':'c_jap_takeo_body'},
+                {'name':'Richtofen','body':'c_ger_richtofen_body','head':'c_ger_richtofen_head','hat':'c_ger_richtofen_offcap'}]),
     'kino': dict(id='kino', zone='bo1-kino', asset='zombie_theater', data='gameplay/bo1-kino', english='bo1-english',
                  search=['bo1-kino', 'bo1-common', 'bo1-base', 'bo1-english', 'bo1-ui'],
                  bodies=[{'name': 'Dempsey', 'body': 'c_usa_dempsey_body'},

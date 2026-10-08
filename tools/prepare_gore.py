@@ -67,6 +67,7 @@ def prepare():
         ('gameplay/bo1-cosmodrome', ['bo1-cosmodrome-patch', 'bo1-cosmodrome', 'bo1-common', 'bo1-base'], True),
         ('gameplay/bo1-coast', ['bo1-coast-patch','bo1-coast','bo1-common','bo1-base'], True),
         ('gameplay/bo1-moon', ['bo1-moon-patch','bo1-moon','bo1-common','bo1-base'], True),
+        ('gameplay/bo1-temple', ['bo1-temple-patch','bo1-temple','bo1-common','bo1-base'], True),
     ]:
         target = DATA / folder / 'presentation.json'
         if not target.exists():

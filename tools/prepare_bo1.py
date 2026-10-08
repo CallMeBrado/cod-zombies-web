@@ -17,6 +17,7 @@ M = BO1_MAPS[_parser.parse_known_args(sys.argv[1:] if __name__ == '__main__' els
 KINO = M['id'] == 'kino'
 COAST = M['id'] == 'call-of-the-dead'
 MOON = M['id'] == 'moon'
+TEMPLE = M['id'] == 'shangri-la'
 SEARCH = M['search']
 OUTPUT = DATA / M['data']
 OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -50,7 +51,7 @@ for name, details in world['materials'].items():
     material=json.loads(p.read_text())
     details['diffuse']=next((t['image'] for t in material.get('textures',[]) if t['semantic']=='colorMap'),None)
     details['normal']=next((t['image'] for t in material.get('textures',[]) if t['semantic']=='normalMap'),None)
-    if not details['diffuse'] and MOON and 'water' in material.get('techniqueSet',''):
+    if not details['diffuse'] and (MOON or TEMPLE) and 'water' in material.get('techniqueSet',''):
         constants={c.get('name',c.get('nameFragment')):c['literal'] for c in material.get('constants',[])}
         details['tint']=constants.get('waterColor',[.16,.2,.22])[:3]
     elif not details['diffuse']:raise RuntimeError('Native material has no color texture: '+name)
@@ -112,7 +113,7 @@ if MOON: names.add('microwavegun_zm')
 base_names = sorted(names)
 weapon_script = (DATA / 'bo1-common/maps/_zombiemode_weapons.gsc').read_text()
 native_weapons = {n:(upgrade,int(cost)) for n,upgrade,cost in re.findall(r'add_zombie_weapon\(\s*"([^"\n]+)"\s*,\s*"([^"\n]*)"\s*,\s*[^,\n]+,\s*(\d+)', weapon_script)}
-if COAST or MOON:
+if COAST or MOON or TEMPLE:
     native_weapons.update({n:(up,int(cost)) for n,up,cost in re.findall(r'add_zombie_weapon\(\s*"([^"\n]+)"\s*,\s*"([^"\n]*)"\s*,\s*[^,\n]+,\s*(\d+)',script)})
 for n in base_names:
     upgraded=native_weapons.get(n,(n.replace('_zm','_upgraded_zm'),0))[0]
@@ -121,7 +122,7 @@ weapons = {n: weapon(n) for n in sorted(names)}
 knife = weapon('knife_zm')
 for name, w in weapons.items():
     # T5 stores reserve ammo in magazines, unlike T4's bullet counts.
-    if name.startswith(('ray_gun','thundergun','microwavegun')): w['startAmmo'] += w['clipSize']
+    if name.startswith(('ray_gun','thundergun','microwavegun','shrink_ray')): w['startAmmo'] += w['clipSize']
     elif name!='minigun_zm': w['startAmmo'] = (w['startAmmo']+1)*w['clipSize']; w['maxAmmo'] *= w['clipSize']
     w['handsModel'] = 'viewmodel_usa_pow_arms'
     w['knifeModel'] = knife['gunModel']
@@ -143,7 +144,7 @@ gesture_names={'specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastre
 if not KINO:
     # PhD Flopper and Stamin-Up (zombie_vending specialty_flakjacket / specialty_longersprint).
     gesture_names.update(specialty_flakjacket='zombie_perk_bottle_nuke',specialty_longersprint='zombie_perk_bottle_marathon')
-if COAST or MOON: gesture_names['specialty_deadshot']='zombie_perk_bottle_deadshot'
+if COAST or MOON or TEMPLE: gesture_names['specialty_deadshot']='zombie_perk_bottle_deadshot'
 if MOON: gesture_names.update(specialty_additionalprimaryweapon='zombie_perk_bottle_additionalprimaryweapon',pes_on='equip_gasmask_zm',pes_off='lower_equip_gasmask_zm',hacker='equip_hacker_zm')
 gestures={key:dict(weapon(name),name=name,handsModel='viewmodel_usa_pow_arms') for key,name in gesture_names.items()}
 costs = {n: value[1] for n,value in native_weapons.items()}
@@ -180,6 +181,7 @@ for name in ['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zom
 actors=dict(body='c_ger_honorguard_body1',head='c_ger_zombie_head1') if KINO else dict(body='c_zom_cosmo_spetznaz_body',head='c_zom_cosmo_head1')
 if COAST: actors=dict(body='c_zom_soldier_body',head='c_zom_head_1')
 if MOON: actors=dict(body='c_zom_moon_militarypolice_body_bloat',head='c_zom_moon_head1')
+if TEMPLE: actors=dict(body='c_viet_zombie_vc_grunt',head='c_viet_zombie_vc_grunt_head')
 presentation = dict(animations=animations, effects={}, actors=actors,
                     powerups=dict(full_ammo='zombie_ammocan',insta_kill='zombie_skull',double_points='zombie_x2_icon',nuke='zombie_bomb',carpenter='zombie_carpenter'),
                     box=dict(openAngle=105,openTime=.5,floatHeight=40,riseTime=3,offerTime=12,closeTime=.5,cooldown=3,cycleDelays=[.05]*20+[.1]*10+[.2]*5+[.3]*3))
@@ -211,7 +213,7 @@ for z in SEARCH:
         wanted.update(Path(i['uri']).stem.lstrip(',') for i in gltf.get('images',[]) if i.get('uri','').endswith('.dds'))
 art = ['loadscreen_'+M['asset'],'menu_'+M['asset'],'scorebar_zom_1','specialty_divetonuke_zombies','specialty_marathon_zombies','ammocounterback','hud_us_grenade',
        'specialty_juggernaut_zombies','specialty_fastreload_zombies','specialty_doubletap_zombies','specialty_quickrevive_zombies',*[f'chalkmarks_{i}' for i in range(1,6)],
-       'overlay_low_health','hit_direction',*( ['specialty_ads_zombies','frost_test'] if COAST else [])]
+       'overlay_low_health','hit_direction',*( ['specialty_ads_zombies','frost_test'] if COAST or TEMPLE else [])]
 for name in sorted(wanted | set(art)):
     if find('images/'+name+'.dds') or '$identity' in name: continue
     raw=archive_bytes('images/'+name+'.iwi')
@@ -256,6 +258,9 @@ if COAST:
 if MOON:
     aliases.update(p.stem for z in SEARCH[:2]+[M['english']] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'moon|nml|nomans|astro|digger|dig_|gasmask|suffocat|hacker|airlock|teleporter|microwave|zmb_hellhound|mus_z',p.stem))
     remap['mx_zombie_wave_1']='mus_moon_underscore';aliases.add(remap['mx_zombie_wave_1'])
+if TEMPLE:
+    remap['mx_zombie_wave_1']='mus_temple_underscore';aliases.add('mus_temple_underscore')
+    aliases.update(p.stem for z in SEARCH[:2]+[M['english']] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'temple|tem_|napalm|sonic|monkey|minecart|waterslide|shrink|stone|waterwheel|pap_|mus_perks_deadshot|mus_z',p.stem))
 sounds={};sound_output=OUTPUT/'sounds';sound_output.mkdir(exist_ok=True);cache={}
 def convert_audio(entry):
     filename=entry['file'].replace('\\','/').lstrip(',/')
@@ -345,6 +350,9 @@ if COAST:
 if MOON:
     import prepare_moon_data
     prepare_moon_data.adapt(manifest,presentation,collision,SEARCH,find)
+if TEMPLE:
+    import prepare_shangri_data
+    prepare_shangri_data.adapt(manifest,presentation,collision,SEARCH,find)
 (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
 # Character voice lines are a separate, lazily decoded table (tools/prepare_voice.py).
 import prepare_voice

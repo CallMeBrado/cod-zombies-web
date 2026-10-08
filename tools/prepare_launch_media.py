@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import os
 import subprocess
+import argparse
 from launch_audio import audio_tracks, stereo_mix
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,7 @@ MOVIES = {
     'ascension': ('Call of Duty Black Ops', 'zombie_cosmodrome_load'),
     'call-of-the-dead': ('Call of Duty Black Ops', 'zombie_coast_load'),
     'moon': ('Call of Duty Black Ops', 'zombie_moon_load'),
+    'shangri-la': ('Call of Duty Black Ops', 'zombie_temple_load'),
     'dead-ops': ('Call of Duty Black Ops', 'zombietron_load'),
     'buried': ('Call of Duty Black Ops II', 'zm_buried_load'),
     'die-rise': ('Call of Duty Black Ops II', 'zm_highrise_load'),
@@ -31,7 +33,11 @@ SOUNDTRACKS = {
                DATA / 'bo2-english/english/sound/bik/load/zm_buried_load_c.SN65.pc.snd.flac'],
     'die-rise': [DATA / 'bo2-die-rise/sound/zmb/level/zm_highrise/load_movie.SL65.pc.snd.flac'],
 }
+parser=argparse.ArgumentParser()
+parser.add_argument('--map',choices=[*MOVIES,'nuketown','tranzit'])
+selected=parser.parse_args().map
 for name, (game, movie) in MOVIES.items():
+    if selected and selected!=name:continue
     source = GAMES / game / 'main' / 'video' / (movie + '.bik')
     if game == 'Call of Duty Black Ops II':
         source = GAMES / game / 'video' / (movie + '.webm')
@@ -92,6 +98,7 @@ for name, (game, movie) in MOVIES.items():
 # The installed Nuketown Zombies release has no loading WEBM. Use its own
 # original menu/loading artwork and native underscore, never another map's movie.
 for map_id in ['nuketown','tranzit']:
+    if selected and selected!=map_id:continue
     nuketown_manifest=DATA/('gameplay/bo2-'+map_id+'/manifest.json')
     if not nuketown_manifest.exists():continue
     manifest=json.loads(nuketown_manifest.read_text())

@@ -69,6 +69,7 @@ export class ZombieActors {
   }
   updateOne(v,dt,position){
     const e=v.enemy;
+    v.root.scale.setScalar(e.visualScale||1);
     v.root.visible=e.stage!=='dog-spawn'&&!(e.dead&&e.gibbed);
     if(e.dead&&v.ragdoll.ready){this.kill(e);v.ragdoll.update(dt,this.collision);v.headFragment?.update(dt,this.collision);v.trace.tick=-1;v.traceTick=-1;return;}
     v.root.position.fromArray(position);v.root.rotation.z=e.angle;

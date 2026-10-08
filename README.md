@@ -476,6 +476,37 @@ After changing collision or movement code, run `npm run prepare:map` to rebuild 
 
 ---
 
+## Black Ops: Shangri-La
+
+Select Shangri-La on the main server at `/black-ops/?map=shangri-la`.
+
+Shangri-La uses the owned BO1 `zombie_temple` map, patch, models, animations,
+lightmaps, audio, and loading movie. Select it in the Black Ops map menu.
+The browser rules include both power levers, constrained randomized perks,
+the solo/co-op pressure plates and 60-second Pack-a-Punch stairs, minecart,
+water slide, Napalm Zombies, Shriekers, power-up monkeys and the 31-79 JGb215.
+Progression and active rides are included in server saves.
+
+Run `npm run extract:shangri-la`, `npm run prepare:shangri-la`, then
+`npm run test:shangri-la`. The shared BO1 common/base/UI exports must already
+be present. Generated assets remain on E: and outside Git.
+
+For simultaneous map development, use a separate checkout and launch its
+server with `PORT=8791` and `ZOMBIES_SHARED_ASSETS` pointing to the existing
+project. That setting reads existing public assets/packs while saves, lobbies,
+runtime files and all newly generated assets stay in the preview checkout.
+The live server can keep running throughout extraction and testing.
+
+This is a reconstructed browser port. The water slide follows a centerline
+from authored gallery markers rather than the native gravity script; the
+minecart follows the original nodes with simplified speed/return timing.
+One waterfall barrier uses an authored exterior path node as its riser start
+because its distant native spawns require unsupported traversal animations.
+Napalm explosion visuals reuse the exported native grenade effect; their
+remaining ground fire uses native flame artwork with a reconstructed emitter.
+The eclipse/EE quest, mud slowdown, spike traps and water-wheel machinery
+are not fully implemented. These limitations do not prevent round play.
+
 ## Project layout
 
 ```

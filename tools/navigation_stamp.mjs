@@ -5,6 +5,7 @@ import {SoloGame} from '../web/game.js';
 import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {BlackOps2Engine} from '../web/bo2-engine.js';
 import {MoonEngine,MoonRules} from '../web/bo1-moon.js';
+import {ShangriEngine} from '../web/bo1-shangri.js';
 
 // Combat tuning and weapon metadata do not change a walking/navigation graph.
 export async function navigationStamp(root,chosen,manifest){
@@ -49,5 +50,6 @@ export async function navigationStamp(root,chosen,manifest){
     for(const name of ['prepareSpawnPaths','invalidateNavigation','settleActor'])hash.update(MoonEngine.prototype[name].toString());
     hash.update(MoonRules.prototype.doorUnlocked.toString());
   }
+  if(chosen.id==='shangri-la'){hash.update(ShangriEngine.toString().split('  startRound()')[0]);hash.update(ShangriEngine.prototype.settleActor.toString());}
   return hash.digest('hex');
 }

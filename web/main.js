@@ -32,6 +32,8 @@ import {CallOfDeadEngine} from './bo1-coast.js';
 import {CoastView} from './bo1-coast-view.js';
 import {MoonEngine} from './bo1-moon.js';
 import {MoonView} from './bo1-moon-view.js';
+import {ShangriEngine} from './bo1-shangri.js';
+import {ShangriView} from './bo1-shangri-view.js';
 import {BlackOpsHud} from './bo1-hud.js';
 import {BlackOps2Engine,BO2_CHARACTERS,BO2_ARMS,BO2_PERKS} from './bo2-engine.js';
 import {BlackOps2Hud} from './bo2-hud.js';
@@ -98,7 +100,7 @@ const dropTemplates=new Map(),boxTemplates=new Map(),boxVisuals=new Map(),bursts
 let hudDue=0,domDue=0;const frameSamples=[];
 let frameTime=performance.now(),fpsTime=frameTime,frames=0,kickPitch=0,kickYaw=0,damageFlash=0,exertDue=0,hitTime=0,noticeDue=0,aimBlend=0,paused=true,lastLight=0;
 let deathFxTime=0,frameMsTotal=0;
-const loops=new Map();let papView=null,shake=null,verrucktView=null,coastView=null,shiView=null,moonView=null;const cellObjects=[];let cellMask=null;
+const loops=new Map();let papView=null,shake=null,verrucktView=null,coastView=null,shiView=null,moonView=null,shangriView=null;const cellObjects=[];let cellMask=null;
 const pauseKeys=new PauseKeys();
 const controls=new GameInput(settings,action=>{
   if(action==='pause'){menu('Paused',mapChoice.title);return;}
@@ -418,6 +420,7 @@ function resetVisuals() {
   buriedView?.reset();
   coastView?.reset();
   moonView?.reset();
+  shangriView?.reset();
   shiView?.reset();
   deathFxTime=0;
   grenadeView?.reset();
@@ -463,6 +466,7 @@ function pickupVisual(drop){
   const root=effects.create('misc/fx_zombie_powerup_grab',game.time);root.position.fromArray(drop.position);root.position.z+=40;scene.add(root);bursts.push({root,due:game.time+1});
 }
 function updateDrop(drop,v){
+  v.root.position.fromArray(drop.position);v.root.position.z+=40;
   updatePickupView(drop,v,game.time,effects);
 }
 async function prepareBox(manifest){
@@ -553,9 +557,12 @@ async function init() {
   if(mapChoice.id==='shi-no-numa'){shiView=new ShiNoNumaView(scene,map,dynamic,manifest);await shiView.prepare();}
   if(mapChoice.id==='call-of-the-dead'){coastView=new CoastView(scene,map,dynamic);await coastView.prepare(manifest,presentation);}
   if(mapChoice.id==='moon'){moonView=new MoonView(scene,map,dynamic);await moonView.prepare(manifest,presentation);}
+  if(mapChoice.id==='shangri-la'){shangriView=new ShangriView(scene,map,dynamic,effects);await shangriView.prepare(manifest,presentation);}
   const projectile=cloneModel(await model(manifest.grenade.projectileModel));shadeModel(projectile,[.5,.5,.5]);combatEffects.prepareGrenades(projectile,effects);
   await prepared(4,'Preparing map collision, navigation and audio…');
-  game=new (mapChoice.id==='moon'?MoonEngine:mapChoice.id==='shi-no-numa'?ShiNoNumaGame:mapChoice.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
+  game=new (mapChoice.id==='shangri-la'?ShangriEngine:mapChoice.id==='moon'?MoonEngine:mapChoice.id==='shi-no-numa'?ShiNoNumaGame:mapChoice.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:TestingGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{
+    templeView:({delta})=>{state.yaw+=delta;},
+    templeDropCycle:drop=>{const v=dropVisuals.get(drop),template=dropTemplates.get(drop.type);if(v&&template){v.object.clear();v.object.add(cloneModel(template));}},
     moonTeleport:e=>{state.yaw=e.yaw;state.pitch=0;cameraPose();},
     dialog:e=>voice?.speak(e).catch(console.warn),
     platformTurn:e=>{state.yaw+=e.delta;},buriedItem:e=>buriedView?.item(e),chalkDust:target=>buriedView?.chalkDust(target,game.time),
@@ -698,7 +705,7 @@ function frame(time) {
   }
   if(game&&!paused&&state.mode==='playing')zombieVox?.update(game.time,game,game.yaw);
   for(const [drop,v]of dropVisuals){if(drop.used||game.time>drop.expires){effects.dispose(v.glow);scene.remove(v.root);dropVisuals.delete(drop);}else updateDrop(drop,v);}
-  if(game&&state.ready){factoryVisuals();updateMovers();updateBoxes();verrucktView?.update(game,cellObjects);shiView?.update(game,cellObjects);coastView?.update(game,cellObjects);moonView?.update(game,cellObjects);updatePap();updateAudio();}
+  if(game&&state.ready){factoryVisuals();updateMovers();updateBoxes();verrucktView?.update(game,cellObjects);shiView?.update(game,cellObjects);coastView?.update(game,cellObjects);moonView?.update(game,cellObjects);shangriView?.update(game,cellObjects);updatePap();updateAudio();}
   for(let i=bursts.length-1;i>=0;i--){const b=bursts[i];if(game.time>=b.due){effects.dispose(b.root);bursts.splice(i,1);}else effects.update(b.root,game.time);}
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}

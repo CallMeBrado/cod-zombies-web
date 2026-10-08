@@ -82,7 +82,7 @@ export class OriginalEffects {
   endTime(root){return Math.max(root.userData.fx.time,...root.userData.fx.emitters.flatMap(e=>e.particles.map(p=>p.born+p.life)));}
   // Velocity of a particle at a fraction of its life, from the velocity graph.
   velocity(e,p,progress,out){
-    const graph=e.velocity;if(!graph?.length){out.set(0,0,0,0,0,0);return out;}
+    const graph=e.velocity;if(!graph?.length){out.fill(0);return out;}
     const at=progress*(graph.length-1),i=Math.min(graph.length-1,Math.floor(at)),j=Math.min(graph.length-1,i+1),t=at-i;
     for(let k=0;k<3;k++){const a=graph[i],b=graph[j],sample=(v,amp)=>(v[k]+p.r[k]*amp[k]);
       out[k]=(sample(a.local,a.localAmplitude)*(1-t)+sample(b.local,b.localAmplitude)*t)*1000;

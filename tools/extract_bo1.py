@@ -10,6 +10,11 @@ base = [str(ROOT / '.tools/oat-source/build/bin/Release_x86/Unlinker.exe'), '--n
         '--image-format', 'DDS', '--model-format', 'GLB', '--include-assets',
         'rawfile,mapents,weapon,material,image,font,xmodel,gfxworld,comworld,gameworldsp,clipmap,soundbank,xanim,fx']
 ZONES = {
+    'shangri-la': [
+        ('Common/zombie_temple','bo1-temple',['Common/common','Common/common_zombie']),
+        ('Common/zombie_temple_patch','bo1-temple-patch',['Common/common','Common/common_zombie','Common/zombie_temple']),
+        ('English/en_zombie_temple','bo1-temple-english',['Common/zombie_temple']),
+    ],
     'kino': [
         ('Common/code_post_gfx', 'bo1-ui', []),
         ('Common/common', 'bo1-base', []),

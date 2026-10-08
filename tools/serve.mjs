@@ -15,6 +15,10 @@ import {sendMovie} from './media-response.mjs';
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const port = Number(process.env.PORT || 8789);
 const host = process.env.HOST || '0.0.0.0';
+// Isolated map previews may read existing public assets without writing to
+// another checkout's manifests, saves, lobby, extraction output or caches.
+const sharedAssets=process.env.ZOMBIES_SHARED_ASSETS?path.resolve(process.env.ZOMBIES_SHARED_ASSETS):null;
+async function readData(relative){try{return await readFile(path.join(root,'local-data',relative),'utf8');}catch(error){if(error.code!=='ENOENT'||!sharedAssets)throw error;return readFile(path.join(sharedAssets,'local-data',relative),'utf8');}}
 const saveApi=createSaveApi({directory:path.join(root,'local-data/saves'),maps:[...MAPS,...BO1_MAPS,...BO2_MAPS]});
 const lobbyApi=createLobbyApi({maps:[...MAPS,...BO1_MAPS,...BO2_MAPS],log:line=>console.log(new Date().toISOString()+' '+line)});
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be between 1 and 65535.');
@@ -32,16 +36,16 @@ const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
   '.png': 'image/png', '.wav': 'audio/wav', '.flac':'audio/flac', '.glb': 'model/gltf-binary' };
 const builds=new Map();
 async function currentBuild(){
-  const preload=JSON.parse(await readFile(path.join(root,'local-data/preload.json'),'utf8'));
-  const maps={nacht:preload};for(const map of MAPS.slice(1))maps[map.id]=JSON.parse(await readFile(path.join(root,'local-data',map.data,'preload.json'),'utf8'));
-  for(const map of [...BO1_MAPS,...BO2_MAPS])try{maps[map.id]=JSON.parse(await readFile(path.join(root,'local-data',map.data,'preload.json'),'utf8'));}catch{}
+  const preload=JSON.parse(await readData('preload.json'));
+  const maps={nacht:preload};for(const map of MAPS.slice(1))maps[map.id]=JSON.parse(await readData(map.data+'/preload.json'));
+  for(const map of [...BO1_MAPS,...BO2_MAPS])try{maps[map.id]=JSON.parse(await readData(map.data+'/preload.json'));}catch{}
   const names=(await readdir(path.join(root,'web'))).filter(n=>/\.(js|css|html)$/.test(n)).sort();
   const files=await Promise.all(names.map(async name=>[name,await readFile(path.join(root,'web',name))]));
   const hash=createHash('sha256').update(JSON.stringify(Object.entries(maps).map(([key,value])=>[key,value.id])));for(const [name,buffer] of files)hash.update(name).update(buffer);
   // Loading movies have their own preparation stamps. Include them so a
   // changed soundtrack gets a fresh browser URL along with the runtime.
   const media=await Promise.all([...MAPS,...BO1_MAPS,...BO2_MAPS].map(async map=>{
-    try{return [map.id,await readFile(path.join(root,'local-data/launch',map.id+'.json'))];}catch(error){if(error.code==='ENOENT')return null;throw error;}
+    try{return [map.id,await readData('launch/'+map.id+'.json')];}catch(error){if(error.code==='ENOENT')return null;throw error;}
   }));for(const item of media)if(item)hash.update(item[0]).update(item[1]);
   const id=hash.digest('hex').slice(0,16);
   if(!builds.has(id)){builds.set(id,{id,files:new Map(files),preload,maps});if(builds.size>4)builds.delete(builds.keys().next().value);}
@@ -77,7 +81,8 @@ const server = http.createServer(async (req, res) => {
       const match=pathname.match(/^\/packs\/([a-f0-9]{20}\.pack)$/);
       if(!match){res.writeHead(404);res.end();return;}
       const compressed=/\bgzip\b/i.test(req.headers['accept-encoding']||'');
-      const file=path.join(root,'.cache/preload',match[1]+(compressed?'.gz':'')),info=await stat(file);
+      let file=path.join(root,'.cache/preload',match[1]+(compressed?'.gz':'')),info;
+      try{info=await stat(file);}catch(error){if(error.code!=='ENOENT'||!sharedAssets)throw error;file=path.join(sharedAssets,'.cache/preload',match[1]+(compressed?'.gz':''));info=await stat(file);}
       res.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':info.size,
         'Cache-Control':'public, max-age=31536000, immutable','Vary':'Accept-Encoding',
         'X-Content-Type-Options':'nosniff',...(compressed?{'Content-Encoding':'gzip'}:{})});
@@ -89,13 +94,13 @@ const server = http.createServer(async (req, res) => {
       folder = path.join(root, 'local-data'); relative = pathname.slice(6);
       // Publish game assets, while keeping extraction reports, logs and process files local.
       const assetFolder = path.relative(folder, path.resolve(folder, relative)).split(path.sep)[0];
-      if (!['bo2-tranzit','bo2-tranzit-classic','bo2-tranzit-patch','bo2-tranzit-english',...['busstation','diner','farm','powerstation','town','cornfield','forest','forest2','tunnel','labs','bridge'].map(p=>'bo2-tranzit-'+p),'gameplay', 'nacht', 'der-riese', 'shi-no-numa', 'shi-no-numa-patch', 'verruckt', 'verruckt-patch', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo1-doa','bo1-doa-patch','bo1-doa-english','bo1-doa-common','bo1-cosmodrome','bo1-cosmodrome-patch','bo1-cosmodrome-english','bo1-frontend','bo1-moon','bo1-moon-patch','bo1-moon-english','bo1-coast','bo1-coast-patch','bo1-coast-english','bo2-nuketown','bo2-nuketown-patch','bo2-nuketown-english','bo2-die-rise','bo2-die-rise-patch','bo2-die-rise-english','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
+      if (!['bo1-temple','bo1-temple-patch','bo1-temple-english','bo2-tranzit','bo2-tranzit-classic','bo2-tranzit-patch','bo2-tranzit-english',...['busstation','diner','farm','powerstation','town','cornfield','forest','forest2','tunnel','labs','bridge'].map(p=>'bo2-tranzit-'+p),'gameplay', 'nacht', 'der-riese', 'shi-no-numa', 'shi-no-numa-patch', 'verruckt', 'verruckt-patch', 'common', 'ui','bo1-kino','bo1-common','bo1-base','bo1-english','bo1-ui','bo1-doa','bo1-doa-patch','bo1-doa-english','bo1-doa-common','bo1-cosmodrome','bo1-cosmodrome-patch','bo1-cosmodrome-english','bo1-frontend','bo1-moon','bo1-moon-patch','bo1-moon-english','bo1-coast','bo1-coast-patch','bo1-coast-english','bo2-nuketown','bo2-nuketown-patch','bo2-nuketown-english','bo2-die-rise','bo2-die-rise-patch','bo2-die-rise-english','bo2-patch','bo2-classic','bo2-buried','bo2-base','bo2-common','bo2-english','bo2-dlc','bo2-menu','bo2-ui-base','bo2-ui','launch'].includes(assetFolder)) {
         res.writeHead(404); res.end('File not found.'); return;
       }
     } else if (pathname.startsWith('/vendor/')) {
       folder = path.join(root, 'node_modules', 'three'); relative = pathname.slice(8).replace(/^0\.186\.1\//,'');
     } else if (pathname === '/api/status') {
-      const report = JSON.parse(await readFile(path.join(root, 'local-data', 'inspection.json'), 'utf8'));
+      const report = JSON.parse(await readData('inspection.json'));
       const build=await currentBuild();
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ project: 'waw-zombies-web-runtime', spawns: report.playerSpawns,
@@ -109,9 +114,9 @@ const server = http.createServer(async (req, res) => {
     if (rel.startsWith('..') || path.isAbsolute(rel) || relative.includes('\0')) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
-    const actual = await realpath(candidate);
-    const actualRel = path.relative(await realpath(folder), actual);
-    if (actualRel.startsWith('..') || path.isAbsolute(actualRel)) {
+    let actual;try{actual=await realpath(candidate);}catch(error){if(error.code!=='ENOENT'||!sharedAssets||!pathname.startsWith('/data/'))throw error;actual=await realpath(path.resolve(sharedAssets,'local-data',relative));}
+    const allowedRoots=[await realpath(folder)];if(sharedAssets&&pathname.startsWith('/data/'))allowedRoots.push(await realpath(path.join(sharedAssets,'local-data')));
+    if (!allowedRoots.some(base=>{const rel=path.relative(base,actual);return !rel.startsWith('..')&&!path.isAbsolute(rel);})) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
     const info = await stat(actual);
