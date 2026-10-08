@@ -52,6 +52,15 @@ async function diffuse(name) {
   throw new Error('Original texture unavailable: '+name);
 }
 export function film(shader,vision=null) {
+  if(mapChoice.wawVision&&!vision){const v=mapChoice.wawVision,vec=a=>`vec3(${a.map(n=>n.toFixed(4)).join(',')})`;
+    shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
+      float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
+      outgoingLight=mix(outgoingLight,vec3(luma),${v.desaturation.toFixed(4)});
+      outgoingLight=max(vec3(0.),(outgoingLight-.18)*${v.contrast.toFixed(4)}+.18+${(v.brightness*.2).toFixed(4)});
+      outgoingLight*=mix(${vec(v.darkTint)},${vec(v.lightTint)},clamp(luma,0.,1.))*.65;
+      gl_FragColor.rgb=outgoingLight;
+      #include <tonemapping_fragment>`);return;
+  }
   vision??=mapChoice.vision;
   if(vision){
     // A T5 .vision's film pass: saturation, then the dark -> mid -> light

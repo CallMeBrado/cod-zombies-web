@@ -2,7 +2,7 @@
 
 A browser runtime for **Call of Duty Zombies**, with World at War, Black Ops and Black Ops II. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from your own installed copies of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
 
-World at War has **Nacht der Untoten**, **Verrückt** and **Der Riese**. Black Ops adds **Kino der Toten**, **Ascension** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
+World at War has **Nacht der Untoten**, **Verrückt**, **Shi No Numa** and **Der Riese**. Black Ops adds **Kino der Toten**, **Ascension**, **Call of the Dead**, **Moon** and **Dead Ops Arcade**, using the installed game's original T5 maps and assets.
 
 The collection opens each game's own themed lobby: **World at War** at `/world-at-war/`, **Black Ops** at `/black-ops/`, and **Black Ops II / TranZit, Buried and Nuketown Zombies** at `/black-ops-2/`. **ALL GAMES** returns to the collection; existing `?map=nacht` and `?map=der-riese` links still work.
 
@@ -250,6 +250,26 @@ npm run test:bo2
 
 `tools/decompile_bo2.py` optionally produces local script references using gsc-tool. Those scripts stay under ignored `local-data/bo2-scripts/` and are not served or packaged. All extraction, navigation, cache and prepared asset output remains under this project's directory on E:.
 
+### World at War: Shi No Numa
+
+Select **Shi No Numa** in the World at War lobby, or open `/world-at-war/?map=shi-no-numa`. The owned `nazi_zombie_sumpf` fastfile, localized sounds and patch provide the world, baked lighting, Japanese zombie/head/gore models, both native Hellhound models, weapons, clips, 19 barriers and 3,670 path nodes. The film pass uses `zombie_sumpf.vision`, and native screen-blended light shafts remain transparent. Its four-frame loading BIK loops with the original splash-screen soundtrack while the measured pack loads. Assets, navigation, logs and caches remain on E:.
+
+Purchase the stairs/debris, the four 1,000-point paths and 750-point hut doors. Spawns follow occupied building/outdoor volumes. Each hut reveals one of four randomized perk machines through the native timed lottery; solo's first hut offers Jugger-Nog or Speed Cola. WaW Quick Revive helps teammates and does not revive solo players. The moving Mystery Box includes the native hitscan weapons, Ray Gun and Wunderwaffe DG-2. Ray Gun shots travel and explode; Wunderwaffe shots chain through nearby unobstructed enemies, with the script's arc cutoff and 20-enemy limit.
+
+Hellhound rounds first occur on rounds 5–7 and repeat 4–5 rounds later. They use native dog movement/attack clips, lightning spawn protection, the original intro sounds, health tiers 350/700/1,000/1,250, two live dogs per player, six dogs per player for the first two dog rounds and eight afterward, and one Max Ammo from the final dog. The Flogger costs 750, spins for 30 seconds and cools for 45; hut electric traps cost 1,000, run 25 seconds and cool for 90. Trap kills give no points. Activate the Fishing Hut zipline lever, then spend 1,500 to ride or recall the cage along its native 28-node route, with a 40-second cooldown. Saved matches retain perk placement/reveals, dog scheduling, trap timers, projectiles and a mid-flight zipline rider.
+
+The port reconstructs the scripts rather than executing the original engine. Flogger damage uses an approximate swept danger volume; zipline motion, fog height, projectile effects and dog movement around obstacles are approximations. Bouncing Betties, Molotovs, flamethrower/launcher equipment, radio/song quests and the falling bridge event remain pending. Run `npm run extract:shi-no-numa`, `npm run prepare:shi-no-numa` and `npm run test:shi-no-numa`. The map test covers the shipped asset pack, 30–240 FPS spawn support, native door/perk progression, dogs/Max Ammo, the Flogger, zipline/rider saves, chain limits and moving-object bullet collision. Restart the server after adding a map to register it with the save/lobby APIs.
+
+### Black Ops: Moon
+
+Select **MOON** in the Black Ops lobby, or open `/black-ops/?map=moon`. Its installed fastfiles provide the world, baked lighting, collision, 2,003 path nodes, 17 zombie windows, lunar actors, weapons and animations. Start Game downloads the measured asset pack and plays the original Moon BIK with its stereo soundtrack. Data, packs, navigation, test logs and caches stay on E:.
+
+Start in No Man's Land, survive its 25-second sprint transition and use the Earth teleporter to reach Griffin Station. No Man's Land uses supported native riser/chaser markers and never falls back to window spawning; an invalid marker is skipped rather than stopping the game loop. Lunar play includes low gravity, pressure volumes, oxygen/suffocation, the P.E.S. pickup/equip gesture, purchased sliding airlocks, power, perks, the Mystery Box, Area 51 Pack-a-Punch, jump pads, the astronaut's perk-stealing headbutt, basic Nova crawlers and the three excavators with Hacker panels. Press **5** to equip/remove the P.E.S. and **4** to combine/split the Zap Guns and Wave Gun. Default controller equivalents are D-pad Up and D-pad Left; both actions can be rebound. Taking the Hacker replaces the P.E.S. Airlock hacking costs 200 points and takes 32.7 seconds; excavator hacking takes five seconds and awards 1,000 points. Named server saves retain Moon/Earth round state, equipment, atmospheric breaches, airlocks, excavators and weapon-mode ammo.
+
+This is a browser reconstruction. The full Easter egg, Gersch Devices/QEDs, Mule Kick machine placement, No Man's Land Hellhounds, Nova crawler phasing/gas, independent left Zap Gun firing and some original effects remain unfinished. Excavator and jump-pad trajectories, atmospheric lighting and No Man's Land difficulty timing are approximations. Moon co-op has not been playtested.
+
+Run `npm run extract:moon`, `npm run prepare:moon` and `npm run test:moon`. Complete the preparation before running the map test: it needs the finished door-state navigation. Coverage includes packed model/texture/animation dependencies, native geometry, Earth/lunar floors and jumps at 30–240 FPS, more than 80 seconds of No Man's Land, invalid-marker handling, all 52 prepared window approaches/traversals at gait extremes, oxygen/P.E.S., progression, weapon modes and kills, the astronaut, excavators, jump pads, crawlers and saved state. Browser checks cover actual loading, gameplay and map interactions; automated browser testing uses Chromium, not Firefox.
+
 ### Black Ops II: TranZit
 
 Select **TRANZIT** on the BO2 globe, or open `/black-ops-2/?map=tranzit`. Classic Green Run runs on the shared T6 engine with separate `TranzitRules`. Its original world, location fastfiles, baked lighting, collision, 38 window barriers, 50 spawn volumes, weapons, viewmodels, voices and character bodies come from the installed files. Start Game loads the measured asset pack and original TranZit artwork/underscore; this installation has no TranZit loading video. Extraction, caches and prepared assets remain on E:.
@@ -290,7 +310,7 @@ Prepare with `npm run extract:nuketown` and `npm run prepare:nuketown`. `npm run
 | **Sound ranges** | The extracted sound definitions have no min/max distances, so hearing ranges are chosen per sound type. |
 | **Saves** | Can't save mid-drink, during Pack-a-Punch, with a grenade in hand or during a burst. Save after the action finishes. |
 | **Multiplayer** | Online co-op for up to four players on the same server: opt-in pre-game lobbies (join from the list or an invite link), the host runs the match, and downed teammates enter last stand (30 s bleedout, revivable, back next round). Solo has no last stand: going down ends the game. Teammates' grenades and original muzzle-flash effects aren't shown yet. |
-| **Other maps** | Shi No Numa and additional Black Ops / Black Ops II maps haven't been started. |
+| **Other maps** | Additional Black Ops / Black Ops II maps remain pending. |
 | **Setup automation** | Der Riese extraction isn't scripted yet; see [Setup](#setup). |
 
 ---

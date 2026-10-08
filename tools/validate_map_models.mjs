@@ -31,6 +31,7 @@ export async function validateMapModels(id){
   const clean=name=>name.replace(/^,/,''),assetUrl=relative=>'/data/'+relative.split('/').map(encodeURIComponent).join('/');
   const packed=(folder,name,suffix)=>zones.map(z=>assetUrl(`${z}/${folder}/${clean(name)}${suffix}`)).find(url=>urls.has(url));
   const names=new Set([...Object.values(presentation.powerups||{}),...world.staticModels.map(m=>m.model),
+    ...Object.values(manifest.weapons).map(w=>w.secondaryModel).filter(Boolean),
     ...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),
     ...(manifest.characterArms||[]),presentation.actors?.body,presentation.actors?.head,
     presentation.gore?.neckModel,presentation.box?.teddyModel,...(manifest.map?.propModels||[])]);

@@ -16,6 +16,7 @@ _parser.add_argument('--map', choices=sorted(BO1_MAPS), default='kino')
 M = BO1_MAPS[_parser.parse_known_args(sys.argv[1:] if __name__ == '__main__' else [])[0].map]
 KINO = M['id'] == 'kino'
 COAST = M['id'] == 'call-of-the-dead'
+MOON = M['id'] == 'moon'
 SEARCH = M['search']
 OUTPUT = DATA / M['data']
 OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,10 @@ for name, details in world['materials'].items():
     material=json.loads(p.read_text())
     details['diffuse']=next((t['image'] for t in material.get('textures',[]) if t['semantic']=='colorMap'),None)
     details['normal']=next((t['image'] for t in material.get('textures',[]) if t['semantic']=='normalMap'),None)
-    if not details['diffuse']:raise RuntimeError('Native material has no color texture: '+name)
+    if not details['diffuse'] and MOON and 'water' in material.get('techniqueSet',''):
+        constants={c.get('name',c.get('nameFragment')):c['literal'] for c in material.get('constants',[])}
+        details['tint']=constants.get('waterColor',[.16,.2,.22])[:3]
+    elif not details['diffuse']:raise RuntimeError('Native material has no color texture: '+name)
 WORLD.with_suffix('.json').write_text(json.dumps(world,separators=(',',':')))
 collision = json.loads(WORLD.with_suffix('.collision.json').read_text())
 paths = json.loads(WORLD.with_suffix('.paths.json').read_text())
@@ -99,15 +103,16 @@ if KINO:
 else:
     # include_weapon( name [, in_box] ): base weapons the map's box can give.
     # Tactical grenades and launchers the T5 runtime cannot fire yet stay out.
-    UNSUPPORTED = {'zombie_black_hole_bomb','zombie_nesting_dolls','crossbow_explosive_zm','knife_ballistic_zm','m72_law_zm','china_lake_zm','claymore_zm','frag_grenade_zm'}
+    UNSUPPORTED = {'zombie_black_hole_bomb','zombie_quantum_bomb','zombie_nesting_dolls','crossbow_explosive_zm','knife_ballistic_zm','m72_law_zm','china_lake_zm','claymore_zm','frag_grenade_zm','sticky_grenade_zm'}
     BOX = [n for n,in_box in re.findall(r'^\s*include_weapon\(\s*"([^"]+)"\s*(?:,\s*(true|false))?',script,re.M) if '_upgraded' not in n and in_box!='false' and n not in UNSUPPORTED]
     names |= {'m1911_zm',*BOX}
 names -= {'claymore_zm','bowie_knife_zm','frag_grenade_zm'}
 if COAST: names.add('minigun_zm')
+if MOON: names.add('microwavegun_zm')
 base_names = sorted(names)
 weapon_script = (DATA / 'bo1-common/maps/_zombiemode_weapons.gsc').read_text()
 native_weapons = {n:(upgrade,int(cost)) for n,upgrade,cost in re.findall(r'add_zombie_weapon\(\s*"([^"\n]+)"\s*,\s*"([^"\n]*)"\s*,\s*[^,\n]+,\s*(\d+)', weapon_script)}
-if COAST:
+if COAST or MOON:
     native_weapons.update({n:(up,int(cost)) for n,up,cost in re.findall(r'add_zombie_weapon\(\s*"([^"\n]+)"\s*,\s*"([^"\n]*)"\s*,\s*[^,\n]+,\s*(\d+)',script)})
 for n in base_names:
     upgraded=native_weapons.get(n,(n.replace('_zm','_upgraded_zm'),0))[0]
@@ -116,7 +121,7 @@ weapons = {n: weapon(n) for n in sorted(names)}
 knife = weapon('knife_zm')
 for name, w in weapons.items():
     # T5 stores reserve ammo in magazines, unlike T4's bullet counts.
-    if name.startswith(('ray_gun','thundergun')): w['startAmmo'] += w['clipSize']
+    if name.startswith(('ray_gun','thundergun','microwavegun')): w['startAmmo'] += w['clipSize']
     elif name!='minigun_zm': w['startAmmo'] = (w['startAmmo']+1)*w['clipSize']; w['maxAmmo'] *= w['clipSize']
     w['handsModel'] = 'viewmodel_usa_pow_arms'
     w['knifeModel'] = knife['gunModel']
@@ -138,7 +143,8 @@ gesture_names={'specialty_armorvest':'zombie_perk_bottle_jugg','specialty_fastre
 if not KINO:
     # PhD Flopper and Stamin-Up (zombie_vending specialty_flakjacket / specialty_longersprint).
     gesture_names.update(specialty_flakjacket='zombie_perk_bottle_nuke',specialty_longersprint='zombie_perk_bottle_marathon')
-if COAST: gesture_names['specialty_deadshot']='zombie_perk_bottle_deadshot'
+if COAST or MOON: gesture_names['specialty_deadshot']='zombie_perk_bottle_deadshot'
+if MOON: gesture_names.update(specialty_additionalprimaryweapon='zombie_perk_bottle_additionalprimaryweapon',pes_on='equip_gasmask_zm',pes_off='lower_equip_gasmask_zm',hacker='equip_hacker_zm')
 gestures={key:dict(weapon(name),name=name,handsModel='viewmodel_usa_pow_arms') for key,name in gesture_names.items()}
 costs = {n: value[1] for n,value in native_weapons.items()}
 for e in entities:
@@ -173,6 +179,7 @@ for name in ['ai_zombie_walk_v1','ai_zombie_walk_v2','ai_zombie_walk_v3','ai_zom
 # xmodelalias c_zom_cosmo_headalias's first head.
 actors=dict(body='c_ger_honorguard_body1',head='c_ger_zombie_head1') if KINO else dict(body='c_zom_cosmo_spetznaz_body',head='c_zom_cosmo_head1')
 if COAST: actors=dict(body='c_zom_soldier_body',head='c_zom_head_1')
+if MOON: actors=dict(body='c_zom_moon_militarypolice_body_bloat',head='c_zom_moon_head1')
 presentation = dict(animations=animations, effects={}, actors=actors,
                     powerups=dict(full_ammo='zombie_ammocan',insta_kill='zombie_skull',double_points='zombie_x2_icon',nuke='zombie_bomb',carpenter='zombie_carpenter'),
                     box=dict(openAngle=105,openTime=.5,floatHeight=40,riseTime=3,offerTime=12,closeTime=.5,cooldown=3,cycleDelays=[.05]*20+[.1]*10+[.2]*5+[.3]*3))
@@ -246,6 +253,9 @@ if COAST:
     aliases.update(p.stem for z in [M['zone'],M['english']] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'romero|director|engineer|pap_|flinger|zipline|ice_|humangun|sniper|mus_coast|mus_zcoast',p.stem))
     remap['mx_zombie_wave_1']='mus_cosmo_underscore'
     aliases.add(remap['mx_zombie_wave_1'])
+if MOON:
+    aliases.update(p.stem for z in SEARCH[:2]+[M['english']] for p in (DATA/z/'web-sounds').glob('*.json') if re.search(r'moon|nml|nomans|astro|digger|dig_|gasmask|suffocat|hacker|airlock|teleporter|microwave|zmb_hellhound|mus_z',p.stem))
+    remap['mx_zombie_wave_1']='mus_moon_underscore';aliases.add(remap['mx_zombie_wave_1'])
 sounds={};sound_output=OUTPUT/'sounds';sound_output.mkdir(exist_ok=True);cache={}
 def convert_audio(entry):
     filename=entry['file'].replace('\\','/').lstrip(',/')
@@ -332,6 +342,9 @@ if COAST:
     manifest['map']['projectileWeapons']={n:weapon(n) for n in ['sniper_explosive_bolt_zm','sniper_explosive_bolt_upgraded_zm']}
     # The moving machine's original clip is linked/not solid in the stock script.
     manifest['map']['initialDisabled']=['zombie_vending_upgrade_clip','flinger_player_gate']
+if MOON:
+    import prepare_moon_data
+    prepare_moon_data.adapt(manifest,presentation,collision,SEARCH,find)
 (OUTPUT/'manifest.json').write_text(json.dumps(manifest,separators=(',',':')))
 # Character voice lines are a separate, lazily decoded table (tools/prepare_voice.py).
 import prepare_voice

@@ -28,6 +28,11 @@ ZONES = {
         ('Common/zombie_coast_patch', 'bo1-coast-patch', ['Common/common', 'Common/common_zombie', 'Common/zombie_coast']),
         ('English/en_zombie_coast', 'bo1-coast-english', ['Common/zombie_coast']),
     ],
+    'moon': [
+        ('Common/zombie_moon', 'bo1-moon', ['Common/common', 'Common/common_zombie']),
+        ('Common/zombie_moon_patch', 'bo1-moon-patch', ['Common/common', 'Common/common_zombie', 'Common/zombie_moon']),
+        ('English/en_zombie_moon', 'bo1-moon-english', ['Common/zombie_moon']),
+    ],
     # The frontend (interrogation room) behind the zombies menu.
     'frontend': [
         ('Common/frontend', 'bo1-frontend', ['Common/common']),

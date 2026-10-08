@@ -35,7 +35,8 @@ export class WeaponView {
   }
   async load(weapon,light) {
     const version=++this.version;
-    if(this.rigs.has(weapon.name)){this.activate(this.rigs.get(weapon.name),weapon);return;}
+    const rigKey=weapon.name+(weapon.definition.rigVariant?'#'+weapon.definition.rigVariant:'');
+    if(this.rigs.has(rigKey)){this.activate(this.rigs.get(rigKey),weapon);return;}
     // Perk bottles and the knuckle crack are viewmodel-only and carry no knife.
     const [hands,template,knifeTemplate]=await Promise.all([model(weapon.definition.handsModel||'viewmodel_hands'),model(weapon.definition.gunModel),weapon.definition.knifeModel?model(weapon.definition.knifeModel):null]);
     const object=cloneModel(hands),gun=cloneModel(template);applyHideTags(gun,weapon.definition.hideTags);
@@ -43,6 +44,7 @@ export class WeaponView {
     // bind positions; hand tracks use their authored local positions.
     gun.traverse(bone=>{if(bone.isBone)bone.userData.animationTranslationBase=bone.position.toArray();});
     object.getObjectByName('tag_weapon').add(gun);
+    if(weapon.definition.secondaryModel){const second=cloneModel(await model(weapon.definition.secondaryModel));applyHideTags(second,weapon.definition.hideTags);second.traverse(b=>{if(b.isBone)b.userData.animationTranslationBase=b.position.toArray();});(object.getObjectByName(weapon.definition.secondaryTag)||object.getObjectByName('tag_weapon')).add(second);}
     const knife=knifeTemplate?cloneModel(knifeTemplate):new THREE.Group();knife.name='Original Ka-Bar knife';(object.getObjectByName('tag_knife_attach')||object.getObjectByName('tag_weapon')).add(knife);knife.visible=false;
     const root=new THREE.Group(),orientation=new THREE.Group();
     orientation.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0,-1,0,0,0,0,1,0,-1,0,0,0,0,0,0,1));orientation.add(object);root.add(orientation);
@@ -68,7 +70,7 @@ export class WeaponView {
     this.flash=new THREE.Mesh(new THREE.ConeGeometry(1.4,5,5),new THREE.MeshBasicMaterial({color:0xffe8ba,transparent:true,opacity:.85,depthWrite:false}));
     this.flash.rotation.z=-Math.PI/2;this.flash.visible=false;object.getObjectByName('tag_flash')?.add(this.flash);
     this.knife=knife;this.meleeRemaining=0;this.sprintBlend=0;this.flashTime=0;this.rechamberAt=0;
-    this.flashFx=undefined;this.rigs.set(weapon.name,{root,object,mixer,clips,definition,adsAction:this.adsAction,flash:this.flash,flashFx:undefined,knife});
+    this.flashFx=undefined;this.rigs.set(rigKey,{root,object,mixer,clips,definition,adsAction:this.adsAction,flash:this.flash,flashFx:undefined,knife});
   }
   play(name,duration=0,loop=false,hold=false,fade=.035) {
     const clip=this.clips.get(name);if(!clip)return;this.sprintAnim=null;
@@ -92,7 +94,7 @@ export class WeaponView {
     // made on the first shot once the effect textures are ready.
     if(this.flashFx===undefined&&this.effects?.ready){const name=d.viewFlashEffect,tag=this.object.getObjectByName('tag_flash');
       this.flashFx=name&&tag&&this.effects.has(name)?this.effects.create(name,0):null;if(this.flashFx){this.flashFx.visible=false;tag.add(this.flashFx);}
-      const rig=this.rigs.get(this.weapon.name);if(rig)rig.flashFx=this.flashFx;}
+      const rig=this.rigs.get(this.weapon.name+(d.rigVariant?'#'+d.rigVariant:''));if(rig)rig.flashFx=this.flashFx;}
     // A looping flash effect (fx_paralyzer_on_view) runs on through a burst.
     if(this.flashFx){const looping=this.flashFx.userData.fx.emitters.some(e=>e.e.looping);
       if(looping&&this.flashFx.visible&&(this.time||0)<this.flashFxDue)this.flashFxDue=Math.max(this.flashFxDue,(this.time||0)+Math.max(.15,d.fireTime*1.5));

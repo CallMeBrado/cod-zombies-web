@@ -2,10 +2,10 @@ export const SETTINGS_KEY='waw-zombies-settings-v1';
 export const ACTIONS=[
  ['forward','Forward','Movement'],['backward','Back','Movement'],['left','Move left','Movement'],['right','Move right','Movement'],['sprint','Sprint','Movement'],['jump','Stand / jump','Movement'],['crouch','Toggle crouch','Movement'],['prone','Prone / BO1 dive','Movement'],
  ['fire','Attack','Combat'],['aim','Aim down sight','Combat'],['aimToggle','Toggle aim','Combat'],['reload','Reload','Combat'],['melee','Melee attack','Combat'],['grenade','Throw / cook grenade','Combat'],['nextWeapon','Switch weapon','Combat'],
- ['equipment','Place equipment','Combat'],['use','Use / rebuild / throw back','Other'],['pause','Pause game','Other'],['lookLeft','Look left','Other'],['lookRight','Look right','Other'],['lookUp','Look up','Other'],['lookDown','Look down','Other']
+ ['alternateWeapon','Weapon mode','Combat'],['equipment','Equipment / P.E.S.','Combat'],['use','Use / rebuild / throw back','Other'],['pause','Pause game','Other'],['lookLeft','Look left','Other'],['lookRight','Look right','Other'],['lookUp','Look up','Other'],['lookDown','Look down','Other']
 ];
 export const DEFAULT_SETTINGS={version:1,sensitivity:5,adsSensitivity:.5,invertY:false,aimMode:'hold',volume:.5,fov:65,renderScale:100,showFps:true,bindings:{
- forward:['KeyW',null],backward:['KeyS',null],left:['KeyA',null],right:['KeyD',null],sprint:['ShiftLeft','ShiftRight'],jump:['Space',null],crouch:['KeyC',null],prone:['ControlLeft','ControlRight'],fire:['Mouse0','KeyF'],aim:['Mouse2',null],aimToggle:['KeyX',null],reload:['KeyR',null],melee:['KeyV',null],grenade:['KeyG',null],nextWeapon:['KeyQ','WheelDown'],equipment:['Digit5',null],use:['KeyE',null],pause:['Escape',null],lookLeft:['ArrowLeft',null],lookRight:['ArrowRight',null],lookUp:['ArrowUp',null],lookDown:['ArrowDown',null]
+ forward:['KeyW',null],backward:['KeyS',null],left:['KeyA',null],right:['KeyD',null],sprint:['ShiftLeft','ShiftRight'],jump:['Space',null],crouch:['KeyC',null],prone:['ControlLeft','ControlRight'],fire:['Mouse0','KeyF'],aim:['Mouse2',null],aimToggle:['KeyX',null],reload:['KeyR',null],melee:['KeyV',null],grenade:['KeyG',null],nextWeapon:['KeyQ','WheelDown'],alternateWeapon:['Digit4',null],equipment:['Digit5',null],use:['KeyE',null],pause:['Escape',null],lookLeft:['ArrowLeft',null],lookRight:['ArrowRight',null],lookUp:['ArrowUp',null],lookDown:['ArrowDown',null]
 }};
 const defaults=()=>structuredClone(DEFAULT_SETTINGS);
 export function validBinding(token){return typeof token==='string'&&/^(Key[A-Z]|Digit[0-9]|Numpad[0-9]|F([1-9]|1[0-2])|Shift(Left|Right)|Control(Left|Right)|Alt(Left|Right)|Arrow(Left|Right|Up|Down)|Space|Tab|Enter|Escape|Backspace|Delete|Insert|Home|End|PageUp|PageDown|BracketLeft|BracketRight|Backslash|Semicolon|Quote|Comma|Period|Slash|Minus|Equal|Backquote|Mouse[0-4]|WheelUp|WheelDown)$/.test(token);}
@@ -15,7 +15,7 @@ export function normalizeSettings(saved){
  for(const [key,min,max]of [['sensitivity',1,30],['adsSensitivity',.1,1.5],['volume',0,1],['fov',60,100],['renderScale',50,150]])if(Number.isFinite(saved[key]))out[key]=Math.max(min,Math.min(max,saved[key]));
  out.invertY=saved.invertY===true;out.showFps=saved.showFps!==false;out.aimMode=saved.aimMode==='toggle'?'toggle':'hold';
  // New defaults must not take a key already assigned by an older profile.
- const reserved=new Set(Object.values(saved.bindings||{}).filter(Array.isArray).flat().filter(Boolean));for(const action of ['crouch','prone','equipment'])if(!Array.isArray(saved.bindings?.[action]))out.bindings[action]=out.bindings[action].map(k=>reserved.has(k)?null:k);
+ const reserved=new Set(Object.values(saved.bindings||{}).filter(Array.isArray).flat().filter(Boolean));for(const action of ['crouch','prone','equipment','alternateWeapon'])if(!Array.isArray(saved.bindings?.[action]))out.bindings[action]=out.bindings[action].map(k=>reserved.has(k)?null:k);
  const used=new Set();for(const [action]of ACTIONS){const keys=Array.isArray(saved.bindings?.[action])?saved.bindings[action]:out.bindings[action];out.bindings[action]=[0,1].map(i=>{const token=keys[i];if(!validBinding(token)||used.has(token)||token==='Escape'&&action!=='pause')return null;used.add(token);return token;});}
  return out;
 }
@@ -40,7 +40,7 @@ export class GameInput {
  press(token,repeat=false){const already=this.tokens.has(token);this.tokens.add(token);if(repeat||already)return;
   for(const action of this.settings.actions(token)){
    if(action==='aimToggle'||action==='aim'&&this.settings.value.aimMode==='toggle')this.toggledAim=!this.toggledAim;
-   else if(['crouch','prone','reload','melee','use','grenade','nextWeapon','equipment','pause','lookLeft','lookRight','lookUp','lookDown'].includes(action)||action==='fire'&&!token.startsWith('Mouse'))this.action(action);
+   else if(['crouch','prone','reload','melee','use','grenade','nextWeapon','equipment','alternateWeapon','pause','lookLeft','lookRight','lookUp','lookDown'].includes(action)||action==='fire'&&!token.startsWith('Mouse'))this.action(action);
   }
  }
  release(token){const grenadeHeld=this.settings.held('grenade',this.tokens);this.tokens.delete(token);if(grenadeHeld&&!this.settings.held('grenade',this.tokens))this.releaseAction('grenade');}

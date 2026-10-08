@@ -13,9 +13,11 @@ MOVIES = {
     'nacht': ('Call of Duty World at War', 'nazi_zombie_prototype_load'),
     'der-riese': ('Call of Duty World at War', 'nazi_zombie_factory_load'),
     'verruckt': ('Call of Duty World at War', 'nazi_zombie_asylum_load'),
+    'shi-no-numa': ('Call of Duty World at War', 'nazi_zombie_sumpf_load'),
     'kino': ('Call of Duty Black Ops', 'zombie_theater_load'),
     'ascension': ('Call of Duty Black Ops', 'zombie_cosmodrome_load'),
     'call-of-the-dead': ('Call of Duty Black Ops', 'zombie_coast_load'),
+    'moon': ('Call of Duty Black Ops', 'zombie_moon_load'),
     'dead-ops': ('Call of Duty Black Ops', 'zombietron_load'),
     'buried': ('Call of Duty Black Ops II', 'zm_buried_load'),
 }
@@ -34,11 +36,18 @@ for name, (game, movie) in MOVIES.items():
     if not source.exists():
         continue
     stems = [p for p in SOUNDTRACKS.get(name, []) if p.exists()]
+    # WaW's Shi No Numa BIK is a four-frame loading loop with no audio.
+    # Loop those original frames with the map's owned splash-screen music.
+    loading_loop = name == 'shi-no-numa'
+    if loading_loop:
+        manifest = json.loads((DATA / 'gameplay/shi-no-numa/manifest.json').read_text())
+        stems = [DATA / manifest['sounds']['mx_splash_screen'][0]['url'].removeprefix('/data/')]
     destination = OUTPUT / (name + '.mp4')
     metadata = OUTPUT / (name + '.json')
     stamp = {'source': str(source), 'size': source.stat().st_size,
              'mtime': source.stat().st_mtime_ns, 'encoding': 'h264-aac-stereo-v3',
              'soundtrack': [[str(p), p.stat().st_size, p.stat().st_mtime_ns] for p in stems]}
+    if loading_loop: stamp['loadingLoopSeconds'] = 20
     previous = json.loads(metadata.read_text()) if metadata.exists() else {}
     if destination.exists() and metadata.exists():
         if previous.get('sourceStamp') == stamp:
@@ -47,11 +56,11 @@ for name, (game, movie) in MOVIES.items():
     temporary = OUTPUT / (name + '.tmp.mp4')
     # Audio fixes can reuse the existing H.264 frames without re-encoding
     # the movie. Keep the original video only when the installed source matches.
-    reuse_video = destination.exists() and all(previous.get('sourceStamp', {}).get(k) == stamp[k]
+    reuse_video = not loading_loop and destination.exists() and all(previous.get('sourceStamp', {}).get(k) == stamp[k]
                                                for k in ('source', 'size', 'mtime'))
     inputs = ['-i', str(destination)] if reuse_video else []
     source_index = 1 if reuse_video else 0
-    inputs += ['-i', str(source)]
+    inputs += (['-stream_loop', '-1'] if loading_loop else []) + ['-i', str(source)]
     if stems:
         tracks = []
         for i, p in enumerate(stems, source_index + 1):
@@ -62,7 +71,7 @@ for name, (game, movie) in MOVIES.items():
     audio = stereo_mix(tracks) if tracks else ['-an']
     video = ['-c:v', 'copy'] if reuse_video else ['-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-pix_fmt', 'yuv420p']
     subprocess.run(['ffmpeg', '-nostdin', '-y', '-loglevel', 'error', *inputs,
-                    '-map', '0:v:0', *audio, *(['-shortest'] if stems else []), *video, '-c:a', 'aac', '-b:a', '192k',
+                    '-map', '0:v:0', *audio, *(['-t', '20'] if loading_loop else ['-shortest'] if stems else []), *video, '-c:a', 'aac', '-b:a', '192k',
                     '-movflags', '+faststart', str(temporary)], check=True)
     probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error',
         '-show_entries', 'format=duration:stream=codec_type,channels,channel_layout', '-of', 'json', str(temporary)]))

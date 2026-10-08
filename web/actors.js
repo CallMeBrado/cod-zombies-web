@@ -12,6 +12,7 @@ export class ZombieActors {
     const body=cloneModel(bodyTemplate),head=cloneModel(headTemplate);head.userData.zombieHeadRoot=true;
     if(this.presentation.gore?.neckModel){const neck=cloneModel(await model(this.presentation.gore.neckModel));neck.userData.zombieNeckRoot=true;neck.traverse(n=>{if(n.isMesh)n.userData.goreOnly=true;});(this.presentation.gore.neckMount==='body'?body:body.getObjectByName('j_spine4')).add(neck);}
     head.traverse(n=>{if(n.isMesh)n.userData.zombieHead=true;});body.getObjectByName('j_spine4')?.add(head);shadeModel(body,[1,1,1]);
+    for(const a of this.presentation.actors?.attachments||[]){const attachment=cloneModel(await model(a.model));shadeModel(attachment,[1,1,1]);(body.getObjectByName(a.tag)||body).add(attachment);}
     await this.prepareRig(body,Object.fromEntries(Object.keys(this.presentation.animations).map(n=>[n,n])),32,this.pool);
     this.variantPools=new Map();
     for(const [kind,config]of Object.entries(this.presentation.actorVariants||{})){
@@ -68,6 +69,7 @@ export class ZombieActors {
   }
   updateOne(v,dt,position){
     const e=v.enemy;
+    v.root.visible=e.stage!=='dog-spawn'&&!(e.dead&&e.gibbed);
     if(e.dead&&v.ragdoll.ready){this.kill(e);v.ragdoll.update(dt,this.collision);v.headFragment?.update(dt,this.collision);v.trace.tick=-1;v.traceTick=-1;return;}
     v.root.position.fromArray(position);v.root.rotation.z=e.angle;
     if(e.stage==='rise'&&!e.riseAnim)v.root.position.z-=50*Math.max(0,(e.riseUntil-e.spawnTime-e.age)/(e.riseUntil-e.spawnTime));

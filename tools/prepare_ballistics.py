@@ -12,6 +12,7 @@ FIELDS = ['weaponType', 'weaponClass', 'penetrateType', 'rifleBullet', 'maxRange
 for folder, zones in [('gameplay', ['nacht', 'common']),
                       ('gameplay/der-riese', ['der-riese', 'common', 'nacht']),
                       ('gameplay/verruckt', ['verruckt-patch', 'verruckt', 'common', 'nacht']),
+                      ('gameplay/shi-no-numa', ['shi-no-numa-patch', 'shi-no-numa', 'common', 'nacht']),
                       ('gameplay/bo1-kino', ['bo1-kino', 'bo1-common', 'bo1-base'])]:
     file = DATA / folder / 'manifest.json'
     if not file.exists():

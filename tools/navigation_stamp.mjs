@@ -4,6 +4,7 @@ import path from 'node:path';
 import {SoloGame} from '../web/game.js';
 import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {BlackOps2Engine} from '../web/bo2-engine.js';
+import {MoonEngine,MoonRules} from '../web/bo1-moon.js';
 
 // Combat tuning and weapon metadata do not change a walking/navigation graph.
 export async function navigationStamp(root,chosen,manifest){
@@ -40,5 +41,13 @@ export async function navigationStamp(root,chosen,manifest){
   }
   if(chosen.game==='black-ops-2')for(const method of ['settleFeet','projectGround','walkableLink'])hash.update(BlackOps2Engine.prototype[method].toString());
   if(chosen.id==='tranzit')hash.update(await readFile(path.join(root,'web/bo2-tranzit.js')));
+  if(chosen.id==='shi-no-numa')hash.update(await readFile(path.join(root,'web/waw-shi-no-numa.js')));
+  if(chosen.id==='moon'){
+    // Moon's combat, oxygen and excavator timers do not alter prepared links.
+    const source=await readFile(path.join(root,'web/bo1-moon.js'),'utf8');
+    hash.update(source.slice(source.indexOf('  constructor(g)'),source.indexOf('  reset()')));
+    for(const name of ['prepareSpawnPaths','invalidateNavigation','settleActor'])hash.update(MoonEngine.prototype[name].toString());
+    hash.update(MoonRules.prototype.doorUnlocked.toString());
+  }
   return hash.digest('hex');
 }

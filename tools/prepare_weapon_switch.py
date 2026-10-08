@@ -37,3 +37,5 @@ if __name__ == '__main__':
     print(patch(DATA/'gameplay/manifest.json', DATA/'nacht/weapons', DATA/'gameplay', ['nacht', 'common']))
     print(patch(DATA/'gameplay/der-riese/manifest.json', DATA/'der-riese/weapons', DATA/'gameplay/der-riese', ['der-riese', 'common', 'nacht']))
     print(patch(DATA/'gameplay/verruckt/manifest.json', DATA/'verruckt/weapons', DATA/'gameplay/verruckt', ['verruckt-patch', 'verruckt', 'common', 'nacht']))
+    if (DATA/'gameplay/shi-no-numa/manifest.json').exists():
+        print(patch(DATA/'gameplay/shi-no-numa/manifest.json', DATA/'shi-no-numa/weapons', DATA/'gameplay/shi-no-numa', ['shi-no-numa-patch', 'shi-no-numa', 'common', 'nacht']))

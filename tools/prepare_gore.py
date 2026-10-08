@@ -62,9 +62,11 @@ def prepare():
         ('gameplay', ['nacht', 'common'], False),
         ('gameplay/der-riese', ['der-riese', 'common', 'nacht'], False),
         ('gameplay/verruckt', ['verruckt-patch', 'verruckt', 'common', 'nacht'], False),
+        ('gameplay/shi-no-numa', ['shi-no-numa-patch', 'shi-no-numa', 'common', 'nacht'], False),
         ('gameplay/bo1-kino', ['bo1-kino', 'bo1-common', 'bo1-base'], True),
         ('gameplay/bo1-cosmodrome', ['bo1-cosmodrome-patch', 'bo1-cosmodrome', 'bo1-common', 'bo1-base'], True),
         ('gameplay/bo1-coast', ['bo1-coast-patch','bo1-coast','bo1-common','bo1-base'], True),
+        ('gameplay/bo1-moon', ['bo1-moon-patch','bo1-moon','bo1-common','bo1-base'], True),
     ]:
         target = DATA / folder / 'presentation.json'
         if not target.exists():
@@ -85,7 +87,7 @@ def prepare():
         # The map zombie body's own beheaded variant (Ascension's Spetsnaz), else
         # the honour guard's.
         fallback = 'char_ger_honorgd_body1_g_behead' if black_ops else 'char_ger_honorgd_zomb_behead'
-        candidates = [presentation.get('actors', {}).get('body', '') + '_g_behead', fallback]
+        candidates = [presentation.get('gore', {}).get('neckModel', ''), presentation.get('actors', {}).get('body', '') + '_g_behead', fallback]
         model = next((m for m in candidates if any((DATA / z / 'model_export' / (m + '_lod0.glb')).exists() for z in zones)), None)
         if not model:
             raise FileNotFoundError('Original severed-neck model unavailable: ' + fallback)

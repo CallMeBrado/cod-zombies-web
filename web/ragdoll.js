@@ -38,7 +38,9 @@ export class SkeletonRagdoll {
     for(const n of this.nodes){let parent=n.bone.parent;while(parent&&!byBone.has(parent))parent=parent.parent;
       n.parent=byBone.get(parent);n.aim=this.byName.get(n.aimName)||n.parent;n.baseAim=n.aim;n.side=this.byName.get(n.sideName);
     }
-    this.ready=this.byName.has('j_mainroot')&&this.byName.has('j_head');
+    // Quadrupeds also have a main root/head, but lack the humanoid torso
+    // required by this solver. They retain their native death/gib animation.
+    this.ready=['j_mainroot','j_spinelower','j_spineupper','j_spine4','j_head'].every(name=>this.byName.has(name));
     this.constraints=[];this.delta=new THREE.Vector3();this.primary=new THREE.Vector3();this.secondary=new THREE.Vector3();this.x=new THREE.Vector3();this.y=new THREE.Vector3();this.z=new THREE.Vector3();
     this.frameMatrix=new THREE.Matrix4();this.parentInverse=new THREE.Matrix4();this.frameQuaternion=new THREE.Quaternion();this.worldQuaternion=new THREE.Quaternion();this.parentQuaternion=new THREE.Quaternion();
     this.detachedBones=new Set();this.active=false;this.sleeping=false;this.sleepPoseApplied=false;this.accumulator=0;this.elapsed=0;this.quiet=0;

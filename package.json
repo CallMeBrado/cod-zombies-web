@@ -61,7 +61,13 @@
     "test:cotd": "node tools/test_coast.mjs",
     "extract:tranzit": "python -B tools/extract_tranzit.py",
     "prepare:tranzit": "python -B tools/prepare_tranzit.py && node --max-old-space-size=8192 tools/build_preload.mjs --map tranzit",
-    "test:tranzit": "node tools/test_tranzit.mjs"
+    "test:tranzit": "node tools/test_tranzit.mjs",
+    "extract:shi-no-numa": "python -B tools/extract_shi_no_numa.py",
+    "prepare:shi-no-numa": "python -B tools/prepare_shi_no_numa.py && node --max-old-space-size=8192 tools/build_preload.mjs --map shi-no-numa",
+    "test:shi-no-numa": "node tools/test_shi_no_numa.mjs",
+    "extract:moon": "python -B tools/extract_bo1.py --map moon",
+    "prepare:moon": "python -B tools/prepare_bo1.py --map moon && node --max-old-space-size=8192 tools/build_preload.mjs --map moon",
+    "test:moon": "node tools/test_moon.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

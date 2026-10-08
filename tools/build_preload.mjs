@@ -11,7 +11,9 @@ import {SoloGame} from '../web/game.js';
 import {MAPS,BO1_MAPS,BO2_MAPS,mapById} from '../web/maps.js';
 import {BlackOpsEngine} from '../web/bo1-engine.js';
 import {CallOfDeadEngine} from '../web/bo1-coast.js';
+import {MoonEngine} from '../web/bo1-moon.js';
 import {BlackOps2Engine} from '../web/bo2-engine.js';
+import {ShiNoNumaGame} from '../web/waw-shi-no-numa.js';
 import {spawn} from 'node:child_process';
 import {prepareFactoryPowerNavigation} from './prepare_power_navigation.mjs';
 import {prepareKinoDoors} from './prepare_kino_doors.mjs';
@@ -36,7 +38,7 @@ const navSources=[chosen.zone+'/web-world/'+chosen.asset+'.collision.json',chose
 const navStamp=await navigationStamp(root,chosen,manifest);let navigation,navigationGame;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
 if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&&navigation?.version)){
   const began=performance.now(),collision=await read(navSources[0]),paths=await read(navSources[1]);
-  const game=new (chosen.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
+  const game=new (chosen.id==='moon'?MoonEngine:chosen.id==='shi-no-numa'?ShiNoNumaGame:chosen.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
   navigation={...game.preparedNavigation(),sourceStamp:navStamp};await writeFile(path.join(data,chosen.data+'/navigation.json'),JSON.stringify(navigation));
   console.log(`Prepared ${navigation.links.length} directed navigation links and ${navigation.routes.length} window routes on E: in ${((performance.now()-began)/1000).toFixed(1)} seconds.`);
 }
@@ -87,11 +89,12 @@ for(const name of await readdir(path.join(data,chosen.zone+'/web-world'))){if(bo
 for(const material of Object.values(world.materials)){await texture(material.diffuse);await texture(material.normal);await texture(material.layer?.diffuse);}
 for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(lightmap))if(name&&(!blackOps||bo2||type==='primary'))await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
 // Kino's four characters each have their own viewmodel arms.
-const names=new Set([...(bo2?[...manifest.characterArms,presentation.actors.body,presentation.actors.head,manifest.map.arthurModel]:blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands','char_ger_honorgd_body1_1','char_ger_honorgd_zombiehead1_1']),
+const names=new Set([...(bo2?[...manifest.characterArms,presentation.actors.body,presentation.actors.head,manifest.map.arthurModel]:blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands',presentation.actors?.body||'char_ger_honorgd_body1_1',presentation.actors?.head||'char_ger_honorgd_zombiehead1_1']),
   ...[manifest.grenade?.gunModel,manifest.grenade?.projectileModel,presentation.gore?.neckModel].filter(Boolean),
   ...Object.values(presentation.powerups),...world.staticModels.map(m=>m.model),...manifest.entities.filter(e=>e.classname==='script_model').map(e=>e.model),...Object.values(manifest.weapons).flatMap(w=>[w.gunModel,w.knifeModel,w.worldModel]),...Object.values(manifest.gestures||{}).map(g=>g.gunModel)]);
 for(const character of manifest.playerBodies||[])for(const key of ['body','head','hat','gear'])if(character[key])names.add(character[key]);
 for(const arm of manifest.characterArms||[])names.add(arm);
+for(const w of Object.values(manifest.weapons))if(w.secondaryModel)names.add(w.secondaryModel);
 if(presentation.box?.teddyModel)names.add(presentation.box.teddyModel);
 for(const actor of Object.values(presentation.actorVariants||{}))for(const name of [actor.body,actor.head,actor.neckModel,...(actor.attachments||[]).map(a=>a.model)].filter(Boolean))names.add(name);
 for(const e of Object.values(manifest.equipment||{}))names.add(e.model);

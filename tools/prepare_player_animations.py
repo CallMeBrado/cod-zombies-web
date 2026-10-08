@@ -48,6 +48,7 @@ WAW_BODIES = {
         {'name': 'Richtofen', 'body': 'char_ger_ansel_body_zomb', 'head': 'char_ger_ansel_head_zomb', 'hat': 'char_ger_waffen_officercap1_zomb'}],
 }
 WAW_BODIES['gameplay/verruckt'] = WAW_BODIES['gameplay']
+WAW_BODIES['gameplay/shi-no-numa'] = WAW_BODIES['gameplay/der-riese']
 
 
 def export(output, zones, log_name):

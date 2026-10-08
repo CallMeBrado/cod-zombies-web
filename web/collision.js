@@ -82,9 +82,15 @@ export class CollisionWorld {
     const edges=points.map((p,i)=>points[(i+1)%3].map((v,k)=>v-p[k])),u=edges[0],v=edges[1],normal=nativeNormal||[u[2]*v[1]-u[1]*v[2],u[0]*v[2]-u[2]*v[0],u[1]*v[0]-u[0]*v[1]],length=Math.hypot(...normal);
     if(length<1e-8)return;for(let k=0;k<3;k++)normal[k]/=length;
     const axes=[[1,0,0],[0,1,0],[0,0,1],normal];for(const e of edges)axes.push([0,e[2],-e[1]],[-e[2],0,e[0]],[e[1],-e[0],0]);
-    const intervals=[];for(const a of axes){const len=Math.hypot(...a);if(len<1e-8)continue;const n=a.map(x=>x/len),p=points.map(p=>n.reduce((s,x,k)=>s+x*p[k],0));intervals.push([...n,Math.min(...p),Math.max(...p)]);}
+    const values=[];for(const a of axes){const len=Math.hypot(...a);if(len<1e-8)continue;const n=a.map(x=>x/len),p=points.map(p=>n.reduce((s,x,k)=>s+x*p[k],0));values.push(...n,Math.min(...p),Math.max(...p));}
+    // Moon repeats almost a million prop triangles. Store SAT intervals in
+    // shared double-precision slabs instead of millions of tiny JS arrays.
+    // The sweep math and precision remain identical to the native hull path.
+    if(!this.intervalSlab||this.intervalCursor+values.length>this.intervalSlab.length){this.intervalSlab=new Float64Array(1<<20);this.intervalCursor=0;}
+    const intervalStart=this.intervalCursor,intervalEnd=intervalStart+values.length;
+    this.intervalSlab.set(values,intervalStart);this.intervalCursor=intervalEnd;
     const mins=[0,1,2].map(k=>Math.min(...points.map(p=>p[k]))),maxs=[0,1,2].map(k=>Math.max(...points.map(p=>p[k]))),id=this.triangles.length;
-    this.triangles.push({mins,maxs,normal,dist:normal.reduce((s,x,k)=>s+x*points[0][k],0),intervals,contents,model});
+    this.triangles.push({mins,maxs,normal,dist:normal.reduce((s,x,k)=>s+x*points[0][k],0),intervals:this.intervalSlab,intervalStart,intervalEnd,contents,model});
     for(let x=Math.floor(mins[0]/128);x<=Math.floor(maxs[0]/128);x++)for(let y=Math.floor(mins[1]/128);y<=Math.floor(maxs[1]/128);y++){const key=cellKey(x,y);if(!this.triangleCells.has(key))this.triangleCells.set(key,[]);this.triangleCells.get(key).push(id);}
   }
   add(original, origin, target) {
@@ -178,9 +184,9 @@ export class CollisionWorld {
       // support point lets gravity carry the whole actor through the terrain.
       if(velocity>=-1e-8||front<-support-.03||front+velocity>.03)continue;
       let enter=0,leave=fraction,hit=n,reject=false;const intervals=t.intervals;
-      for(let k=0;k<intervals.length;k++){const a=intervals[k],radius=Math.abs(a[0])*h0+Math.abs(a[1])*h1+Math.abs(a[2])*h2,p=a[0]*s0+a[1]*s1+a[2]*s2,d=a[0]*d0+a[1]*d1+a[2]*d2,min=a[3]-radius,max=a[4]+radius;
+      for(let k=t.intervalStart;k<t.intervalEnd;k+=5){const a0=intervals[k],a1=intervals[k+1],a2=intervals[k+2],radius=Math.abs(a0)*h0+Math.abs(a1)*h1+Math.abs(a2)*h2,p=a0*s0+a1*s1+a2*s2,d=a0*d0+a1*d1+a2*d2,min=intervals[k+3]-radius,max=intervals[k+4]+radius;
         if(Math.abs(d)<1e-9){if(p<min-1e-7||p>max+1e-7){reject=true;break;}continue;}
-        const first=(min-p)/d,last=(max-p)/d,near=Math.min(first,last),far=Math.max(first,last);if(near>enter){enter=near;hit=d>0?[-a[0],-a[1],-a[2]]:[a[0],a[1],a[2]];}leave=Math.min(leave,far);if(enter>leave+1e-7){reject=true;break;}
+        const first=(min-p)/d,last=(max-p)/d,near=Math.min(first,last),far=Math.max(first,last);if(near>enter){enter=near;hit=d>0?[-a0,-a1,-a2]:[a0,a1,a2];}leave=Math.min(leave,far);if(enter>leave+1e-7){reject=true;break;}
       }
       if(!reject&&enter<=leave&&enter<fraction){fraction=Math.max(0,enter-.03/Math.max(1e-8,-velocity));normal=hit.slice();}
     }

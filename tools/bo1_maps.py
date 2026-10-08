@@ -22,4 +22,10 @@ BO1_MAPS = {
                 {'name':'Robert Englund','body':'c_zom_robert_englund_fb_player'},
                 {'name':'Danny Trejo','body':'c_zom_danny_trejo_fb_player'},
                 {'name':'Michael Rooker','body':'c_zom_michael_rooker_fb_player'}]),
+    'moon': dict(id='moon',zone='bo1-moon',asset='zombie_moon',data='gameplay/bo1-moon',english='bo1-moon-english',
+        search=['bo1-moon-patch','bo1-moon','bo1-common','bo1-base','bo1-moon-english','bo1-english','bo1-ui'],
+        bodies=[{'name':'Dempsey','body':'c_usa_dempsey_dlc5_body','head':'c_usa_dempsey_dlc5_head'},
+                {'name':'Nikolai','body':'c_rus_nikolai_dlc5_body','head':'c_rus_nikolai_dlc5_head'},
+                {'name':'Takeo','body':'c_jap_takeo_dlc5_body','head':'c_jap_takeo_dlc5_head'},
+                {'name':'Richtofen','body':'c_ger_richtofen_dlc5_body','head':'c_ger_richtofen_dlc5_head'}]),
 }

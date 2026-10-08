@@ -4,8 +4,8 @@ import {mkdtemp,readFile} from 'node:fs/promises';
 import {once} from 'node:events';
 import {createSaveApi} from './save-api.mjs';
 import {ServerSaveStore} from '../web/server-saves.js';
-import {MAPS,BO1_MAPS} from '../web/maps.js';
-const maps=[...MAPS,...BO1_MAPS],directory=await mkdtemp(new URL('../.cache/save-api-test-',import.meta.url)),api=createSaveApi({directory,maps});
+import {ALL_MAPS} from '../web/maps.js';
+const maps=ALL_MAPS,directory=await mkdtemp(new URL('../.cache/save-api-test-',import.meta.url)),api=createSaveApi({directory,maps});
 let server,base;
 async function start(){server=http.createServer(async(req,res)=>{if(!await api(req,res,new URL(req.url,'http://localhost'))){res.writeHead(404);res.end();}});server.listen(0,'127.0.0.1');await once(server,'listening');base='http://127.0.0.1:'+server.address().port;}
 const fetcher=(url,options)=>fetch(base+url,options),storage=()=>{const data=new Map();return {getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};};
@@ -24,5 +24,7 @@ try{
   await browserB.remove('kino',0);await browserA.refresh();assert.equal(browserA.get('kino',0),null);assert(JSON.parse(await readFile(directory+'/kino/0.json.backup','utf8')).state);
   const local=storage();local.setItem('waw-zombies-save-v2:kino:1',JSON.stringify({...save,slot:1,savedAt:100}));
   const importer=new ServerSaveStore(local,maps,fetcher);await importer.prepare();assert.equal(importer.get('kino',1).state.player.points,7650);await importer.remove('kino',1);await importer.prepare();assert.equal(importer.get('kino',1),null,'Deleted imported saves must not reappear');
+  const swamp={...save,map:'shi-no-numa',title:'Shi No Numa',name:'Shi registration test',slot:2,state:{...save.state,inventory:[{name:'zombie_colt',clip:8,reserve:32}]}};
+  await browserA.put('shi-no-numa',2,swamp);await browserB.refresh();assert.deepEqual(browserB.get('shi-no-numa',2).state,swamp.state);await browserB.remove('shi-no-numa',2);
   console.log('Server saves passed: shared names/full state across browsers, disk persistence, stale-device conflicts, backups, validation and one-time browser migration. Test files: '+directory);
 }finally{server.close();}
