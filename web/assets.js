@@ -499,7 +499,7 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
   const illumination=position=>{
     const best=lighting.nearest(position);
     if(!best)return [.08,.10,.13];
-    if(mapChoice.game==='black-ops-2'){const a=texel(best.lm.secondary,best.uv[0],best.uv[1]/3),b=texel(best.lm.secondary,best.uv[0],best.uv[1]/3+1/3);return a.slice(0,3).map((v,k)=>Math.max(.018,Math.min(4,v/(a[3]+.000001)+b[k]/(b[3]+.000001)*.5)));}
+    if(mapChoice.game==='black-ops-2'){const a=texel(best.lm.secondary,best.uv[0],best.uv[1]/3),b=texel(best.lm.secondary,best.uv[0],best.uv[1]/3+1/3);return a.slice(0,3).map((v,k)=>Math.max(.018,Math.min(source.modelLightMax??mapChoice.modelLightMax??4,(v/(a[3]+.000001)+b[k]/(b[3]+.000001)*.5)*(source.modelLightScale??mapChoice.modelLightScale??1))));}
     const a=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5),b=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5+.5);
     return a.slice(0,3).map((v,i)=>Math.min(source.modelLightMax??Infinity,Math.max(.018,(v+b[i])*(source.modelLightScale??1))));
   };

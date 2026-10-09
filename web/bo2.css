@@ -100,6 +100,10 @@ body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] #selected-map-ti
 body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .map-detail{box-sizing:border-box}
 body.bo2-menu-ready[data-game=black-ops-2][data-menu-view=maps] .bo2-location{display:block;margin:calc(var(--unit)*-6) 0 calc(var(--unit)*8);font:calc(var(--unit)*10)/1.2 Arial,sans-serif;letter-spacing:calc(var(--unit)*.6);color:var(--bo-accent)}
 .bo2-location{display:none}
+body[data-game=black-ops-2] #overlay .bo2-green-run{position:absolute;right:4vw;bottom:15vh;display:flex;flex-direction:column;gap:1vh;width:24vw;pointer-events:auto}
+body[data-game=black-ops-2] #overlay .bo2-green-run.hidden{display:none}
+body[data-game=black-ops-2] #overlay .bo2-green-run button{margin:0;padding:1.4vh 2vh;min-width:0;border:0;border-left:2px solid #665445;background:linear-gradient(90deg,#080603dd,#08060355);border-radius:0;color:#d9d0c6;font:700 2.2vh/1.2 Arial,sans-serif;letter-spacing:.13vh;text-align:left;white-space:normal;box-shadow:none}
+body[data-game=black-ops-2] #overlay .bo2-green-run button[aria-pressed=true],body[data-game=black-ops-2] #overlay .bo2-green-run button:hover,body[data-game=black-ops-2] #overlay .bo2-green-run button:focus-visible{border-left-color:var(--bo-accent);color:var(--bo-accent);background:linear-gradient(90deg,#422512dd,#08060366);outline:0}
 body[data-game=black-ops-2] .bo2-unavailable{display:block;margin-top:calc(var(--unit)*6);font:700 calc(var(--unit)*10)/1.2 Arial,sans-serif;letter-spacing:calc(var(--unit)*.6);color:#9a9089}
 @media(prefers-reduced-motion:reduce){.bo2-layer,.bo2-pin-marker{animation:none!important}.bo2-globe{transition:none}}
 /* BO2 lobby layout: menu options on the left; the map name and the players

@@ -3,6 +3,7 @@ import { SCORE_POPUP_SECONDS } from './score-hud.js';
 import {FactoryRules,POWER_TARGETS} from './map-rules.js';
 import {hitDamage,fleshPenetration,pelletAngles} from './ballistics.js';
 import {ACTOR_CONTENTS} from './collision.js';
+import {INTERACTION_REACH,REPAIR_REACH,useDistance,facingUse,repairPoint} from './interaction-reach.js';
 import {chooseKnifeLunge,moveKnifeLunge,knifeHitValid,meleeValue} from './knife-lunge.js';
 import {resetMovement,restoreMovement,playerHull,playerView,playerSpeed,playerBusy,changeStance,stanceButton,releaseStance,movementFrame,movementInput,movementEnd,moveDive,stanceSpread} from './player-movement.js';
 export const PHYSICS_STEP=1/120;
@@ -952,8 +953,8 @@ export class SoloGame {
       const sound=first?(d.firstRaiseSoundPlayer||d.raiseSoundPlayer):d.raiseSoundPlayer;if(sound)this.emit('sound',{alias:sound});
     }else this.switching=null;
   }
-  nearWindow(){return this.windows.filter(w=>w.boards<w.maxBoards&&distance(w.entry,this.player.position)<115).sort((a,b)=>distance(a.entry,this.player.position)-distance(b.entry,this.player.position))[0];}
-  nearInteraction(){return this.interactions.filter(e=>!this.opened.has(e.target)&&(!this.mapRules||this.mapRules.visible(e))&&distance(e.position,[...this.player.position.slice(0,2),this.player.position[2]+35])<100).sort((a,b)=>distance(a.position,this.player.position)-distance(b.position,this.player.position))[0];}
+  nearWindow(){const p=this.player.position;return this.windows.filter(w=>w.boards<w.maxBoards&&useDistance(p,repairPoint(w))<REPAIR_REACH&&facingUse(p,repairPoint(w),this.yaw)).sort((a,b)=>useDistance(p,repairPoint(a))-useDistance(p,repairPoint(b)))[0];}
+  nearInteraction(){if(this.nearWindow())return;const p=this.player.position;return this.interactions.filter(e=>!this.opened.has(e.target)&&(!this.mapRules||this.mapRules.visible(e))&&useDistance(p,e.position)<INTERACTION_REACH&&facingUse(p,e.position,this.yaw)).sort((a,b)=>useDistance(p,a.position)-useDistance(p,b.position))[0];}
   prompt() {
     const useKey=this.events.bindingName?.('use')||'E';
     const grenade=this.nearGrenade();if(grenade)return useKey+' · Pick up & throw back grenade · '+Math.max(0,grenade.due-this.time).toFixed(1)+'s';
@@ -968,6 +969,7 @@ export class SoloGame {
     if(this.dive)return false;
     if(this.pendingGrenade||this.gesture)return false;
     const grenade=this.nearGrenade();if(grenade)return this.rethrowGrenade(grenade);
+    if(this.nearWindow())return true; // Held Use repairs; pressing it cannot buy a neighbouring item.
     const e=this.nearInteraction();if(!e)return;
     if(this.mapRules?.use(e))return true;
     let cost=Number(e.zombie_cost);
@@ -1098,7 +1100,7 @@ export class SoloGame {
   }
   nearGrenade(){
     if(this.pendingGrenade||['ready','dead'].includes(this.phase))return null;
-    const p=this.player.position,reach=[p[0],p[1],p[2]+12];let nearest=null,best=64;
+    const p=this.player.position,reach=[p[0],p[1],p[2]+12];let nearest=null,best=INTERACTION_REACH;
     for(const g of this.grenades){
       if(g.held||g.exploded||g.due<=this.time)continue;
       const range=distance(g.position,reach);if(range>=best)continue;

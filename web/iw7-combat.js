@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {NativeActor,iwMoveMode,nativeStrideSpeed} from './iw7-native.js';
 import {ParkNavigation} from './iw7-navigation.js';
 import {SpacelandMatch} from './iw7-match.js';
+import {canReachUse} from './interaction-reach.js';
 
 export const combatClips=character=>[
   ...['shamble','walk','run','sprint'].flatMap(mode=>Array.from({length:mode==='shamble'?4:mode==='sprint'?3:5},(_,i)=>`iw7_cp_zom_${mode}_forward_0${i+1}`)),
@@ -61,7 +62,8 @@ export class SpacelandCombat {
   hit(zombie,head){const p=(head?zombie.headPosition:zombie.torsoPosition)||[zombie.position[0],zombie.position[1],zombie.position[2]+(head?64:42)];for(let i=0;i<9;i++){const at=this.bloodAt++%96;this.bloodLife[at]=.35+Math.random()*.25;this.bloodPositions.set(p,at*3);this.bloodVelocity.set([(Math.random()-.5)*100,(Math.random()-.5)*100,20+Math.random()*100],at*3);}}
   fire(ads){const dir=new THREE.Vector3();this.camera.getWorldDirection(dir);return this.match.fire(this.camera.position.toArray(),dir.toArray(),ads);}
   melee(){const dir=new THREE.Vector3();this.camera.getWorldDirection(dir);this.match.knife(this.camera.position.toArray(),dir.toArray());}
-  interact(){const p=this.movement.position;if(Math.hypot(p[0]-952,p[1]-3161.3,p[2]-2)<110)this.match.buyM1();else this.match.reloadWeapon();}
+  nearWallBuy(){const dir=new THREE.Vector3();this.camera.getWorldDirection(dir);return canReachUse(this.movement.position,this.data.wallWeapon.origin,Math.atan2(dir.y,dir.x));}
+  interact(){if(this.nearWallBuy())this.match.buyM1();else this.match.reloadWeapon();}
   update(dt,{aim=false,sprint=false,moving=false}={}){
     if(!this.started)return;this.time+=dt;this.navigation.begin(this.movement.position);this.navigation.work(24);
     if(this.introTime>0){this.introTime-=dt;if(this.introGesture&&this.introTime<=this.clip(this.character.card).duration){this.introGesture=false;this.currentAction=this.character.card;this.actionTime=0;this.audio.play('wondercard_'+this.character.id.replace('valley_girl','valleygirl')+'_use_gesture',.6);}if(this.introTime<=0){this.currentAction=null;this.match.begin();}}

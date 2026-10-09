@@ -4,7 +4,7 @@
 // globe_map_zm drawn on a sphere that turns by itself in the lobby and, in
 // map selection, moves to the centre and spins to each location
 // (SelectMapZombie, zm/mapstable.csv's longitude and latitude).
-const NAMES={zm_transit:'TRANZIT',zm_nuked:'NUKETOWN',zm_highrise:'DIE RISE',zm_prison:'MOB OF THE DEAD',zm_buried:'BURIED',zm_tomb:'ORIGINS'};
+const NAMES={zm_transit:'GREEN RUN',zm_nuked:'NUKETOWN',zm_highrise:'DIE RISE',zm_prison:'MOB OF THE DEAD',zm_buried:'BURIED',zm_tomb:'ORIGINS'};
 const ORDER=['zm_transit','zm_nuked','zm_highrise','zm_prison','zm_buried','zm_tomb'];
 const SELF_ROTATION=4; // degrees a second in the lobby
 const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
@@ -44,7 +44,7 @@ export class Bo2Menu {
     // The pins are menu options: they sit in the overlay, above its backing.
     this.pins=document.createElement('div');this.pins.className='bo2-pins';(document.getElementById('overlay')||root).append(this.pins);
     this.places=ORDER.filter(id=>menu.places[id]).map(id=>{
-      const place=menu.places[id],playable=maps.find(m=>m.asset===id),pin=document.createElement('button');
+      const place=menu.places[id],playable=maps.find(m=>(m.menuPlace||m.asset)===id),pin=document.createElement('button');
       pin.type='button';pin.className='bo2-pin'+(playable?' playable':'');pin.dataset.menuSound='none';pin.dataset.place=id;pin.setAttribute('aria-label',NAMES[id]+(playable?'':' (not available)'));
       const sign=art[place.signpost]?`<img src="${art[place.signpost]}" alt="">`:'';
       pin.innerHTML=`<span class="bo2-pin-marker"></span>${sign}<span class="bo2-pin-name">${NAMES[id]}</span>${playable?'':'<span class="bo2-pin-note">NOT AVAILABLE</span>'}`;
@@ -59,6 +59,15 @@ export class Bo2Menu {
     for(const dir of [-1,1]){const b=document.createElement('button');b.type='button';b.className=dir<0?'bo2-prev':'bo2-next';b.dataset.menuSound='none';b.setAttribute('aria-label',dir<0?'Previous location':'Next location');
       b.innerHTML=`<svg viewBox="0 0 24 48" aria-hidden="true"><polyline points="${dir<0?'18,4 6,24 18,44':'6,4 18,24 6,44'}"/></svg>`;b.addEventListener('click',()=>this.step(dir));cycle.append(b);}
     this.pins.append(cycle);
+    // Town is a Green Run Survival location, sharing TranZit's globe pin.
+    // Keep both choices explicit rather than replacing classic TranZit.
+    this.locations=document.createElement('div');this.locations.className='bo2-green-run hidden';
+    this.locations.setAttribute('role','group');this.locations.setAttribute('aria-label','Green Run mode');
+    for(const map of maps.filter(m=>(m.menuPlace||m.asset)==='zm_transit')){
+      const b=document.createElement('button');b.type='button';b.dataset.map=map.id;b.dataset.menuSound='none';b.textContent=map.id==='town'?'TOWN · SURVIVAL':'TRANZIT';
+      b.addEventListener('click',()=>{this.sounds.play('mapSwitch');this.onChoose(map);this.select(map.id);});this.locations.append(b);
+    }
+    this.pins.append(this.locations);
     addEventListener('keydown',e=>{if(this.mode!=='select'||!this.visible()||e.target.closest?.('input,select,textarea'))return;if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();this.step(e.key==='ArrowLeft'?-1:1);}});
     document.body.prepend(root);this.root=root;
     // SELECT MAP confirms with zmb_ui_map_level_select.
@@ -87,8 +96,7 @@ export class Bo2Menu {
     const place=this.places.find(p=>p.id===id);if(!place)return;
     if(this.current!==id){this.sounds.play('mapSwitch');this.rotateTo(place);this.current=id;}
     const accept=document.getElementById('map-accept');if(accept)accept.disabled=!place.playable;
-    if(place.playable)this.onChoose(place.playable);
-    this.onShow(place.info);
+    if(place.playable){this.onChoose(place.playable);this.select(place.playable.id);}else this.onShow(place.info);
     if(!place.playable){this.sounds.play('deny');this.flash(place);}
   }
   step(dir){const i=this.places.findIndex(p=>p.id===this.current),next=this.places[(Math.max(0,i)+dir+this.places.length)%this.places.length];this.pick(next.id);}
@@ -98,13 +106,17 @@ export class Bo2Menu {
     this.spin={fromLon:this.lon,toLon:this.lon+delta,fromLat:this.lat,toLat:Math.max(-50,Math.min(50,place.lat)),start:performance.now(),duration:Math.max(.5,duration*Math.abs(delta)/180+.4)*1000};
     this.sounds.play('spinStart');
   }
-  select(mapId){const id=this.maps.find(m=>m.id===mapId)?.asset;const place=this.places.find(p=>p.id===id);if(!place)return;this.onShow(place.info);if(this.current!==id){this.current=id;this.rotateTo(place);}}
+  select(mapId){const map=this.maps.find(m=>m.id===mapId),id=map?.menuPlace||map?.asset;const place=this.places.find(p=>p.id===id);if(!place)return;
+    this.selectedMap=mapId;this.onShow(map?.menuPlace?{title:map.title.toUpperCase(),location:'GREEN RUN · SURVIVAL',description:map.description,playable:true}:place.info);
+    for(const b of this.locations.children)b.setAttribute('aria-pressed',String(b.dataset.map===mapId));
+    if(this.current!==id){this.current=id;this.rotateTo(place);}}
   frame(now){
     requestAnimationFrame(t=>this.frame(t));
     const dt=Math.min(.1,(now-this.last)/1000);this.last=now;
     const shown=this.visible();this.root.classList.toggle('hidden',!shown);this.pins.classList.toggle('hidden',!shown);if(!shown)return;
     // Lobby: the globe drifts round by itself; map selection: centred, still.
     const mode=this.view()==='maps'?'select':'home';
+    this.locations.classList.toggle('hidden',mode!=='select'||this.current!=='zm_transit');
     if(mode!==this.mode){this.mode=mode;document.body.dataset.bo2Globe=mode;this.sounds.play(mode==='select'?'globeMoveIn':'globeMoveOut');
       const accept=document.getElementById('map-accept');if(accept)accept.disabled=false;
       if(mode==='select'){const sel=this.maps.find(m=>m.id===document.querySelector('#map-list [aria-selected=true]')?.dataset.map)||this.maps[0];this.current=null;this.select(sel?.id);}

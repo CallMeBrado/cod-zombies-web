@@ -17,7 +17,7 @@ export class ZombieActors {
     this.variantPools=new Map();
     for(const [kind,config]of Object.entries(this.presentation.actorVariants||{})){
       const object=cloneModel(await model(config.body));
-      for(const a of config.attachments||[]){const attachment=cloneModel(await model(a.model));(object.getObjectByName(a.tag)||object).add(attachment);}
+      for(const a of config.attachments||[]){const attachment=cloneModel(await model(a.model));attachment.name=a.model;(object.getObjectByName(a.tag)||object).add(attachment);}
       if(config.head){const head=cloneModel(await model(config.head));head.userData.zombieHeadRoot=true;head.traverse(n=>{if(n.isMesh)n.userData.zombieHead=true;});object.getObjectByName('j_spine4')?.add(head);}
       if(config.neckModel){const neck=cloneModel(await model(config.neckModel));neck.userData.zombieNeckRoot=true;neck.traverse(n=>{if(n.isMesh)n.userData.goreOnly=true;});object.add(neck);}
       shadeModel(object,[1,1,1]);if(config.tint)object.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material]){m.color.setRGB(...config.tint);m.userData.fixedLight=true;m.transparent=true;m.opacity=config.opacity??1;}});

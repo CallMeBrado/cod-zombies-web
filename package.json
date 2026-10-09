@@ -49,7 +49,7 @@
     "test:bo2": "python -B tools/validate_bo2_assets.py && node tools/test_bo2.mjs",
     "test:saves": "node tools/test_server_saves.mjs && node tools/test_save.mjs",
     "test:der-riese": "node tools/test_factory.mjs && node tools/test_factory_paths.mjs",
-    "test:controllers": "node tools/test_gamepad.mjs",
+    "test:controllers": "node tools/test_aim_assist.mjs && node tools/test_gamepad.mjs",
     "test:movement": "node tools/test_player_movement.mjs",
     "test:lobby": "node tools/test_lobby.mjs",
     "test:coop": "node tools/test_coop.mjs",
@@ -86,7 +86,14 @@
     "prepare:spaceland-sky": "python -B tools/prepare_spaceland_sky.py",
     "test:spaceland": "node --max-old-space-size=8192 tools/test_spaceland.mjs && node tools/test_spaceland_combat.mjs && node tools/test_spaceland_server.mjs",
     "prepare:spaceland-combat": "python -B tools/prepare_spaceland_combat.py",
-    "prepare:spaceland-sounds": "python -B tools/prepare_spaceland_sounds.py"
+    "prepare:spaceland-sounds": "python -B tools/prepare_spaceland_sounds.py",
+    "extract:mob": "python -B tools/extract_mob.py",
+    "prepare:mob": "python -B tools/prepare_mob.py && node --max-old-space-size=8192 tools/build_preload.mjs --map mob-of-the-dead",
+    "test:mob": "node --max-old-space-size=8192 tools/test_mob.mjs && node tools/test_mob_server.mjs",
+    "extract:town": "python -B tools/extract_town.py",
+    "prepare:town": "python -B tools/prepare_town.py && node --max-old-space-size=8192 tools/build_preload.mjs --map town",
+    "test:town": "node --max-old-space-size=8192 tools/test_town.mjs && node tools/test_town_server.mjs",
+    "test:interactions": "node --max-old-space-size=8192 tools/test_interaction_reach.mjs"
   },
   "dependencies": {
     "three": "0.186.1"

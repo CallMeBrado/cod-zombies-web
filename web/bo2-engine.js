@@ -4,8 +4,10 @@ import {BuriedEquipment} from './bo2-equipment.js';
 import {Arthur} from './bo2-arthur.js';
 import {NuketownRules} from './bo2-nuketown.js';
 import {TranzitRules} from './bo2-tranzit.js';
+import {TownRules} from './bo2-town.js';
 import {DieRiseRules} from './bo2-die-rise.js';
 import {OriginsRules} from './bo2-origins.js';
+import {MobRules} from './bo2-mob.js';
 import {ACTOR_CONTENTS} from './collision.js';
 
 export const BO2_CHARACTERS=['Russman','Stuhlinger','Misty','Marlton'];
@@ -309,7 +311,8 @@ export class BlackOps2Engine extends BlackOpsEngine {
     return super.nearest(position,visible,regular,options);
   }
   constructor(manifest,collision,paths,events={},presentation={}){
-    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='origins'?new OriginsRules(g):manifest.map.id==='tranzit'?new TranzitRules(g):manifest.map.id==='die-rise'?new DieRiseRules(g):manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
+    super(manifest,collision,paths,events,presentation,g=>manifest.map.id==='town'?new TownRules(g):manifest.map.id==='mob-of-the-dead'?new MobRules(g):manifest.map.id==='origins'?new OriginsRules(g):manifest.map.id==='tranzit'?new TranzitRules(g):manifest.map.id==='die-rise'?new DieRiseRules(g):manifest.map.id==='nuketown'?new NuketownRules(g):new BuriedRules(g));this.engine='black-ops-t6';
+    if(manifest.map.id==='mob-of-the-dead')this.mapRules.installInteractions();
     if(manifest.map.id==='origins')this.mapRules.installInteractions();
     if(manifest.map.id==='tranzit'){this.mapRules.installInteractions();const trace=collision.trace.bind(collision);
       collision.trace=(start,end,half=[0,0,0],mask=collision.mask,ignoreTerrain=false)=>this.mapRules.busTrace(start,end,half,trace(start,end,half,mask,ignoreTerrain));}

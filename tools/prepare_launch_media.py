@@ -25,6 +25,7 @@ MOVIES = {
     'buried': ('Call of Duty Black Ops II', 'zm_buried_load'),
     'origins': ('Call of Duty Black Ops II', 'zm_tomb_load'),
     'die-rise': ('Call of Duty Black Ops II', 'zm_highrise_load'),
+    'mob-of-the-dead': ('Call of Duty Black Ops II', 'zm_prison_load'),
 }
 # BO2's loading movies are silent video; the soundtrack is the streamed
 # bik_<movie> alias: a left/right stem and its secondary centre stem
@@ -35,9 +36,10 @@ SOUNDTRACKS = {
                DATA / 'bo2-english/english/sound/bik/load/zm_buried_load_c.SN65.pc.snd.flac'],
     'origins': [DATA / 'bo2-origins/sound/bik/load/zm_tomb_load_lr.SN65.pc.snd.flac', DATA / 'bo2-origins-english/english/sound/bik/load/zm_tomb_load_c.SN65.pc.snd.flac'],
     'die-rise': [DATA / 'bo2-die-rise/sound/zmb/level/zm_highrise/load_movie.SL65.pc.snd.flac'],
+    'mob-of-the-dead': [DATA / 'bo2-mob-english/english/sound/bik/load/zmb_prison_load.SN65.pc.snd.flac',DATA / 'bo2-mob-english/english/sound/bik/load/zmb_prison_load_c.SN65.pc.snd.flac',DATA / 'bo2-mob-english/english/sound/bik/load/zmb_prison_load_sur.SN65.pc.snd.flac'],
 }
 parser=argparse.ArgumentParser()
-parser.add_argument('--map',choices=[*MOVIES,'nuketown','tranzit'])
+parser.add_argument('--map',choices=[*MOVIES,'nuketown','tranzit','town'])
 selected=parser.parse_args().map
 for name, (game, movie) in MOVIES.items():
     if selected and selected!=name:continue
@@ -100,7 +102,7 @@ for name, (game, movie) in MOVIES.items():
 
 # The installed Nuketown Zombies release has no loading WEBM. Use its own
 # original menu/loading artwork and native underscore, never another map's movie.
-for map_id in ['nuketown','tranzit']:
+for map_id in ['nuketown','tranzit','town']:
     if selected and selected!=map_id:continue
     nuketown_manifest=DATA/('gameplay/bo2-'+map_id+'/manifest.json')
     if not nuketown_manifest.exists():continue
@@ -119,4 +121,8 @@ for map_id in ['nuketown','tranzit']:
                 '-t','20','-vf','scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2',
                 '-r','24','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-ac','2','-c:a','aac','-b:a','192k','-movflags','+faststart',str(temporary)],check=True)
             os.replace(temporary,destination)
-            metadata.write_text(json.dumps({'sourceStamp':stamp,'duration':20,'hasAudio':True,'url':'/data/launch/'+map_id+'.mp4'},indent=2))
+            metadata.write_text(json.dumps({'sourceStamp':stamp,'duration':20,'hasAudio':True,'audioChannels':2,'url':'/data/launch/'+map_id+'.mp4'},indent=2))
+        elif 'audioChannels' not in json.loads(metadata.read_text()):
+            # These still movies are always encoded with -ac 2 above.
+            info=json.loads(metadata.read_text());info['audioChannels']=2
+            metadata.write_text(json.dumps(info,indent=2))

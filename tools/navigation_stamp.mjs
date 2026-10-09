@@ -42,6 +42,7 @@ export async function navigationStamp(root,chosen,manifest){
   }
   if(chosen.game==='black-ops-2')for(const method of ['settleFeet','projectGround','walkableLink'])hash.update(BlackOps2Engine.prototype[method].toString());
   if(chosen.id==='tranzit')hash.update(await readFile(path.join(root,'web/bo2-tranzit.js')));
+  if(chosen.id==='town')for(const file of ['bo2-town-engine.js','bo2-town.js','bo2-nuketown.js'])hash.update(await readFile(path.join(root,'web',file)));
   if(chosen.id==='five')hash.update(await readFile(path.join(root,'web/bo1-five.js')));
   if(chosen.id==='shi-no-numa')hash.update(await readFile(path.join(root,'web/waw-shi-no-numa.js')));
   if(chosen.id==='moon'){

@@ -1,4 +1,6 @@
 import {OriginsEngine} from '../web/bo2-origins-engine.js';
+import {MobEngine} from '../web/bo2-mob-engine.js';
+import {TownEngine} from '../web/bo2-town-engine.js';
 // Prepare a versioned map/runtime asset pack on E: for one compressed download.
 import {readFile,writeFile,readdir,stat,mkdir} from 'node:fs/promises';
 import {createReadStream,createWriteStream} from 'node:fs';
@@ -41,7 +43,7 @@ const navSources=[chosen.zone+'/web-world/'+chosen.asset+'.collision.json',chose
 const navStamp=await navigationStamp(root,chosen,manifest);let navigation,navigationGame;try{navigation=await read(chosen.data+'/navigation.json');}catch{}
 if(navigation?.sourceStamp!==navStamp&&!(process.argv.includes('--assets-only')&&navigation?.version)){
   const began=performance.now(),collision=await read(navSources[0]),paths=await read(navSources[1]);
-  const game=new (chosen.id==='five'?FiveEngine:chosen.id==='origins'?OriginsEngine:chosen.id==='shangri-la'?ShangriEngine:chosen.id==='moon'?MoonEngine:chosen.id==='shi-no-numa'?ShiNoNumaGame:chosen.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
+  const game=new (chosen.id==='town'?TownEngine:chosen.id==='mob-of-the-dead'?MobEngine:chosen.id==='five'?FiveEngine:chosen.id==='origins'?OriginsEngine:chosen.id==='shangri-la'?ShangriEngine:chosen.id==='moon'?MoonEngine:chosen.id==='shi-no-numa'?ShiNoNumaGame:chosen.id==='call-of-the-dead'?CallOfDeadEngine:bo2?BlackOps2Engine:blackOps?BlackOpsEngine:SoloGame)(manifest,new CollisionWorld(collision,manifest.entities),paths,{},presentation);game.prepareSpawnPaths();navigationGame=game;
   navigation={...game.preparedNavigation(),sourceStamp:navStamp};await writeFile(path.join(data,chosen.data+'/navigation.json'),JSON.stringify(navigation));
   console.log(`Prepared ${navigation.links.length} directed navigation links and ${navigation.routes.length} window routes on E: in ${((performance.now()-began)/1000).toFixed(1)} seconds.`);
 }
@@ -90,6 +92,7 @@ for(const entry of [...Object.values(manifest.sounds),...Object.values(manifest.
 const hudFolder=blackOps?chosen.data+'/hud':'gameplay/hud';for(const name of await readdir(path.join(data,hudFolder)))if(name.endsWith('.png'))await add(hudFolder+'/'+name);
 for(const name of await readdir(path.join(data,chosen.zone+'/web-world'))){if(bo2&&!new Set([chosen.asset+'.json',world.vertices,world.indices,chosen.asset+'.collision.json',chosen.asset+'.paths.json',chosen.asset+'.lights.json']).has(name))continue;await add(chosen.zone+'/web-world/'+name);}
 for(const material of Object.values(world.materials)){await texture(material.diffuse);await texture(material.normal);await texture(material.layer?.diffuse);}
+if(manifest.map.skyTexture)await add(decodeURIComponent(manifest.map.skyTexture.slice('/data/'.length)));
 for(const lightmap of world.lightmaps)for(const [type,name] of Object.entries(lightmap))if(name&&(!blackOps||bo2||type==='primary'))await add(chosen.zone+'/images/'+name.replace(/^\*/,'_')+'.dds');
 // Kino's four characters each have their own viewmodel arms.
 const names=new Set([...(bo2?[...manifest.characterArms,presentation.actors.body,presentation.actors.head,manifest.map.arthurModel]:blackOps?['viewmodel_usa_pow_arms','viewmodel_rus_prisoner_arms','viewmodel_vtn_nva_standard_arms','viewmodel_usa_hazmat_arms',presentation.actors.body,presentation.actors.head]:['viewmodel_hands',presentation.actors?.body||'char_ger_honorgd_body1_1',presentation.actors?.head||'char_ger_honorgd_zombiehead1_1']),

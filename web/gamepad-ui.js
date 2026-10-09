@@ -19,7 +19,7 @@ export class ControllerPanel {
     this.settings=settings;this.pads=pads;this.menu=menu;this.capture=null;this.rows=new Map();this.controls=new Map();this.selectedKey=null;this.axisSignature=null;
     const container=$('controller-settings');
     for(const [key,label,type,min,max,step]of [
-      ['enabled','Enable controller','checkbox'],['sensitivity','Look sensitivity','range',1,10,.5],['adsSensitivity','Aim sensitivity','range',.1,1.5,.05],['moveDeadzone','Movement deadzone','range',.02,.45,.01],['lookDeadzone','Look deadzone','range',.02,.45,.01],['invertY','Invert controller look','checkbox'],['aimMode','Aim down sight','select'],['promptStyle','Button icons','select']]){
+      ['enabled','Enable controller','checkbox'],['sensitivity','Look sensitivity','range',1,10,.5],['adsSensitivity','Aim sensitivity','range',.1,1.5,.05],['aimAssist','Aim assist','checkbox'],['aimAssistStrength','Aim assist strength','range',0,1,.05],['moveDeadzone','Movement deadzone','range',.02,.45,.01],['lookDeadzone','Look deadzone','range',.02,.45,.01],['invertY','Invert controller look','checkbox'],['aimMode','Aim down sight','select'],['promptStyle','Button icons','select']]){
       const row=el('label','setting-row'),title=el('span',null,label),input=el('input');title.dataset.menuText='';row.append(title);
       let control=input;if(type==='select'){control=el('select');for(const [value,text]of key==='aimMode'?[['hold','Hold'],['toggle','Toggle']]:[['auto','Auto detect'],['xbox','Xbox / Backbone'],['playstation','PlayStation'],['nintendo','Nintendo'],['generic','Generic button numbers']]){const option=el('option',null,text);option.value=value;control.append(option);}}
       else{control.type=type;if(type==='range'){control.min=min;control.max=max;control.step=step;}}
@@ -45,7 +45,7 @@ export class ControllerPanel {
   finish(token,pad){if(!this.capture||!pad||padKey(pad)!==this.capture.key)return;const action=this.capture.action;this.capture=null;this.settings.bind(pad,action,token);this.sync();this.rows.get(action).focus();}
   sync(){
     if(this.capture&&(this.menu.view!=='options'||this.menu.activeTab!=='controller'))this.capture=null;
-    const v=this.settings.value;for(const [key,{control,output,type}]of this.controls){if(type==='checkbox')control.checked=v[key];else control.value=v[key];if(type==='range')output.textContent=/Deadzone/.test(key)?Math.round(v[key]*100)+'%':key==='adsSensitivity'?v[key].toFixed(2)+'×':v[key];}
+    const v=this.settings.value;for(const [key,{control,output,type}]of this.controls){if(type==='checkbox')control.checked=v[key];else control.value=v[key];if(type==='range')output.textContent=/Deadzone/.test(key)||key==='aimAssistStrength'?Math.round(v[key]*100)+'%':key==='adsSensitivity'?v[key].toFixed(2)+'×':v[key];}
     const signature=this.pads.devices.map(p=>p.index+':'+padKey(p)).join('|');if(signature!==this.deviceSignature){this.deviceSignature=signature;this.device.replaceChildren();for(const pad of this.pads.devices){const option=el('option',null,String(pad.id||'Controller').slice(0,100));option.value=padKey(pad);this.device.append(option);}}
     const pad=this.pad;this.device.disabled=!pad;if(pad){this.selectedKey=padKey(pad);this.device.value=this.selectedKey;}
     if(this.capture&&!this.pads.devices.some(p=>padKey(p)===this.capture.key))this.capture=null;
