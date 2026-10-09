@@ -2,7 +2,10 @@
 
 A browser runtime for **Call of Duty Zombies**. It loads the original maps, models, textures, lighting, animations, sounds and HUD art from **your own installed copies** of the games and plays them in a desktop browser with [three.js](https://threejs.org/).
 
-![Nacht der Untoten in the browser](docs/images/nacht-gameplay.jpg)
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/images/maps/der-riese.jpg" alt="Der Riese"> | <img src="docs/images/maps/moon.jpg" alt="Moon"> | <img src="docs/images/maps/die-rise.jpg" alt="Die Rise"> |
+| Der Riese | Moon | Die Rise |
 
 > **Unofficial fan project.** Not affiliated with or endorsed by Activision, Treyarch or Infinity Ward. **No game assets are included in this repository.** You need legally owned copies of the games and map DLC; the tools extract assets from your installation into a local, git-ignored folder.
 
@@ -46,9 +49,10 @@ A browser runtime for **Call of Duty Zombies**. It loads the original maps, mode
 | Black Ops II | Buried | ✅ | ✅ | ❌ | Survival, Arthur, buildables |
 | Black Ops II | Origins | ✅ | ✅ | ❌ | Early build: generators, staffs, Panzer |
 | Infinite Warfare | Spaceland | ✅\* | ✅ | ❌ | Early solo survival test |
-| Black Ops II | Mob of the Dead | ❌ | ❌ | ❌ | In development |
+| Black Ops II | Mob of the Dead | ✅ | ✅ | ❌ | Survival, Afterlife, Brutus, the plane |
+| Black Ops II | Town (Survival) | ✅ | ❌ | ❌ | Survival, lava |
 
-TranZit and Nuketown have no loading movie in the installed game; they show their original menu art with the map's music instead.
+TranZit, Nuketown and Town have no loading movie in the installed game; they show their original menu art with the map's music instead.
 
 ---
 
@@ -125,24 +129,24 @@ TranZit and Nuketown have no loading movie in the installed game; they show thei
 
 ### Black Ops II
 
-| Feature | TranZit | Nuketown | Die Rise | Buried | Origins |
-|:--|:--:|:--:|:--:|:--:|:--:|
-| Rounds, barriers and zombie AI | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Doors and zones | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Power | ✅ Buildable switch | — Always on | ✅ | ✅ | ✅ Generators |
-| Perks | ✅ | ✅ Fall from the sky | ✅ Ride the elevators | ✅ | ✅ |
-| Pack-a-Punch | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Mystery Box | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Fire Sale | ✅ | ✅ | ✅ | ❌ | ✅ |
-| Buildables | ✅ Turbine, shield, turret, trap, bus parts | — | ✅ Trample Steam, Sliquifier | ✅ Turbine, Trample Steam, Head Chopper, Resonator | ✅\* Staffs |
-| Wonder weapon | ❌ Jet Gun | — | ✅ Sliquifier | ✅ Paralyzer | ✅\* Elemental staffs |
-| Map transport | ✅ Bus | — | ✅ Elevators and escape pod | — | ✅ Crazy Place portals |
-| Special enemy | ✅\* Denizens and Avogadro | — | ✅\* Leapers | ✅\* Ghosts | ✅\* Panzer Soldat |
-| Map-specific mechanics | ✅ Fog and lava | ✅ Population sign, blue eyes | ✅ Elevator key | ✅ Arthur, chalks | ✅ Mud, digging, records |
-| Who's Who / Tombstone | ❌ Tombstone | — | ✅\* Who's Who | — | — |
-| Bank and weapon locker | ✅ | — | ❌ | ✅ | — |
-| Giant robots and tank | — | — | — | — | ❌ |
-| Easter egg | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Feature | TranZit | Nuketown | Die Rise | Buried | Origins | Mob of the Dead | Town |
+|:--|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Rounds, barriers and zombie AI | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Doors and zones | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Power | ✅ Buildable switch | — Always on | ✅ | ✅ | ✅ Generators | ✅ Afterlife panels | — Always on |
+| Perks | ✅ | ✅ Fall from the sky | ✅ Ride the elevators | ✅ | ✅ | ✅ | ✅ |
+| Pack-a-Punch | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ Golden Gate Bridge | ✅ |
+| Mystery Box | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Fire Sale | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| Buildables | ✅ Turbine, shield, turret, trap, bus parts | — | ✅ Trample Steam, Sliquifier | ✅ Turbine, Trample Steam, Head Chopper, Resonator | ✅\* Staffs | ✅ Plane, shield, Acid Gat | — |
+| Wonder weapon | ❌ Jet Gun | — | ✅ Sliquifier | ✅ Paralyzer | ✅\* Elemental staffs | ✅\* Acid Gat | — |
+| Map transport | ✅ Bus | — | ✅ Elevators and escape pod | — | ✅ Crazy Place portals | ✅\* Plane and gondola | — |
+| Special enemy | ✅\* Denizens and Avogadro | — | ✅\* Leapers | ✅\* Ghosts | ✅\* Panzer Soldat | ✅ Brutus | — |
+| Map-specific mechanics | ✅ Fog and lava | ✅ Population sign, blue eyes | ✅ Elevator key | ✅ Arthur, chalks | ✅ Mud, digging, records | ✅ Afterlife | ✅ Lava |
+| Who's Who / Tombstone | ❌ Tombstone | — | ✅\* Who's Who | — | — | — | — Removed in solo |
+| Bank and weapon locker | ✅ | — | ❌ | ✅ | — | — | ❌ |
+| Giant robots and tank | — | — | — | — | ❌ | — | — |
+| Easter egg | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | — |
 
 ### Infinite Warfare: Spaceland (early test)
 
@@ -164,14 +168,45 @@ Detailed notes for every map, including the exact script behaviour, approximatio
 
 ## Screenshots
 
-| | |
-|---|---|
-| ![Der Riese lobby](docs/images/der-riese-lobby.jpg) | ![Der Riese mainframe with the testing mod menu](docs/images/der-riese-mainframe-mod-menu.jpg) |
-| **Zombies lobby** with the original map art and font | **Der Riese mainframe**, with the testing mod menu open |
-| ![A zombie vaulting through a window](docs/images/zombie-window-vault.jpg) | ![Grenade explosion](docs/images/grenade-explosion.jpg) |
-| **Zombie climbing through a window** after tearing off the boards | **Grenade explosion** with the original effects |
-| ![Shangri-La](docs/shangri-la-gameplay.png) | ![WaW pause menu](docs/images/pause-menu.jpg) |
-| **Shangri-La** | **The WaW-style pause menu** |
+Captured in the browser from the current build.
+
+### World at War
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/images/maps/nacht.jpg" alt="Nacht der Untoten"> | <img src="docs/images/maps/verruckt.jpg" alt="Verrückt"> | <img src="docs/images/maps/shi-no-numa.jpg" alt="Shi No Numa"> |
+| **Nacht der Untoten** | **Verrückt** | **Shi No Numa** |
+| <img src="docs/images/maps/der-riese.jpg" alt="Der Riese"> |  |  |
+| **Der Riese** |  |  |
+
+### Black Ops
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/images/maps/kino.jpg" alt="Kino der Toten"> | <img src="docs/images/maps/five.jpg" alt="Five"> | <img src="docs/images/maps/ascension.jpg" alt="Ascension"> |
+| **Kino der Toten** | **Five** | **Ascension** |
+| <img src="docs/images/maps/call-of-the-dead.jpg" alt="Call of the Dead"> | <img src="docs/images/maps/shangri-la.jpg" alt="Shangri-La"> | <img src="docs/images/maps/moon.jpg" alt="Moon"> |
+| **Call of the Dead** | **Shangri-La** | **Moon** |
+| <img src="docs/images/maps/dead-ops.jpg" alt="Dead Ops Arcade"> |  |  |
+| **Dead Ops Arcade** |  |  |
+
+### Black Ops II
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/images/maps/tranzit.jpg" alt="TranZit"> | <img src="docs/images/maps/nuketown.jpg" alt="Nuketown Zombies"> | <img src="docs/images/maps/die-rise.jpg" alt="Die Rise"> |
+| **TranZit** | **Nuketown Zombies** | **Die Rise** |
+| <img src="docs/images/maps/buried.jpg" alt="Buried"> | <img src="docs/images/maps/origins.jpg" alt="Origins"> | <img src="docs/images/maps/mob-of-the-dead.jpg" alt="Mob of the Dead"> |
+| **Buried** | **Origins** | **Mob of the Dead** |
+| <img src="docs/images/maps/town.jpg" alt="Town (Survival)"> |  |  |
+| **Town (Survival)** |  |  |
+
+### Infinite Warfare
+
+| | | |
+|:-:|:-:|:-:|
+| <img src="docs/images/maps/spaceland.jpg" alt="Zombies in Spaceland"> |  |  |
+| **Zombies in Spaceland** |  |  |
 
 ---
 
@@ -244,6 +279,8 @@ Every other map has its own commands:
 | Nuketown Zombies | `npm run extract:nuketown` | `npm run prepare:nuketown` | `npm run test:nuketown` |
 | Die Rise | `npm run extract:die-rise` | `npm run prepare:die-rise` | `npm run test:die-rise` |
 | Origins | `npm run extract:origins` | `npm run prepare:origins` | `npm run test:origins` |
+| Mob of the Dead | `npm run extract:mob` | `npm run prepare:mob` | `npm run test:mob` |
+| Town (Survival) | `npm run extract:town` | `npm run prepare:town` | `npm run test:town` |
 | Spaceland | see [map notes](docs/map-notes.md) | `npm run prepare:spaceland` | `npm run test:spaceland` |
 
 Kino and Buried also provide the shared Black Ops and Black Ops II assets, so prepare them before the other maps of their game. `npm run prepare:menus` builds the original menus.

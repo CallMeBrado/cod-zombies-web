@@ -690,7 +690,7 @@ function updateHud() {
   $('round').textContent=game.round||1;$('points').textContent=game.player.points.toLocaleString();$('ammo').textContent=game.weapon.clip;$('reserve').textContent=game.weapon.reserve;$('weapon').textContent=game.weaponName(game.weapon.name);
   $('health').textContent=Math.ceil(game.player.health);$('health-bar').style.width=(game.player.health/(game.mapRules?.maxHealth||100)*100)+'%';$('grenades').textContent=game.player.grenades;$('kills').textContent=game.player.kills;
   const alive=game.enemies.filter(e=>!e.dead).length;$('wave').textContent=game.phase==='between'?'Next round · '+Math.ceil(game.roundDue-game.time)+'s':`${alive+game.remaining} remaining`;
-  $('prompt').textContent=game.prompt();$('reload').textContent=game.mapRules.afterlife?'':game.reloadEnd?'RELOADING':game.weapon.clip===0?keyName('reload')+' · RELOAD':'';
+  $('prompt').textContent=game.prompt();$('reload').textContent=game.mapRules?.afterlife?'':game.reloadEnd?'RELOADING':game.weapon.clip===0?keyName('reload')+' · RELOAD':'';
   $('powerups').textContent=Object.keys(game.powerup).map(k=>k.replaceAll('_',' ')+' '+Math.ceil(game.powerup[k]-game.time)+'s').join(' · ');
   $('notice').style.opacity=performance.now()<noticeDue?'1':'0';
 }
