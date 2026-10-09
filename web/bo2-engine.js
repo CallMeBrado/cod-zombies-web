@@ -22,6 +22,20 @@ export const BO2_PERKS={...SHARED_PERKS,
 const pos=e=>e.origin.split(/\s+/).map(Number),distance=(a,b)=>Math.hypot(...a.map((v,k)=>v-b[k]));
 // The Paralyzer's counter reads its heat percentage out of 115.
 const PARALYZER_DIAL=1.15;
+// Paralyzer flight (player_slow_for_time on yourself), in game units
+// (1 m = 39.37 units; gravity 800 = 20.32 m/s²). The aim angle below the
+// horizon sets a target vertical speed: 90° rises at 7 m/s, 70° hovers,
+// just above 53.13° descends at 4 m/s. These are tuning values, not
+// confirmed BO2 constants. Each valid shot holds the effect for 0.25 s.
+const M=39.37,FLIGHT={hold:.25,curve:[[53.13,-4*M],[70,0],[90,7*M]],accel:25*M,brake:40*M,air:6*M,airAccel:18*M,airBrake:9*M};
+// Buried's Paralyzer (and Trample Steam) can carry a player onto rooftops,
+// tall props and the tops of invisible clips, where zombies cannot reach
+// them. Ground is standable only where the zombies' navigation reaches (a
+// node within 256 units across and 48 up or down); elsewhere the player
+// slides off: downhill on a slope, toward the nearest node across a flat
+// top, with an outward push reaching 100 units/s at 600 units/s².
+const UNSTANDABLE={reach:256,rise:48,push:100,pushAccel:600,probe:4};
+const flightTarget=below=>{const c=FLIGHT.curve,i=below<=c[1][0]?0:1,[a0,v0]=c[i],[a1,v1]=c[i+1],f=Math.max(0,Math.min(1,(below-a0)/(a1-a0)));return v0+(v1-v0)*f;};
 const itemKinds={keys_zm_p6_zm_bu_sloth_key:'key',booze_p6_zm_bu_booze:'booze',candy_p6_zm_bu_sloth_candy_bowl:'candy',chalk_p6_zm_bu_chalk:'chalk'};
 
 // T6 progression is driven by the Buried zone volumes and authored item,
@@ -346,7 +360,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
   }
   newGame(){
     super.newGame();this.interactions=this.interactions.filter(e=>!e.chalkTarget);this.paralyzerHeat=0;this.paralyzerLock=false;this.paralyzerFiredAt=-100;this.paralyzerHum=false;this.paralyzerDigit=null;
-    this.equipmentFlight=null;this.slideVelocity=null;this.projectiles=[];this.nextProjectileId=1;this.recycleHealth=[];
+    this.equipmentFlight=null;this.slideVelocity=null;this.flight=null;this.flightDrift=null;this.unreachableSlide=null;this.lifted=false;this.projectiles=[];this.nextProjectileId=1;this.recycleHealth=[];
     this.windows.forEach(w=>{if(!w.boardEntities.some(e=>e.nativeBoard))w.boards=0;});
     this.interactions=this.interactions.filter(e=>!e.equipmentId);
   }
@@ -358,9 +372,78 @@ export class BlackOps2Engine extends BlackOpsEngine {
     return super.weaponName(name);
   }
   placeEquipment(){return this.mapRules.equipment?.place()||false;}
+  // The flight effect replaces gravity: vertical speed eases toward the
+  // aimed target (25 m/s², 40 m/s² when arresting a fall) and WASD steers
+  // along the camera's horizontal facing at up to 6 m/s (18 m/s² to speed
+  // up, 9 m/s² to slow). When the 0.25 s hold lapses, ordinary gravity
+  // resumes and the drift is kept until landing or new input.
+  paralyzerFlight(p,input,dt){
+    const f=this.flight;if(f&&this.time>=f.until){this.flight=null;this.flightDrift=p.grounded?null:f.velocity.slice();}
+    if(!this.flight){
+      const d=this.flightDrift;if(!d||p.grounded||input.forward||input.side){this.flightDrift=null;return false;}
+      p.velocityZ=(p.velocityZ||0)-800*dt;const r=this.collision.step(p.position,[d[0]*dt,d[1]*dt,p.velocityZ*dt],this.playerHull);
+      p.position=r.position;p.grounded=r.grounded;if(r.grounded){p.velocityZ=0;this.flightDrift=null;}this.sprinting=false;return true;
+    }
+    let vz=p.velocityZ||0;const target=this.flight.target,rate=vz<0&&target>vz?FLIGHT.brake:FLIGHT.accel;
+    vz+=Math.sign(target-vz)*Math.min(Math.abs(target-vz),rate*dt);
+    let fwd=input.forward||0,side=input.side||0;const amount=Math.hypot(fwd,side);if(amount>1){fwd/=amount;side/=amount;}
+    // Horizontal facing only: looking straight down still moves forward.
+    const c=Math.cos(this.yaw),s=Math.sin(this.yaw),v=this.flight.velocity,want=[(c*fwd+s*side)*FLIGHT.air,(s*fwd-c*side)*FLIGHT.air];
+    const dv=[want[0]-v[0],want[1]-v[1]],gap=Math.hypot(dv[0],dv[1]),k=gap?Math.min(1,(amount?FLIGHT.airAccel:FLIGHT.airBrake)*dt/gap):0;v[0]+=dv[0]*k;v[1]+=dv[1]*k;
+    const from=p.position,r=this.collision.step(from,[v[0]*dt,v[1]*dt,vz*dt],this.playerHull);
+    // Walls and ceilings take away the blocked share of the motion.
+    if(dt>0){const mx=(r.position[0]-from[0])/dt,my=(r.position[1]-from[1])/dt;if(Math.abs(mx)<Math.abs(v[0]))v[0]=mx;if(Math.abs(my)<Math.abs(v[1]))v[1]=my;
+      if(vz>0&&r.position[2]-from[2]<vz*dt*.5)vz=0;}
+    p.position=r.position;p.grounded=r.grounded&&vz<=0;if(p.grounded)vz=0;p.velocityZ=vz;this.sprinting=false;return true;
+  }
+  // Nodes bucketed in 128-unit cells for the standable test.
+  navigationCells(){
+    if(this.navCells)return this.navCells;const cells=new Map();
+    this.nodes.forEach((n,i)=>{const k=Math.floor(n.origin[0]/128)+','+Math.floor(n.origin[1]/128);if(!cells.has(k))cells.set(k,[]);cells.get(k).push(i);});
+    return this.navCells=cells;
+  }
+  nearNodes(at,reach,rise){
+    const cells=this.navigationCells(),r=Math.ceil(reach/128),cx=Math.floor(at[0]/128),cy=Math.floor(at[1]/128),out=[];
+    for(let x=cx-r;x<=cx+r;x++)for(let y=cy-r;y<=cy+r;y++)for(const i of cells.get(x+','+y)||[]){const o=this.nodes[i].origin,d=Math.hypot(o[0]-at[0],o[1]-at[1]);if(d<=reach&&Math.abs(o[2]-at[2])<=rise)out.push([d,o]);}
+    return out.sort((a,b)=>a[0]-b[0]);
+  }
+  standable(at){return this.nearNodes(at,UNSTANDABLE.reach,UNSTANDABLE.rise).length>0;}
+  // Resting on (or pinned onto) ground the zombies cannot reach: the slide
+  // takes over from walking and from the Paralyzer's hover. Gravity applies
+  // once; input may steer sideways or away, never back onto the surface.
+  slideOffUnreachable(p,input,dt){
+    if(this.data.map.id!=='buried'){this.unreachableSlide=null;return false;}
+    // Only a player the Paralyzer or Trample Steam has lifted: walking and
+    // falling routes (the factory chute) reach places zombies never do.
+    if(this.flight||this.flightDrift||this.equipmentFlight)this.lifted=true;
+    if(!this.lifted){this.unreachableSlide=null;return false;}
+    const half=this.playerHull,c=[p.position[0],p.position[1],p.position[2]+half[2]],down=this.collision.trace(c,[c[0],c[1],c[2]-UNSTANDABLE.probe],half);
+    const contact=down.fraction<1&&!down.allSolid&&down.normal[2]>.05,feet=[down.end[0],down.end[1],down.end[2]-half[2]];
+    if(!contact||this.standable(feet)){if(contact)this.lifted=false;this.unreachableSlide=null;return false;}
+    const n=down.normal;let slide=this.unreachableSlide;
+    if(!slide){
+      // Downhill on a slope; toward the nearest node (a clear way back into
+      // the playable area) on a flat top. Kept for the whole contact so
+      // corners and seams cannot turn it back and forth.
+      let dir=n[2]<.95?[n[0],n[1]]:null;
+      if(!dir){const near=this.nearNodes(feet,1024,4096).filter(([,o])=>o[2]<=feet[2]+8)[0];dir=near?[near[1][0]-feet[0],near[1][1]-feet[1]]:[-Math.cos(this.yaw),-Math.sin(this.yaw)];}
+      const l=Math.hypot(dir[0],dir[1])||1;slide=this.unreachableSlide={dir:[dir[0]/l,dir[1]/l],velocity:[0,0],blocked:0};
+    }
+    const d=slide.dir,v=slide.velocity,want=[d[0]*UNSTANDABLE.push,d[1]*UNSTANDABLE.push],dv=[want[0]-v[0],want[1]-v[1]],gap=Math.hypot(dv[0],dv[1]),k=gap?Math.min(1,UNSTANDABLE.pushAccel*dt/gap):0;v[0]+=dv[0]*k;v[1]+=dv[1]*k;
+    let fwd=input.forward||0,side=input.side||0;const amount=Math.hypot(fwd,side);if(amount>1){fwd/=amount;side/=amount;}
+    const speed=190*(this.weapon.definition.moveSpeedScale||1),cy=Math.cos(this.yaw),sy=Math.sin(this.yaw);let w=[(cy*fwd+sy*side)*speed,(sy*fwd-cy*side)*speed];
+    const back=w[0]*d[0]+w[1]*d[1];if(back<0)w=[w[0]-d[0]*back,w[1]-d[1]*back];
+    const vz=Math.min(0,p.velocityZ||0)-800*dt,move=[(v[0]+w[0])*dt,(v[1]+w[1])*dt,vz*dt];
+    const from=p.position,r=this.collision.step(from,move,half),gone=Math.hypot(r.position[0]-from[0],r.position[1]-from[1]);
+    // Wedged against something on the way off: turn a quarter after 0.25 s.
+    slide.blocked=gone<Math.hypot(move[0],move[1])*.2?slide.blocked+dt:0;if(slide.blocked>.25){slide.dir=[-d[1],d[0]];slide.velocity=[0,0];slide.blocked=0;}
+    p.position=r.position;p.grounded=false;p.velocityZ=r.grounded?0:vz;this.sprinting=false;return true;
+  }
   movePlayerOverride(p,input,dt){
     if(this.mods?.noclip)return super.movePlayerOverride(p,input,dt);
     if(this.mapRules.movePlayer?.(p,input,dt))return true;
+    if(this.slideOffUnreachable(p,input,dt))return true;
+    if(this.paralyzerFlight(p,input,dt))return true;
     if(this.data.map.id!=='buried')return false;
     // The factory chute is slick: gravity accelerates along its real slope.
     // The low exit needs the crouched hull rather than stopping at its lip.
@@ -498,15 +581,13 @@ export class BlackOps2Engine extends BlackOpsEngine {
     this.emit('shot',{origin,dir:[Math.cos(this.pitch)*Math.cos(this.yaw),Math.cos(this.pitch)*Math.sin(this.yaw),Math.sin(this.pitch)],rays:[]});
     // startFireSound, then loopFireSound until the trigger is released.
     if(!this.paralyzerFiring){this.paralyzerFiring=true;this.emit('sound',{alias:definition.startFireSoundPlayer});this.emit('loop',{id:'paralyzer',alias:definition.loopFireSoundPlayer});}
-    // player_paralyzed() on yourself: the beam reaching the ground at your
-    // feet (550 units) plays you at anim rate 0.05 for 0.25 s at a time
-    // (player_slow_for_time). Gravity all but stops while a jump's rise
-    // carries on, so firing down after a jump lifts you high.
-    if(!this.player.grounded&&Math.sin(this.pitch)<-.85){const f=[...this.player.position];const floor=this.collision.trace(f,[f[0],f[1],f[2]-550],[0,0,0]);if(floor.fraction<1)this.slowedUntil=this.time+.25;}
+    // player_paralyzed() on yourself: firing below the hover band refreshes
+    // the flight effect and its target vertical speed.
+    const below=-this.pitch*180/Math.PI;
+    if(below>FLIGHT.curve[0][0])this.flight={until:this.time+FLIGHT.hold,target:flightTarget(below),velocity:this.flight?.velocity||[0,0]};
     return true;
   }
   reload(){if(this.weapon.name.startsWith('slowgun'))return false;return super.reload();}
-  gravityScale(){return this.time<(this.slowedUntil||0)?.05:1;}
   pickup(drop){
     if(!drop.type.startsWith('vulture_'))return super.pickup(drop);
     if(!this.mapRules.perks.has('specialty_nomotionsensor'))return;drop.used=true;this.emit('pickup',drop);this.emit('stopLoop',{id:'drop'+drop.id});
@@ -520,9 +601,6 @@ export class BlackOps2Engine extends BlackOpsEngine {
     super.tick(dt,input);if(this.phase==='ready'||this.phase==='dead')return;
     if(this.player.grounded&&!this.mods?.noclip&&!this.dive&&!this.mapRules.riding){const floor=this.projectGround(this.player.position);if(this.player.position[2]-floor[2]>18)this.player.position=floor;}
     if(this.paralyzerFiring&&this.time-this.paralyzerFiredAt>.15){this.paralyzerFiring=false;this.emit('stopLoop',{id:'paralyzer'});this.emit('sound',{alias:this.data.weapons.slowgun_zm?.loopFireEndSoundPlayer});}
-    // Slowed in the air: a fraction of gravity keeps the rise going; a fall
-    // bleeds off, so the beam also floats you down.
-    if(this.time<(this.slowedUntil||0)&&!this.player.grounded&&this.player.velocityZ<0)this.player.velocityZ*=Math.exp(-8*dt);
     const slowgun=this.data.weapons.slowgun_zm;
     if(this.time-this.paralyzerFiredAt>.2){this.paralyzerHeat=Math.max(0,this.paralyzerHeat-dt*(slowgun?.cooldownRate||3)*PARALYZER_DIAL);if(this.paralyzerHeat<=(slowgun?.overheatEndVal||87)*PARALYZER_DIAL+1e-6)this.paralyzerLock=false;}
     // slowgun_dial_sounds(): the counter ticks as its ones digit turns.
@@ -570,7 +648,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
     const w=this.weapon,d=w.definition,upgrade=this.data.meleeUpgrades?.[this.mapRules.meleeUpgrade];
     if(upgrade)w.definition={...d,meleeDamage:upgrade.meleeDamage};try{const result=super.melee();if(result)this.mapRules.knifeDenizen?.();return result;}finally{w.definition=d;}
   }
-  canSave(){return !this.mapRules.equipment?.building&&!this.equipmentFlight&&!this.slideVelocity&&!this.projectiles.length&&super.canSave();}
+  canSave(){return !this.mapRules.equipment?.building&&!this.equipmentFlight&&!this.flight&&!this.slideVelocity&&!this.projectiles.length&&super.canSave();}
   saveState(){return {...super.saveState(),paralyzerHeat:this.paralyzerHeat,paralyzerLock:this.paralyzerLock,recycleHealth:this.recycleHealth};}
   loadState(s){super.loadState(s);this.paralyzerHeat=s.paralyzerHeat||0;this.paralyzerLock=!!s.paralyzerLock;this.recycleHealth=s.recycleHealth||[];}
 }

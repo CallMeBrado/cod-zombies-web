@@ -85,7 +85,9 @@ const resume=g.player.position.slice();
   // Candy: he eats, then runs down and kills zombies near the giver, for 45 s.
   const candy=g.interactions.find(e=>e.buriedItem==='candy'&&ar.itemVisible(e));ar.use(candy);arthur.give('candy');ar.carry=null;
   step(Math.ceil(arthur.duration('eatcandy')*120)+2);assert.equal(arthur.state,'protect');
-  g.player.position=arthur.position.map((v,k)=>v+(k===0?100:0));const zombie={id:7777,position:arthur.position.map((v,k)=>v+(k===0?150:0)),health:500,dead:false,stage:'hunt',window:g.windows[0],path:[]};g.enemies=[zombie];const left=g.remaining;
+  // Arthur's roam leaves him anywhere: set the scene along a direction he can walk.
+  const dir=[0,1,2,3,4,5,6,7].map(a=>[Math.cos(a*Math.PI/4),Math.sin(a*Math.PI/4)]).find(d=>g.kinematicLink(arthur.position,[arthur.position[0]+d[0]*150,arthur.position[1]+d[1]*150,arthur.position[2]],6))||[1,0];
+  g.player.position=arthur.position.map((v,k)=>v+(k<2?dir[k]*100:0));const zombie={id:7777,position:arthur.position.map((v,k)=>v+(k<2?dir[k]*150:0)),health:500,dead:false,stage:'hunt',window:g.windows[0],path:[]};g.enemies=[zombie];const left=g.remaining;
   for(let i=0;i<120*6&&!zombie.dead;i++)step(1);assert(zombie.dead,'Arthur kills the zombie near the candy giver');assert.equal(g.remaining,left+1,'His kills go back into the round');
   g.enemies=[];g.time+=46;step(2);assert.equal(arthur.state,'roam');
   const saved=g.saveState();g.loadState(saved);assert(g.mapRules.arthur.cellOpen);assert(g.mapRules.arthur.gotBooze);
@@ -167,5 +169,32 @@ assert.equal(g.remaining,0);assert.equal(g.enemies.filter(e=>!e.dead).length,13)
 const reached=e=>e.dead||e.attacking||e.stage==='hunt'&&Math.hypot(...e.position.map((v,k)=>v-g.player.position[k]))<80;
 assert(g.enemies.every(reached),'All town zombies must be able to reach the player after clearing the barrier');
 report.checks.push('round 3: all 13 native town zombies traverse the barrier and attack');
+// Paralyzer flight: firing straight down rises at 7 m/s, 70° hovers, the
+// camera's horizontal facing steers at up to 6 m/s, and the same at 30-144 FPS.
+for(const fps of [30,144]){
+  g.newGame();g.phase='between';g.roundDue=Infinity;g.setMod('god',true);const at=g.settleFeet([-768,280,52]);Object.assign(g.player,{position:at,previousPosition:at.slice(),grounded:true,velocityZ:0});
+  g.giveWeapon('slowgun_zm');for(let i=0;i<240;i++)g.update(1/120,{});g.yaw=0;
+  const fly=(deg,secs,input={})=>{g.pitch=-deg*Math.PI/180;for(let i=0;i<Math.round(secs*fps);i++){g.update(1/fps,input);g.paralyzerHeat=0;g.paralyzerLock=false;g.fire();}};
+  const z=g.player.position[2];fly(90,.75);assert(g.player.position[2]-z>150&&Math.abs(g.player.velocityZ-7*39.37)<.5,'Straight down rises at 7 m/s');
+  fly(70,1);const hover=g.player.position[2];fly(70,1);assert(Math.abs(g.player.position[2]-hover)<.5,'70° hovers');
+  const x=g.player.position[0];fly(70,1.5,{forward:1});assert((g.player.position[0]-x)/1.5>150,'Steers at up to 6 m/s');
+  g.pitch=0;for(let i=0;i<fps*8&&!g.player.grounded;i++)g.update(1/fps,{});assert(g.player.grounded,'Lands once the flight lapses');
+}
+report.checks.push('Paralyzer flight: rise, hover, steering and landing at 30-144 FPS');
+// Paralyzer landings on ground zombies cannot reach (a roof, a prop top):
+// hovering above them in open air is normal flight; touching one slides the
+// player off even while firing to hover and holding back toward it.
+for(const top of [[-1400,-1264,296],[-1400,-1072,144]]){
+  g.newGame();g.phase='between';g.roundDue=Infinity;g.setMod('god',true);g.giveWeapon('slowgun_zm');for(let i=0;i<10;i++)g.update(1/120,{});
+  Object.assign(g.player,{position:[top[0],top[1],top[2]+60],previousPosition:[top[0],top[1],top[2]+60],grounded:false,velocityZ:0});g.yaw=0;
+  const shoot=deg=>{g.pitch=-deg*Math.PI/180;g.paralyzerHeat=0;g.paralyzerLock=false;g.fire();};
+  for(let i=0;i<60;i++){g.update(1/120,{});shoot(70);}const air=g.player.position[2];for(let i=0;i<120;i++){g.update(1/120,{});shoot(70);assert(!g.unreachableSlide,'Open air above an obstacle is normal flight');}
+  assert(Math.abs(g.player.position[2]-air)<1,'Hovers above the obstacle');
+  let slid=false,perch=0,longest=0;
+  for(let i=0;i<120*12;i++){const s=g.unreachableSlide,late=i>240;if(s)g.yaw=Math.atan2(-s.dir[1],-s.dir[0]);g.update(1/120,late?{forward:1}:{});shoot(late?70:58);
+    if(g.unreachableSlide){slid=true;perch+=1/120;longest=Math.max(longest,perch);}else perch=0;}
+  assert(slid,'Landing on an unreachable top slides');assert(longest<5,'Never perched on it (longest '+longest.toFixed(2)+' s)');
+}
+report.checks.push('Paralyzer landings slide off unreachable roofs and props; open-air hover unaffected');
 await writeFile(new URL('../local-data/bo2-logic-verification.json',import.meta.url),JSON.stringify(report,null,2));
 console.log('Buried logic passed: 40 native spawn/FPS checks, T6 rounds, occupied-zone spawns, perks, progression, equipment, projectiles, saves and audio.');
