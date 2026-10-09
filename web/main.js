@@ -46,6 +46,8 @@ import {BlackOpsHud} from './bo1-hud.js';
 import {BlackOps2Engine,BO2_CHARACTERS,BO2_ARMS,BO2_PERKS} from './bo2-engine.js';
 import {BlackOps2Hud} from './bo2-hud.js';
 import {BuriedView} from './bo2-view.js';
+import {BuriedPolish} from './buried-polish.js';
+import {polishLight,applyProbe} from './polish-light.js';
 import {NuketownView} from './bo2-nuketown-view.js';
 import {TranzitView} from './bo2-tranzit-view.js';
 import {TownView} from './bo2-town-view.js';
@@ -78,12 +80,15 @@ const characterNames=mapChoice.characterNames||(bo2?BO2_CHARACTERS:CHARACTERS),c
 // Black Ops solo plays a random one of the four characters (player_set_viewmodel);
 // ?character=0-3 picks one. A save keeps its character.
 const characterParam=new URLSearchParams(location.search).get('character');
+let polish=null,polishBottle=null,muzzleObject=null,muzzleTag=null;const muzzleView=new THREE.Vector3(),muzzleWorld=new THREE.Vector3();
 let zombieVox=null,gameOver=null,gameOverStats=null,lastHitFrom=null,throe=null,throeLoad=null;
 let character=blackOps?(/^[0-3]$/.test(characterParam||'')?Number(characterParam):Math.floor(Math.random()*4)):0,voice=null;
 
 const $=id=>document.getElementById(id);
 const canvas=$('viewport'),scene=new THREE.Scene();scene.background=new THREE.Color(0x10171c);scene.fog=new THREE.FogExp2(0x26313a,.00022);
 if(bo2){scene.background.set(0x17120e);scene.fog.color.set(0x322719);scene.fog.density=.00013;}
+// Buried's polish: a touch more distance haze in the cavern's dusty brown.
+if(polishLight.enabled){scene.fog.color.set(0x2c2218);scene.fog.density=.000165;}
 scene.add(new THREE.AmbientLight(0xa8bac9,.2));
 let storage;try{storage=localStorage;}catch{}
 const settings=new GameSettings(storage),gamepadSettings=new GamepadSettings(storage);
@@ -438,7 +443,7 @@ function resetVisuals() {
   for(const b of boxVisuals.values()){b.weaponRoot.visible=false;b.glow.visible=false;b.lid.object.quaternion.copy(b.closed);}
   for(const burst of bursts)effects.dispose(burst.root);bursts.length=0;
   combatEffects.reset();blood.reset();
-  buriedView?.reset();
+  buriedView?.reset();polish?.reset();polishBottle=null;
   coastView?.reset();
   moonView?.reset();
   shangriView?.reset();
@@ -472,19 +477,31 @@ function shot(ray) {
   kickPitch+=THREE.MathUtils.degToRad(range(d[prefix+'ViewKickPitchMin'],d[prefix+'ViewKickPitchMax'])*.028);
   kickYaw+=THREE.MathUtils.degToRad(range(d[prefix+'ViewKickYawMin'],d[prefix+'ViewKickYawMax'])*.015);
   weaponView.shot(aimBlend);
+  if(polish&&!game.weapon.name.startsWith('slowgun')){const m=muzzlePosition();polish.muzzle(m?m.toArray():camera.position.toArray(),game.time,d);}
   const bloodied=new Set();
   for(const r of ray.rays||[ray]){
-    if(r.hits?.length){for(const hit of r.hits)if(hit.applied&&!bloodied.has(hit.enemy)){bloodied.add(hit.enemy);blood.burst(r.origin.map((v,i)=>v+r.dir[i]*hit.distance),r.dir,game.time);}continue;}
+    if(r.hits?.length){for(const hit of r.hits)if(hit.applied&&!bloodied.has(hit.enemy)){bloodied.add(hit.enemy);blood.burst(r.origin.map((v,i)=>v+r.dir[i]*hit.distance),r.dir,game.time);if(polish)actors.flinch(hit.enemy,hit.head,r.dir);}continue;}
     if(!r.hit&&!r.wall)continue;
-    combatEffects.impact(r,game.time);
+    if(polish){if(r.wall)polish.impact(r,game.time);}else combatEffects.impact(r,game.time);
   }
   state.weaponShotMs=performance.now()-shotStarted;
+}
+// The viewmodel's tag_flash is drawn by the view camera; the same point on
+// screen at the same eye distance, seen through the world camera.
+function muzzlePosition(){
+  if(!weaponView?.object||!weaponView.root?.visible)return null;
+  if(muzzleObject!==weaponView.object){muzzleObject=weaponView.object;muzzleTag=muzzleObject.getObjectByName('tag_flash');}
+  if(!muzzleTag)return null;weaponView.root.updateWorldMatrix(true,true);muzzleTag.getWorldPosition(muzzleView);
+  const distance=-muzzleView.z;if(distance<=.1)return null;muzzleView.project(viewCamera);
+  const tanY=Math.tan(THREE.MathUtils.degToRad(camera.fov)/2),tanX=tanY*camera.aspect;
+  return muzzleWorld.set(muzzleView.x*tanX*distance,muzzleView.y*tanY*distance,-distance).applyMatrix4(camera.matrixWorld);
 }
 function makeDrop(drop) {
   if(!drop.restored){drop.spawned=game.time;drop.expires=game.time+26.5;}
   const v=createPickupView(drop,dropTemplates.get(drop.type),effects,drop.spawned??game.time);scene.add(v.root);dropVisuals.set(drop,v);if(!drop.restored)audio.play('spawn_powerup');
 }
 function pickupVisual(drop){
+  polish?.pickup(drop,game.time);
   const root=effects.create('misc/fx_zombie_powerup_grab',game.time);root.position.fromArray(drop.position);root.position.z+=40;scene.add(root);bursts.push({root,due:game.time+1});
 }
 function updateDrop(drop,v){
@@ -568,6 +585,12 @@ async function init() {
   audio=new OriginalAudio(manifest.sounds,launchAudioContext);zombieVox=new ZombieVox(audio,ZOMBIE_VOX[bo2?'black-ops-2':blackOps?'black-ops':mapChoice.id==='der-riese'?'der-riese':'nacht']);voice=blackOps?new PlayerVoice(audio,manifest.voice,character):null;audio.volume=settings.value.volume;weaponView=new WeaponView(viewScene,audio);effects=new OriginalEffects(presentation);weaponView.effects=effects;actors=new ZombieActors(scene,map,presentation);actors.onNote=(enemy,alias)=>{if(!paused)zombieVox?.note(enemy,alias,game.time);};actors.active=visuals;
   if(blackOps){diveAudio=new DiveAudio(audio,manifest.diveAudio);playerBody=new PlayerBody(scene,p=>map.illumination(p),manifest.playerBodies,character);await playerBody.prepare();}
   if(bo2){buriedView=new (mapChoice.id==='town'?TownView:mapChoice.id==='mob-of-the-dead'?MobView:mapChoice.id==='origins'?OriginsView:mapChoice.id==='tranzit'?TranzitView:mapChoice.id==='nuketown'?NuketownView:mapChoice.id==='die-rise'?DieRiseView:BuriedView)(scene,map,dynamic,effects);await buriedView.prepare(manifest,presentation);}
+  if(polishLight.enabled){
+    // Buried's lighting and effects polish (tools/prepare_buried_polish.mjs).
+    polish=new BuriedPolish({scene,camera,map,collision:null,settings,audio,emitShake:e=>{if(!game)return;if(!shake||game.time>=shake.until||e.amplitude>shake.amplitude)shake={until:game.time+e.duration,amplitude:e.amplitude};}});
+    let data=null;try{data=await get('/data/'+mapChoice.data+'/polish.json',true);}catch(error){console.warn('Buried polish data unavailable; run node tools/prepare_buried_polish.mjs.',error.message);}
+    await polish.prepare(manifest,data);
+  }
   grenadeView=new GrenadeView(viewScene,manifest.grenade);
   progress('Preparing original pickups, knife, box and actor rigs…');
   await Promise.all([hud.load(),effects.prepare(),actors.prepare(),blood.prepare(presentation.gore),grenadeView.prepare(map.illumination([0,424,1])),weaponView.prepare({...manifest.weapons,...Object.fromEntries(Object.values(manifest.gestures||{}).map(d=>[d.name,d]))},map.illumination([0,424,1])),
@@ -593,14 +616,14 @@ async function init() {
     platformTurn:e=>{state.yaw+=e.delta;},buriedItem:e=>buriedView?.item(e),chalkDust:target=>buriedView?.chalkDust(target,game.time),
     shiProjectile:p=>shiView?.projectile(p),shiProjectileRemove:id=>shiView?.removeProjectile(id),shiImpact:e=>shiView?.impact({...e,time:game.time}),
     buriedEquipment:e=>buriedView?.place(e),buriedEquipmentRemove:id=>buriedView?.remove(id),buriedEquipmentLaunch:e=>buriedView?.launch(e),
-    buriedProjectile:e=>buriedView?.projectile(e),buriedProjectileRemove:id=>buriedView?.removeProjectile(id),projectileImpact:r=>{combatEffects.impact(r,game.time);if(r.hit)blood.burst(r.end,r.dir,game.time,r.hit.head);},
+    buriedProjectile:e=>buriedView?.projectile(e),buriedProjectileRemove:id=>buriedView?.removeProjectile(id),projectileImpact:r=>{if(polish){if(r.wall)polish.impact(r,game.time);}else combatEffects.impact(r,game.time);if(r.hit)blood.burst(r.end,r.dir,game.time,r.hit.head);},arthurBarricade:target=>polish?.barricadeBreak(target,game,dynamic,game.time),
     coastProjectile:e=>coastView?.projectile(e),coastProjectileRemove:id=>coastView?.removeProjectile(id),fiveTeleport:e=>{state.yaw=e.yaw;},
     dive:e=>weaponView.dive(e),
     diveEvent:e=>diveAudio?.handle(e),contactSurface:(p,n)=>contactSurfaceName(map.bullets.trace([p[0]+n[0]*4,p[1]+n[1]*4,p[2]+6],[0,0,-1],24)),
     bindingName:keyName,controllerPrompts:()=>gamepads.active,
     message:notice,spawn:e=>{spawnVisual(e);zombieVox?.spawn(e,game.time);},
     zombieAttack:e=>zombieVox?.attack(e,game.time),
-    kill:e=>{zombieVox?.death(e,game.time);const direction=e.killDirection||e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{stepView.reset();stepOffset=0;resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
+    kill:e=>{polish?.kill(e,game.time,game);zombieVox?.death(e,game.time);const direction=e.killDirection||e.position.map((v,i)=>v-game.player.position[i]);if(actors.kill(e,direction)&&e.deathHeadshot){const fragment=actors.active.get(e.id).headFragment;if(fragment?.active){blood.burst(fragment.p.toArray(),direction,game.time,true);if(presentation.gore?.headSound)audio.play(presentation.gore.headSound,1,{position:fragment.p.toArray()});}}},removeEnemy:e=>actors.release(e.id),reset:()=>{stepView.reset();stepOffset=0;resetVisuals();diveAudio?.reset();audio.stopSession();loops.clear();},weapon:w=>loadGun(w).catch(console.error),barrier,open,power:factoryVisuals,teleport:()=>{state.yaw=3*Math.PI/2;state.pitch=0;cameraPose();},
     traceShot:(origin,dir,range)=>{const began=performance.now(),ray=map.bullets.shot(origin,dir,range,traceEnemy);state.traceShotMs=performance.now()-began;state.maxTraceShotMs=Math.max(state.maxTraceShotMs||0,state.traceShotMs);return coop&&session?coop.blockShot(ray,origin,dir,id=>session.sample(id)):ray;},traceEnemy,shot,reload:event=>weaponView.reload(event),hit:()=>{hitTime=performance.now()+130;},melee:event=>weaponView.melee(event),meleeImpact:e=>blood.burst(e.position,e.direction,game.time),meleeAim:e=>{state.yaw=e.yaw-kickYaw;state.pitch=e.pitch-kickPitch;},damage:e=>{if(typeof e==='number')e={amount:e};lastHitFrom=e.from||null;hurt.hit({from:e.from,health:e.health??game.player.health,max:e.max??(game.mapRules?.maxHealth||100)},game.time,game.player.position);
       // Being swiped jolts the view; BO1 and BO2 play evt_player_swiped
       // (and BO2 the character's pain exert, at most every 1.5-3 s).
@@ -618,7 +641,7 @@ async function init() {
     explosion:g=>{combatEffects.explosion(g,game.time,g.weapon?game.data.weapons[g.weapon]?.projExplosionEffect:null);}
   },presentation,...(mapChoice.id==='ascension'?[g=>new AscensionRules(g)]:mapChoice.id==='verruckt'?[g=>new VerrucktRules(g)]:[]));
   if(blackOps)game.character=character;
-  actors.collision=game.collision;blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps||bo2){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();
+  actors.collision=game.collision;if(polish){polish.collision=game.collision;polish.prepareGhosts(actors);}blood.trace=(origin,dir,range)=>map.bullets.trace(origin,dir,range);factoryVisuals();await loadGun(game.weapon);progress('Preparing spawn routes, sounds and GPU shaders…');game.prepareSpawnPaths(navigation);if(!blackOps||bo2){game.preparePowerNavigation(powerNavigation?.sourceStamp===navigation.sourceStamp?powerNavigation:null);game.useGateNavigation(gateNavigation?.sourceStamp===navigation.sourceStamp?gateNavigation:null);}await audio.preload();resetVisuals();cameraPose();
   await prepared(5,'Compiling graphics…');
   const warmScene=new THREE.Scene();warmScene.fog=scene.fog;warmScene.add(...actors.warmObjects(),...dropTemplates.values());
   const warmFx=effects.create('misc/fx_zombie_powerup_on',0);warmScene.add(warmFx);
@@ -709,7 +732,7 @@ function frame(time) {
   if(!state.ready||state.mode==='loading'){requestAnimationFrame(frame);return;}
   if(gameOver?.active)for(const event of gameOver.update(dt))gameOverEvent(event);
   if(!paused)mouse.update(time);
-  if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){kickPitch+=(Math.random()-.5)*shake.amplitude*.04;kickYaw+=(Math.random()-.5)*shake.amplitude*.04;}}cameraPose();if(game)game.ads=aimBlend;
+  if(!paused){kickPitch*=Math.exp(-dt*11);kickYaw*=Math.exp(-dt*11);if(shake&&game&&game.time<shake.until){const jolt=shake.amplitude*.04*Math.sqrt(Math.min(1,dt*60));kickPitch+=(Math.random()-.5)*jolt;kickYaw+=(Math.random()-.5)*jolt;}}cameraPose();if(game)game.ads=aimBlend;
   // Aiming ends a sprint at once; the sights rise while the player slows.
   const aimHeld=(gamepads.active?gamepads.aiming:controls.aiming)&&!game?.movementBlocked&&!game?.pendingGrenade&&!game?.gesture&&!game?.switching;
   if(aimHeld&&gamepads.active)gamepads.sprinting=false;
@@ -727,7 +750,7 @@ function frame(time) {
   if(Math.abs(camera.fov-fov)>.01){camera.fov=fov;camera.updateProjectionMatrix();}cameraPose();
   for(const v of visuals.values()) {
     if(v.enemy.dead&&game.time-v.enemy.deathTime>5){actors.release(v.enemy.id);continue;}
-    actors.updateOne(v,paused&&!gameOver?.active?0:dt,game.renderPosition(v.enemy));
+    actors.updateOne(v,paused&&!gameOver?.active?0:dt,game.renderPosition(v.enemy),game.renderAngle?.(v.enemy));
   }
   if(game&&!paused&&state.mode==='playing')zombieVox?.update(game.time,game,game.yaw);
   for(const [drop,v]of dropVisuals){if(drop.used||game.time>drop.expires){effects.dispose(v.glow);scene.remove(v.root);dropVisuals.delete(drop);}else updateDrop(drop,v);}
@@ -742,10 +765,25 @@ function frame(time) {
   if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused&&!gameOver?.active?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,stance:game.player.stance,time:game.time,reloading:!!game.reloadEnd,offhand});}
   if(game)playerBody?.update(game,state.mode==='playing'||pauseMenu.context==='pause');
   if(game&&game.time>lastLight+.3){lastLight=game.time;
-    const color=map.illumination(game.player.position);weaponView?.object?.traverse(n=>{if(n.isMesh&&n.material.color&&!n.material.userData.fixedLight)n.material.color.setRGB(...color.map(v=>Math.max(.09,v*1.5)));});
+    if(polish&&map.lightProbe){const p=game.player.position,probe=map.lightProbe([p[0],p[1],p[2]+50]),dir=new THREE.Vector3(...probe.direction).transformDirection(camera.matrixWorldInverse).toArray(),materials=[];
+      weaponView?.object?.traverse(n=>{if(n.isMesh)materials.push(...[n.material].flat());});applyProbe(materials,probe,{scale:1.5,dir,floor:.09});}
+    else{const color=map.illumination(game.player.position);weaponView?.object?.traverse(n=>{if(n.isMesh&&n.material.color&&!n.material.userData.fixedLight)n.material.color.setRGB(...color.map(v=>Math.max(.09,v*1.5)));});}
     for(const v of visuals.values())actors.light(v);
   }
   if(game)hurt.update(game.time+deathFxTime,{health:game.player.health,max:game.mapRules?.maxHealth||100,viewYaw:game.yaw});
+  if(game&&state.ready)buriedView?.update(game,paused?0:dt,cellObjects);
+  if(polish&&game&&state.ready){
+    const now=game.time+deathFxTime,step=paused&&!gameOver?.active?0:dt,a=game.mapRules?.arthur;
+    if(weaponView)weaponView.vibration=game.flight&&game.paralyzerFiring?1:0;
+    polish.paralyzer(game,showWeapon?muzzlePosition():null,step,now);
+    polish.paralyzedBodies(game,visuals,now,step);
+    if(a&&buriedView?.object){polish.arthurFeet(buriedView.object,a,now,game);
+      // The jug leaves his hand at "hitground": it shatters there.
+      if(polishBottle==='booze'&&a.prop!=='booze'&&a.state==='drink'){const jug=buriedView.props?.booze;if(jug)polish.bottleBreak(jug.getWorldPosition(new THREE.Vector3()).toArray(),now);}polishBottle=a.prop;}
+    const feet=[];for(const v of visuals.values())if(v.root.visible&&!v.enemy.dead&&v.enemy.kind!=='ghost'&&v.enemy.stage!=='rise')feet.push({position:game.renderPosition(v.enemy),radius:15});
+    if(a&&buriedView?.root&&buriedView.object?.visible!==false)feet.push({position:buriedView.root.position.toArray(),radius:24});
+    polish.shadows(feet);polish.update(game,step,now,{visibleCells:map.visibleCells,buriedView,drops:dropVisuals.keys()});
+  }
   map?.updateVisibility(camera);applyCellCulling();
   const renderStarted=performance.now();renderer.info.reset();renderer.autoClear=true;renderer.render(scene,camera);if(weaponView?.root?.visible||grenadeView?.root?.visible){renderer.autoClear=false;renderer.clearDepth();renderer.render(viewScene,viewCamera);}state.renderFrameMs=performance.now()-renderStarted;
   if(game&&state.mode==='playing'&&time>=hudDue){
@@ -761,10 +799,9 @@ function frame(time) {
     const counter=$('fps-counter');counter.classList.toggle('on',settings.value.showFps);if(settings.value.showFps)counter.textContent=state.fps+' FPS\n'+(frameMsTotal/frames).toFixed(1)+' ms CPU';
     frames=0;frameMsTotal=0;fpsTime=time;}
   if(time>=domDue){updateHud();domDue=time+100;}
-  if(game&&state.ready)buriedView?.update(game,paused?0:dt,cellObjects);
   requestAnimationFrame(frame);
 }
-window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get verrucktView(){return verrucktView;},get frontend(){return frontend;},get bo2Menu(){return bo2Menu;},get menuAudio(){return menuAudio;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics(),aimAssist:controllerAimAssist.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
+window.wawPreview={state,camera,renderer,scene,applyCellCulling,get weaponView(){return weaponView;},get verrucktView(){return verrucktView;},get frontend(){return frontend;},get bo2Menu(){return bo2Menu;},get menuAudio(){return menuAudio;},get audio(){return audio;},get voice(){return voice;},get game(){return game;},get map(){return map;},get polish(){return polish;},get buriedView(){return buriedView;},get visuals(){return visuals;},diagnostics:()=>({state,launch:launch.diagnostics(),...game?.snapshot(),settings:settings.value,map:mapChoice.id,mapRules:game?.mapRules&&{power:game.mapRules.power,links:[...game.mapRules.links],perks:[...game.mapRules.perks],zones:[...game.mapRules.activeZones()]},menu:{view:pauseMenu.view,context:pauseMenu.context,capturing:pauseMenu.capture},controls:{tokens:[...controls.tokens],input:input(),aiming:gamepads.active?gamepads.aiming:controls.aiming,controller:gamepads.diagnostics(),aimAssist:controllerAimAssist.diagnostics()},originalExecutableRunning:false,originalGscInterpreter:false,
   dive:{telemetry:game?.lastDive,phase:game?.dive?.phase||'ready',weaponRecovering:!!game?.diveRecovery,audio:diveAudio?.diagnostics(),body:playerBody?.diagnostics()},
   textures:map?.textures(),bakedLightmaps:map?.lightmapCount,renderedEnemies:visuals.size,retainedEnemies:game?.enemies.length,combatEffects:combatEffects.diagnostics(),gore:blood.diagnostics(),audioBuffers:audio?.buffers.size,audio:audio?.diagnostics(),
   weaponAnimation:weaponView?.current?.getClip().name,knifeVisible:weaponView?.knife?.visible,sprintBlend:weaponView?.sprintBlend,preparedWeapons:weaponView?.rigs.size,preparedActors:actors?.pool.length,

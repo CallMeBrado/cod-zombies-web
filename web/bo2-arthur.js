@@ -152,7 +152,7 @@ export class Arthur {
   // Zombies he barges through while running (sloth_check_ragdolls): no points,
   // and the round gets them back (level.zombie_total++).
   killZombie(e){
-    const g=this.game;if(e.dead)return;e.dead=true;e.deathTime=g.time;g.remaining++;
+    const g=this.game;if(e.dead)return;e.dead=true;e.deathTime=g.time;g.remaining++;e.arthurKill=true;
     e.killDirection=[Math.cos(this.yaw)*400,Math.sin(this.yaw)*400,200];g.emit('kill',e);g.emit('sound',{alias:'zmb_ai_sloth_attack_impact',position:e.position.slice()});
   }
   barge(){for(const e of this.hunters())if(flat(e.position,this.position)<MELEE&&this.facing(e.position,.7))this.killZombie(e);}

@@ -9,7 +9,9 @@ import {BulletTrace} from './bullet-trace.js';
 import {decodeKinoLightmap} from './bo1-lighting.js';
 import {decodeBC5} from './bo2-textures.js';
 import {nativeDiffuse} from './native-material.js';
+import {polishLight,DYNAMIC_GLSL,surfaceSpec,specTable,POLISH_GRADE,polishUniforms} from './polish-light.js';
 const mapChoice=selectedMap(),assetZones=mapChoice.assetZones||[...new Set([mapChoice.zone,'common','nacht'])];
+polishLight.enabled=mapChoice.id==='buried'&&!/[?&]polish=0\b/.test(location.search);
 
 const dds=new DDSLoader(), textures=new Map(), models=new Map();
 export async function get(url,json=false) {
@@ -76,6 +78,11 @@ export function film(shader,vision=null) {
       #include <tonemapping_fragment>`);return;
   }
   if(mapChoice.engine==='dead-ops')return;
+  if(polishLight.enabled){
+    shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`${POLISH_GRADE}
+      gl_FragColor.rgb=outgoingLight;
+      #include <tonemapping_fragment>`);return;
+  }
   if(mapChoice.game==='black-ops-2'){
     shader.fragmentShader=shader.fragmentShader.replace('#include <tonemapping_fragment>',`
       float luma=dot(outgoingLight,vec3(.2126,.7152,.0722));
@@ -100,16 +107,73 @@ export function film(shader,vision=null) {
     gl_FragColor.rgb=outgoingLight;
     #include <tonemapping_fragment>`);
 }
-export function shadeModel(object,color,vision=null) {
+export function shadeModel(object,color,vision=null,space='world') {
   object.traverse(node=>{if(!node.isMesh)return;
     const convert=old=>{const foliage=/tree|pine|foliage|grass/i.test(old.name);const mat=new THREE.MeshBasicMaterial({map:old.map,color:new THREE.Color(...color),vertexColors:!!node.geometry.attributes.color,
       transparent:old.transparent,depthWrite:old.depthWrite,opacity:old.opacity,alphaTest:foliage?.3:old.alphaTest,side:foliage?THREE.DoubleSide:old.side,
       blending:old.blending,blendSrc:old.blendSrc,blendDst:old.blendDst,visible:old.visible});mat.name=old.name;
       mat.userData.fixedLight=/zombie.*eye/.test(old.name);if(mat.userData.fixedLight)mat.color.setRGB(1,1,1);
       else if(old.userData.heatGlow)heatGlowing(mat,old.userData.heatGlow);
-      else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else if(vision){mat.onBeforeCompile=shader=>film(shader,vision);mat.customProgramCacheKey=()=>'vision';}else mat.onBeforeCompile=shader=>film(shader);return mat;};
+      else if(old.userData.glowMap)glowing(mat,old.userData.glowMap,old.userData.glowAmount);else if(vision){mat.onBeforeCompile=shader=>film(shader,vision);mat.customProgramCacheKey=()=>'vision';}else mat.onBeforeCompile=shader=>film(shader);
+      if(polishLight.enabled&&!mat.userData.fixedLight)polishModel(mat,space);return mat;};
     node.material=Array.isArray(node.material)?node.material.map(convert):convert(node.material);
   });
+}
+// Buried's model lighting: the baked probe's ambient stays in the material
+// color; its dominant light (wawProbeColor from wawProbeDir) shades by the
+// surface normal, the dynamic lights add on top, and an optional cool rim
+// keeps enemies readable against dark backgrounds. The viewmodel lives in
+// its own scene in the camera's view space, so it reads a second light set
+// placed there each frame.
+export const viewPolish={wawDynPos:{value:polishLight.uniforms.wawDynPos.value.map(v=>v.clone())},wawDynColor:{value:polishLight.uniforms.wawDynColor.value.map(v=>v.clone())},wawDynCount:{value:0}};
+function polishModel(mat,space){
+  const base=mat.onBeforeCompile,key=mat.customProgramCacheKey?.()||'';
+  polishUniforms(mat);
+  // A function, not an arrow: cloned rig materials share it and must each
+  // bind their own uniforms (this is the material being compiled).
+  mat.onBeforeCompile=function(shader,renderer){
+    base?.call(this,shader,renderer);
+    Object.assign(shader.uniforms,space==='view'?viewPolish:polishLight.uniforms,polishUniforms(this));
+    shader.vertexShader='varying vec3 vWawP;varying vec3 vWawN;\n'+shader.vertexShader.replace('#include <project_vertex>',`#include <project_vertex>
+      #ifdef USE_SKINNING
+      vec3 wawObjN=objectNormal;
+      #else
+      vec3 wawObjN=normal;
+      #endif
+      #ifdef USE_INSTANCING
+      mat4 wawM=modelMatrix*instanceMatrix;
+      #else
+      mat4 wawM=modelMatrix;
+      #endif
+      vWawN=normalize(mat3(wawM)*wawObjN);vWawP=(wawM*vec4(transformed,1.)).xyz;`);
+    shader.fragmentShader=`varying vec3 vWawP;varying vec3 vWawN;uniform vec3 wawProbeDir,wawProbeColor,wawFxColor;uniform float wawRim;uniform vec4 wawFx;
+      ${DYNAMIC_GLSL}
+      float wawHash(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+      float wawNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
+        return mix(mix(mix(wawHash(i),wawHash(i+vec3(1,0,0)),f.x),mix(wawHash(i+vec3(0,1,0)),wawHash(i+vec3(1,1,0)),f.x),f.y),mix(mix(wawHash(i+vec3(0,0,1)),wawHash(i+vec3(1,0,1)),f.x),mix(wawHash(i+vec3(0,1,1)),wawHash(i+vec3(1,1,1)),f.x),f.y),f.z);}
+      `+shader.fragmentShader.replace('#include <opaque_fragment>',`{
+        vec3 wawN=normalize(vWawN);if(!gl_FrontFacing)wawN=-wawN;
+        #ifdef USE_MAP
+        vec3 wawAlb=texture2D(map,vMapUv).rgb;
+        #else
+        vec3 wawAlb=vec3(.5);
+        #endif
+        vec3 wawV=normalize(${space==='view'?'-vWawP':'cameraPosition-vWawP'});
+        outgoingLight+=wawAlb*(wawProbeColor*clamp(dot(wawN,wawProbeDir)*.7+.3,0.,1.)+wawDynamic(vWawP,wawN));
+        outgoingLight+=wawAlb*wawRim*pow(1.-clamp(dot(wawN,wawV),0.,1.),3.)*vec3(.55,.62,.78);
+        // Status effects on a body: x = energy (the Paralyzer's grip), y =
+        // dissolve (its disintegration), z = ghost shimmer, w = time.
+        if(wawFx.x>0.||wawFx.y>0.||wawFx.z>0.){
+          float n=wawNoise(vWawP*.09+vec3(0.,0.,-wawFx.w*1.7))*.65+wawNoise(vWawP*.31+wawFx.w*2.3)*.35;
+          if(wawFx.y>0.){if(n<wawFx.y)discard;outgoingLight+=wawFxColor*smoothstep(wawFx.y+.09,wawFx.y,n)*3.;}
+          float edge=pow(1.-clamp(dot(wawN,wawV),0.,1.),2.);
+          outgoingLight+=wawFxColor*wawFx.x*(edge*1.4+.25)*(.55+.45*sin(wawFx.w*31.+n*12.))*smoothstep(.35,.75,n+.2);
+          if(wawFx.z>0.){outgoingLight=mix(outgoingLight,outgoingLight*.6+wawFxColor*(edge*1.6+.15),wawFx.z);diffuseColor.a*=mix(1.,.35+.5*edge+.15*n,wawFx.z);}
+        }
+      }
+      #include <opaque_fragment>`);
+  };
+  mat.customProgramCacheKey=()=>key+'|polish-'+space;
 }
 // T6 phong_emissive surfaces (the cell key, lamps, sconces, lit windows) add
 // their Glow_Map, scaled by the material's hdrAmount and Emissive_Push, on top
@@ -326,6 +390,12 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
       }
       if(lm&&!emissive){
         Object.assign(shader.uniforms,{wawPrimary:{value:lm.primary},wawNormal:{value:arrays?map:(normal||map)},wawHasNormal:{value:hasNormal},wawLights:{value:lightTexture}});
+        const polish=polishLight.enabled&&mapChoice.game==='black-ops-2';
+        if(polish){
+          Object.assign(shader.uniforms,polishLight.uniforms);
+          if(arrays?.spec)shader.uniforms.wawSpecTable={value:arrays.spec};else shader.uniforms.wawSpecParams={value:new THREE.Vector3(...surfaceSpec(key+' '+(map?.name||'')))};
+          shader.fragmentShader=(arrays?.spec?'uniform highp sampler2D wawSpecTable;':'uniform vec3 wawSpecParams;')+DYNAMIC_GLSL+'\n'+shader.fragmentShader.replace('void main() {','void main() {\n  vec3 wawSpec=vec3(0.);').replace('#include <opaque_fragment>','outgoingLight+=wawSpec;\n#include <opaque_fragment>');
+        }
         shader.vertexShader='attribute float wawLight; varying vec2 wawSurfaceUv; varying vec3 wawWorldPos; varying vec3 wawWorldNormal; flat varying int wawLightIndex;\n'+shader.vertexShader;
         shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
           wawSurfaceUv=uv;wawWorldPos=(modelMatrix*vec4(position,1.)).xyz;
@@ -347,6 +417,15 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
             float scale=inversesqrt(max(max(dot(T,T),dot(B,B)),.000001));
             N=normalize(T*scale*xy.x+B*scale*xy.y+N*sqrt(max(0.,1.-dot(xy,xy))));}
           vec3 baked=a.rgb/(a.a+.000001)+b.rgb/(b.a+.000001)*max(0.,dot(direction,N));
+          ${polish?`
+          // Specular from the baked dominant light: dry wood and rough stone
+          // stay matte, metal and glass catch it (metal tinted by its albedo).
+          vec3 wawSp=${arrays?.spec?'texelFetch(wawSpecTable,ivec2(int(vWawLayer+.5),0),0).xyz':'wawSpecParams'};
+          vec3 wawL=normalize(direction),wawV=normalize(cameraPosition-wawWorldPos),wawH=normalize(wawL+wawV);
+          wawSpec=b.rgb/(b.a+.000001)*wawSp.x*pow(max(dot(N,wawH),0.),wawSp.y)*(wawSp.y+8.)*.04*max(0.,dot(wawL,N));
+          wawSpec+=a.rgb/(a.a+.000001)*wawSp.x*pow(1.-max(dot(N,wawV),0.),5.)*.35;
+          wawSpec*=mix(vec3(1.),diffuseColor.rgb*1.6,wawSp.z);
+          baked=max(baked+wawDynamic(wawWorldPos,N),vec3(0.));`:''}
           vec4 lightMapTexel=vec4(baked*PI,1.);`:`
           // The recovered T4 shader samples ambient RGB in the upper half and
           // directional RGB in the lower half; their alpha channels encode XY.
@@ -368,7 +447,7 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
       }
       film(shader,source.vision);
     };
-    mat.customProgramCacheKey=()=>[!!lm,!!emissive,hasNormal,vertexColors,alpha,arrays?'array':'',layered,!!falloff,source.vision?'vision':''].join('|');
+    mat.customProgramCacheKey=()=>[!!lm,!!emissive,hasNormal,vertexColors,alpha,arrays?'array':'',layered,!!falloff,source.vision?'vision':'',polishLight.enabled?(arrays?.spec?'polish-table':'polish'):''].join('|');
     return mat;
   };
   const material=(s)=>{
@@ -379,6 +458,7 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
   // Texture arrays: compressed textures of one role, format, size and mip count
   // share a GPU array; each world vertex carries its layer. ?arrays=0 disables.
   const useArrays=!/[?&]arrays=0\b/.test(location.search),arrayBuckets=new Map(),arrayTextures=[];
+  const textureSurface=new Map();
   const arrayLayer=(texture,role)=>{
     if(!useArrays||!texture?.isCompressedTexture||!texture.mipmaps?.length)return null;
     const key=[role,texture.format,texture.image.width,texture.image.height,texture.mipmaps.length].join('x');
@@ -419,7 +499,7 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
     if(mapChoice.engine==='dead-ops'&&/\$default3d|clip|trigger/.test(s.material))return;
     const id=surfaceToModel.get(i)||0;
     if(id===0){
-      const {map,normal,layer,info}=maps.get(s.material),d=arrayLayer(map,'d'),n=normal?arrayLayer(normal,'n'):null,l=layer?arrayLayer(layer,'d'):null;
+      const {map,normal,layer,info}=maps.get(s.material);if(map&&!textureSurface.has(map))textureSurface.set(map,s.material);const d=arrayLayer(map,'d'),n=normal?arrayLayer(normal,'n'):null,l=layer?arrayLayer(layer,'d'):null;
       if(d&&(!normal||n)&&(!layer||l)){
         const alpha=!info.blend&&/foliage|chalk|puddle/.test(s.material),vertexColors=!s.material.startsWith('*'),key=[d.bucket.key,n?.bucket.key||'-',l?.bucket.key||'-',s.lightmap,!!info.emissive,alpha,vertexColors,info.blend||'',!!info.decal,info.tint||'',info.falloff||''].join('|');
         if(l)markLayer(s,info,l.layer);
@@ -471,7 +551,8 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
     draw.setIndex(index);draw.boundingSphere=full.boundingSphere;draw.boundingBox=full.boundingBox;mesh.geometry=draw;cellMeshes.push({mesh,source,ranges,index});return mesh;
   };
   for(const [key,g]of arrayGroups){
-    const m=g.meta,mat=buildMaterial({key:'array:'+key,map:arrayMap,normal:null,emissive:m.emissive,lm:m.lm,vertexColors:m.vertexColors,alpha:m.alpha,blend:m.blend,decal:m.decal,tint:m.tint,falloff:m.falloff,arrays:{diffuse:arrayTexture(m.d),normal:m.n?arrayTexture(m.n):null,layer:m.l?arrayTexture(m.l):null}});
+    const m=g.meta,spec=polishLight.enabled?(m.d.spec??=specTable(m.d.textures.map(t=>surfaceSpec(textureSurface.get(t))))):null;
+    const mat=buildMaterial({key:'array:'+key,map:arrayMap,normal:null,emissive:m.emissive,lm:m.lm,vertexColors:m.vertexColors,alpha:m.alpha,blend:m.blend,decal:m.decal,tint:m.tint,falloff:m.falloff,arrays:{diffuse:arrayTexture(m.d),normal:m.n?arrayTexture(m.n):null,layer:m.l?arrayTexture(m.l):null,spec}});
     const sorted=byCell(g,['indices','lights','layers','normalLayers']);
     const mesh=new THREE.Mesh(compactGeometry(sorted.indices,sorted.lights,sorted.layers,sorted.normalLayers),mat);mesh.name='Original world section';mesh.matrixAutoUpdate=false;scene.add(mesh);bullets.addMesh(mesh,{layers:m.d.textures});cellCulled(mesh,sorted.ranges);worldBatches++;
   }
@@ -502,6 +583,15 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
     if(mapChoice.game==='black-ops-2'){const a=texel(best.lm.secondary,best.uv[0],best.uv[1]/3),b=texel(best.lm.secondary,best.uv[0],best.uv[1]/3+1/3);return a.slice(0,3).map((v,k)=>Math.max(.018,Math.min(source.modelLightMax??mapChoice.modelLightMax??4,(v/(a[3]+.000001)+b[k]/(b[3]+.000001)*.5)*(source.modelLightScale??mapChoice.modelLightScale??1))));}
     const a=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5),b=texel(best.lm.secondary,best.uv[0],best.uv[1]*.5+.5);
     return a.slice(0,3).map((v,i)=>Math.min(source.modelLightMax??Infinity,Math.max(.018,(v+b[i])*(source.modelLightScale??1))));
+  };
+  // The baked probe split into its parts: ambient, the dominant light's
+  // color and its world direction (models shade by their normals with it).
+  const lightProbe=position=>{
+    const best=lighting.nearest(position);
+    if(!best||mapChoice.game!=='black-ops-2')return {ambient:illumination(position),directional:[0,0,0],direction:[0,0,1]};
+    const u=best.uv[0],v=best.uv[1]/3,a=texel(best.lm.secondary,u,v),b=texel(best.lm.secondary,u,v+1/3),d=texel(best.lm.secondary,u,v+2/3).slice(0,3).map(x=>x*2-1),l=Math.hypot(...d)||1;
+    const cap=x=>Math.max(0,Math.min(source.modelLightMax??mapChoice.modelLightMax??4,x*(source.modelLightScale??mapChoice.modelLightScale??1)));
+    return {ambient:a.slice(0,3).map(x=>Math.max(.018,cap(x/(a[3]+.000001)))),directional:b.slice(0,3).map(x=>cap(x/(b[3]+.000001))),direction:d.map(x=>x/l)};
   };
   progress('Loading original bunker props…');
   const unique=[...new Set(world.staticModels.map(x=>x.model))];
@@ -590,7 +680,7 @@ export async function loadMap(scene,progress,source={zone:mapChoice.zone,asset:m
       batch.mesh.count=visible.length;batch.mesh.visible=visible.length>0;batch.mesh.instanceMatrix.needsUpdate=true;batch.mesh.instanceColor.needsUpdate=true;batch.visible=visible;
     }
   };
-  return {world,bullets,brushMeshes,illumination,worldBatches,cellFor,get visibleCells(){return visibleCells;},cellCount:dpvs?.cellCount||0,staticBatches:batchCount,staticPlacements:world.staticModels.length,lightmapCount:lightmaps.length,textures:()=>textures.size,
+  return {world,bullets,brushMeshes,illumination,lightProbe,lights,worldBatches,cellFor,get visibleCells(){return visibleCells;},cellCount:dpvs?.cellCount||0,staticBatches:batchCount,staticPlacements:world.staticModels.length,lightmapCount:lightmaps.length,textures:()=>textures.size,
     // Lightmaps and the light table are decoded here rather than through the
     // texture cache; upload them before play too, or each one uploads (a
     // 20-70 ms hitch) the first time its area comes into view.

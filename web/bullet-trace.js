@@ -146,6 +146,8 @@ export class BulletTrace {
     const surface=this.trace(origin,dir,range),found=traceEnemy(origin,dir,surface?.distance??range,true);
     const hits=(Array.isArray(found)?found:found?[found]:[]).sort((a,b)=>a.distance-b.distance),hit=hits[0]||null;
     const nearest=hit?.distance??surface?.distance??range;
-    return {hit,hits,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!hit&&!!surface,normal:surface?.normal||[0,0,0]};
+    // The surface's material and texture names say what it is made of
+    // (wood, metal, stone...) for the impact it shows.
+    return {hit,hits,origin,dir,end:origin.map((v,i)=>v+dir[i]*nearest),wall:!hit&&!!surface,normal:surface?.normal||[0,0,0],surface:surface?[surface.material,surface.texture].filter(Boolean).join(' '):null};
   }
 }

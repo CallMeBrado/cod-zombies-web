@@ -209,7 +209,7 @@ export class BuriedRules extends KinoRules {
       this.ghostActive=false;if(this.ghostReward){this.lastGhostRound=g.round;const choices=Object.keys(BO2_PERKS).filter(p=>!this.perks.has(p));if(choices.length){const id=choices[Math.floor(Math.random()*choices.length)];this.perks.add(id);if(id==='specialty_armorvest')g.player.health=250;g.emit('sound',{alias:BO2_PERKS[id].sting});g.message('Free '+BO2_PERKS[id].name);}}
     }
     for(const [id,due]of this.itemRespawn)if(g.time>=due){this.itemRespawn.delete(id);this.collected.delete(id);g.emit('buriedItem',{id,visible:true});}
-    this.arthur.tick(1/120);
+    this.arthur.previous={position:this.arthur.position.slice(),yaw:this.arthur.yaw};this.arthur.tick(1/120);
     const arthur=g.interactions.find(e=>e.targetname==='buried_arthur');if(arthur)arthur.position=this.arthur.giftOrigin();
   }
   // Shared with co-op guests: Arthur, the cell, the items and the start area.
@@ -609,7 +609,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
       const d=e.position.map((v,k)=>v-origin[k]+(k===2?35:0)),range=Math.hypot(...d),yaw=Math.atan2(d[1],d[0]),pitch=Math.atan2(d[2],Math.hypot(d[0],d[1]));
       if(range>550||Math.cos(yaw-this.yaw)<.94||Math.abs(pitch-this.pitch)>.35)continue;
       const ray=this.rayHit(550,yaw,pitch);if(ray.hit?.enemy!==e)continue;
-      e.paralyzedUntil=this.time+.35;e.paralyzerExposure=(e.paralyzerExposure||0)+.1;
+      e.paralyzedUntil=this.time+.35;e.paralyzerExposure=(e.paralyzerExposure||0)+.1;e.paralyzerUpgraded=this.weapon.name.includes('upgraded');
       // zombie_slowgun_sizzle on the zombie while the beam holds it.
       if(this.time>=(e.sizzleDue||0)){e.sizzleDue=this.time+.25;this.emit('effect',{name:'weapon/paralyzer/fx_paralyzer_hit_dmg'+(this.weapon.name.includes('upgraded')?'_ug':''),position:[e.position[0],e.position[1],e.position[2]+35],duration:.6});}
       if(e.paralyzerExposure>=1){
@@ -617,9 +617,13 @@ export class BlackOps2Engine extends BlackOpsEngine {
         if(e.paralyzerDamage>47073)damage*=47073/e.paralyzerDamage;
         e.paralyzerDamage=(e.paralyzerDamage||0)+damage;e.paralyzerMultiplier=Math.min(50,(e.paralyzerMultiplier||1)*1.15);
         const alive=!e.dead;super.hitEnemy(e,damage,false,false);this.emit('hit',false);
+        if(alive&&e.dead){e.paralyzerKill=true;e.paralyzerUpgraded=this.weapon.name.includes('upgraded');}
         if(alive&&e.dead)this.emit('effect',{name:'weapon/paralyzer/fx_paralyzer_body_disintegrate'+(this.weapon.name.includes('upgraded')?'_ug':''),position:[e.position[0],e.position[1],e.position[2]+35],duration:2});
       }
     }
+    // Where the beam stops along the aim (a zombie it holds or a surface),
+    // for the beam picture; it only lasts while the shots keep coming.
+    {const aim=this.rayHit(550,this.yaw,this.pitch);this.paralyzerBeam={at:this.time,end:aim.end||origin.map((v,k)=>v+[Math.cos(this.pitch)*Math.cos(this.yaw),Math.cos(this.pitch)*Math.sin(this.yaw),Math.sin(this.pitch)][k]*550),normal:aim.normal||[0,0,0],wall:!!aim.wall,enemy:aim.hit?.enemy?.id??null,upgraded:this.weapon.name.includes('upgraded')};}
     this.emit('shot',{origin,dir:[Math.cos(this.pitch)*Math.cos(this.yaw),Math.cos(this.pitch)*Math.sin(this.yaw),Math.sin(this.pitch)],rays:[]});
     // startFireSound, then loopFireSound until the trigger is released.
     if(!this.paralyzerFiring){this.paralyzerFiring=true;this.emit('sound',{alias:definition.startFireSoundPlayer});this.emit('loop',{id:'paralyzer',alias:definition.loopFireSoundPlayer});}

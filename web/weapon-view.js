@@ -50,7 +50,7 @@ export class WeaponView {
     const knife=knifeTemplate?cloneModel(knifeTemplate):new THREE.Group();knife.name='Original Ka-Bar knife';(object.getObjectByName('tag_knife_attach')||object.getObjectByName('tag_weapon')).add(knife);knife.visible=false;
     const root=new THREE.Group(),orientation=new THREE.Group();
     orientation.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(0,-1,0,0,0,0,1,0,-1,0,0,0,0,0,0,1));orientation.add(object);root.add(orientation);
-    shadeModel(object,light.map(c=>Math.max(.09,c*1.5)));
+    shadeModel(object,light.map(c=>Math.max(.09,c*1.5)),null,'view');
     const definition=weapon.definition,mixer=new THREE.AnimationMixer(object),clips=new Map();
     await Promise.all([...new Set(Object.entries(definition).filter(([k,v])=>k.endsWith('Anim')&&v&&!k.includes('Camera')).map(([,v])=>v))].map(async name=>{
       try{clips.set(name,await originalAnimation(name,object));}catch(error){console.warn(error.message);}
@@ -150,6 +150,8 @@ export class WeaponView {
     this.root.rotation.set(-THREE.MathUtils.degToRad(d.sprintRotP||0)*blend,THREE.MathUtils.degToRad(d.sprintRotY||0)*blend,-THREE.MathUtils.degToRad(d.sprintRotR||0)*blend,'YXZ');
     this.root.scale.setScalar(1+((d.sprintScale||1)-1)*blend);
     this.root.position.y-=20*offhand;
+    // A restrained shudder while the Paralyzer carries the player.
+    if(this.vibration>0){const k=this.vibration*(1-ads*.6);this.root.position.x+=(Math.random()-.5)*.09*k;this.root.position.y+=(Math.random()-.5)*.09*k;this.root.rotation.z+=(Math.random()-.5)*.004*k;}
     this.flashTime=Math.max(0,this.flashTime-dt);this.flash.visible=this.flashTime>0;this.flash.rotation.x=Math.random()*Math.PI;
     this.time=time;if(this.flashFx?.visible){if(time>this.flashFxDue)this.flashFx.visible=false;else this.effects.update(this.flashFx,time);}
   }

@@ -3,6 +3,7 @@ import {model,cloneModel,originalAnimation,shadeModel,restRelative,t6Clips} from
 import {ZombieHitTrace} from './zombie-hit-trace.js';
 import {SkeletonRagdoll} from './ragdoll.js';
 import {SeveredHead} from './gore.js';
+import {polishLight,applyProbe} from './polish-light.js';
 
 // Retarget shared clips before gameplay. Spawning only acquires a prepared rig.
 export class ZombieActors {
@@ -67,12 +68,12 @@ export class ZombieActors {
     if(!v.ragdoll.start(enemy,direction,strength,this.collision))return false;
     v.mixer.stopAllAction();v.ragdoll.restoreFrozen();v.current=null;v.started=null;v.trace.tick=-1;v.traceTick=-1;if(enemy.deathHeadshot)this.severHead(v,direction);return true;
   }
-  updateOne(v,dt,position){
+  updateOne(v,dt,position,angle=null){
     const e=v.enemy;
     v.root.scale.setScalar(e.visualScale||1);
     v.root.visible=e.stage!=='dog-spawn'&&!(e.dead&&e.gibbed);
     if(e.dead&&v.ragdoll.ready){this.kill(e);v.ragdoll.update(dt,this.collision);v.headFragment?.update(dt,this.collision);v.trace.tick=-1;v.traceTick=-1;return;}
-    v.root.position.fromArray(position);v.root.rotation.z=e.angle;
+    v.root.position.fromArray(position);v.root.rotation.z=angle??e.angle;
     if(e.stage==='rise'&&!e.riseAnim)v.root.position.z-=50*Math.max(0,(e.riseUntil-e.spawnTime-e.age)/(e.riseUntil-e.spawnTime));
     let name=v.actions.has(e.gait)?e.gait:'ai_zombie_walk_v1',started=null;
     if(e.dead)name='ai_zombie_death_v1';
@@ -94,6 +95,7 @@ export class ZombieActors {
       if(name==='ai_zombie_walk_v1'&&!e.gait)action.setEffectiveTimeScale(e.speed/37.64);
     }
     v.mixer.update(dt);
+    if(v.flinch)this.applyFlinch(v,dt);
     v.trace.tick=-1;v.traceTick=-1;
     if(action&&this.onNote)this.notes(v,name,action);
   }
@@ -108,7 +110,20 @@ export class ZombieActors {
       if(t>previous?n.time>previous&&n.time<=t:n.time>previous||n.time<=t)this.onNote(v.enemy,n.name.slice(6));
     }
   }
-  light(v){const color=this.map.illumination(v.enemy.position);for(const m of v.materials)if(!m.userData.fixedLight)m.color.setRGB(...color);}
+  // A hit jolts the struck part (head or chest) away from the shot, layered
+  // on the playing clip and settling within a few tenths of a second.
+  flinch(enemy,head,direction){
+    const v=this.active.get(enemy.id);if(!v||enemy.dead)return;
+    const bone=v.object.getObjectByName(head?'j_head':'j_spineupper')||v.object.getObjectByName('j_spine4');if(!bone)return;
+    const d=new THREE.Vector3(...direction).setZ(0).normalize(),axis=new THREE.Vector3(-d.y,d.x,0);
+    v.flinch={bone,axis,amount:head?.35:.22,age:0};
+  }
+  applyFlinch(v,dt){
+    const f=v.flinch;f.age+=dt;const k=f.amount*Math.exp(-f.age*9)*Math.min(1,f.age*40);if(f.age>.6){v.flinch=null;return;}
+    const parent=new THREE.Quaternion();f.bone.parent.getWorldQuaternion(parent);
+    const local=f.axis.clone().applyQuaternion(parent.invert()).normalize();f.bone.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(local,k));
+  }
+  light(v){const p=v.enemy.position;if(polishLight.enabled&&this.map.lightProbe){applyProbe(v.materials,this.map.lightProbe([p[0],p[1],p[2]+40]),{rim:v.enemy.kind==='ghost'?0:.5});return;}const color=this.map.illumination(v.enemy.position);for(const m of v.materials)if(!m.userData.fixedLight)m.color.setRGB(...color);}
   release(id){const v=this.active.get(id);if(!v)return;this.scene.remove(v.root);v.mixer.stopAllAction();this.restoreHead(v);v.ragdoll.reset();v.enemy=null;this.active.delete(id);(v.pool||this.pool).push(v);}
   reset(){for(const id of [...this.active.keys()])this.release(id);}
   warmObject(){return this.pool[0].root;}

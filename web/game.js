@@ -745,7 +745,7 @@ export class SoloGame {
     if(['ready','dead'].includes(this.phase))return;
     this.enemies=this.enemies.filter(enemy=>{if(enemy.dead&&this.time-enemy.deathTime>5){this.emit('removeEnemy',enemy);return false;}return true;});
     dt=Math.min(dt,.05);this.player.previousPosition.splice(0,3,...this.player.position);
-    for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);}
+    for(const enemy of this.enemies){enemy.previousPosition??=enemy.position.slice();enemy.previousPosition.splice(0,3,...enemy.position);enemy.previousAngle=enemy.angle;}
     this.time+=dt;this.elapsed+=dt;this.expireScorePopups();if(!this.mirror)this.updateBoxes();this.mapRules?.tick();
     input=movementInput(this,input,dt);
     // A player carried by the map (Ascension's lander) cannot walk.
@@ -1100,6 +1100,7 @@ export class SoloGame {
     return options.length?options[Math.floor(Math.random()*options.length)]:current;
   }
   renderPosition(actor){const a=Math.min(1,this.accumulator/PHYSICS_STEP),previous=actor.previousPosition||actor.position;return lerp(previous,actor.position,a);}
+  renderAngle(actor){const a=Math.min(1,this.accumulator/PHYSICS_STEP),from=actor.previousAngle??actor.angle,to=actor.angle;if(from==null||to==null)return to;return from+Math.atan2(Math.sin(to-from),Math.cos(to-from))*a;}
   throwGrenade(cook=false) {
     if(this.movementBlocked)return false;
     if(!this.player.grenades||['ready','dead'].includes(this.phase)||this.gesture||this.switching||this.pendingGrenade||this.time<this.meleeDue)return false;

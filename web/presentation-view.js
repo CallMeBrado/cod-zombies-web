@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import {cloneModel} from './assets.js';
 
 export function createPickupView(drop,template,effects,time){
-  const root=new THREE.Group(),object=new THREE.Group(),glow=effects.create('misc/fx_zombie_powerup_on',time);object.add(cloneModel(template));
+  // Vulture Aid's drops wear their own green glow (fx_zombie_powerup_vulture).
+  const root=new THREE.Group(),object=new THREE.Group(),glow=effects.create(drop.type?.startsWith('vulture_')&&effects.has('misc/fx_zombie_powerup_vulture')?'misc/fx_zombie_powerup_vulture':'misc/fx_zombie_powerup_on',time);object.add(cloneModel(template));
   root.name='Original pickup '+drop.type;root.add(object,glow);root.position.fromArray(drop.position);root.position.z+=40;
   return {root,object,glow,wobble:null,angles:[0,0,0]};
 }

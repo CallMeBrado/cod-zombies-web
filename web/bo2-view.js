@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {model,cloneModel,originalAnimation,shadeModel,restRelative} from './assets.js';
 import {ARTHUR_LOOPS} from './bo2-arthur.js';
+import {polishLight,applyProbe} from './polish-light.js';
 
 // A clip held at a time the game decides, so the picture follows the host's
 // state (and its saves) instead of drifting on its own clock.
@@ -124,7 +125,10 @@ export class BuriedView {
     (this.dust||=[]).push({root,due:time+1.5});
   }
   updateArthur(game,a,dt){
-    this.root.position.fromArray(a.position);this.root.rotation.z=a.yaw;
+    // Between physics steps: the previous tick's pose blended toward this one.
+    const k=Math.min(1,game.accumulator*120),from=a.previous;
+    if(from&&Math.hypot(...from.position.map((v,i)=>v-a.position[i]))<64){this.root.position.set(...from.position.map((v,i)=>v+(a.position[i]-v)*k));this.root.rotation.z=from.yaw+Math.atan2(Math.sin(a.yaw-from.yaw),Math.cos(a.yaw-from.yaw))*k;}
+    else{this.root.position.fromArray(a.position);this.root.rotation.z=a.yaw;}
     const name=SLOTH+a.clip,action=this.actions.get(name);
     if(action&&name!==this.current){
       const previous=this.actions.get(this.current);action.reset().setEffectiveWeight(1).play();
@@ -134,7 +138,8 @@ export class BuriedView {
     // Keep the clip on the host's clock (a one-shot ends when the game says).
     if(action){const length=action.getClip().duration,age=game.time-a.clipStarted,want=ARTHUR_LOOPS.has(a.clip)?age%length:Math.min(age,length);if(Math.abs(action.time-want)>.15)action.time=want;}
     for(const [kind,mount]of Object.entries(this.props))mount.visible=a.prop===kind;
-    const c=this.map.illumination(a.position);this.object.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material])m.color.setRGB(...c);});
+    if(polishLight.enabled&&this.map.lightProbe){if(game.time>=(this.probeDue||0)){this.probeDue=game.time+.2;this.arthurMaterials??=[];if(!this.arthurMaterials.length)this.object.traverse(n=>{if(n.isMesh)this.arthurMaterials.push(...[n.material].flat());});applyProbe(this.arthurMaterials,this.map.lightProbe([a.position[0],a.position[1],a.position[2]+50]),{rim:.28});}}
+    else{const c=this.map.illumination(a.position);this.object.traverse(n=>{if(n.isMesh)for(const m of Array.isArray(n.material)?n.material:[n.material])m.color.setRGB(...c);});}
   }
   updateBoxes(game){
     const clips=this.manifest.map.boxClips||{},float=this.boxSettings.floatHeight||40;

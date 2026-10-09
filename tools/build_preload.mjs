@@ -88,6 +88,10 @@ if(chosen.id==='der-riese')await add(chosen.data+'/power-navigation.json');
 if(!blackOps||bo2)await add(chosen.data+'/gate-navigation.json');
 for(const effect of Object.values(presentation.effects))for(const element of effect.elements)for(const url of element.textures)await add(decodeURIComponent(url.slice('/data/'.length)));
 if(presentation.gore)for(const url of [presentation.gore.burst,presentation.gore.drops,...presentation.gore.decals])await add(decodeURIComponent(url.slice('/data/'.length)));
+// Buried's presentation polish (tools/prepare_buried_polish.mjs): ambient
+// effect placements and the particle textures its effects draw with.
+if(chosen.id==='buried'){let polish=null;try{polish=await read(chosen.data+'/polish.json');}catch{}
+  if(polish){await add(chosen.data+'/polish.json');for(const t of Object.values(polish.textures))await add(decodeURIComponent(t.url.slice('/data/'.length)));}}
 for(const entry of [...Object.values(manifest.sounds),...Object.values(manifest.voice||{})].flat())await add(decodeURIComponent(entry.url.slice('/data/'.length)));
 const hudFolder=blackOps?chosen.data+'/hud':'gameplay/hud';for(const name of await readdir(path.join(data,hudFolder)))if(name.endsWith('.png'))await add(hudFolder+'/'+name);
 for(const name of await readdir(path.join(data,chosen.zone+'/web-world'))){if(bo2&&!new Set([chosen.asset+'.json',world.vertices,world.indices,chosen.asset+'.collision.json',chosen.asset+'.paths.json',chosen.asset+'.lights.json']).has(name))continue;await add(chosen.zone+'/web-world/'+name);}
