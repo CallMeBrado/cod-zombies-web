@@ -736,7 +736,7 @@ function frame(time) {
   if(game?.phase==='dead')deathFxTime+=dt;
   if(game){combatEffects.update(game.time+deathFxTime,Math.min(1,game.accumulator*120));blood.update(game.time+deathFxTime);}
   if(throe&&gameOver?.active&&!throe.idle&&gameOver.time>throe.at+.6){throe.idle=true;weaponView.play(throe.definition.idleAnim,0,true);}
-  const showWeapon=(state.mode==='playing'||pauseMenu.context==='pause'||!!throe&&gameOver?.active&&gameOver.time<3)&&!diveThirdPerson,offhand=grenadeView&&game?grenadeView.update(game.time,showWeapon):0;
+  const showWeapon=(!gameOver?.active&&(state.mode==='playing'||pauseMenu.context==='pause')||!!throe&&gameOver?.active&&gameOver.time<3)&&!diveThirdPerson,offhand=grenadeView&&game?grenadeView.update(game.time,showWeapon):0;
   // The Paralyzer's glow lines shift from cold to hot with its heat.
   if(game){const slowgun=game.weapon.name.startsWith('slowgun');weaponHeat.value=slowgun?game.paralyzerHeat/115:0;if(weaponView)weaponView.dialValue=slowgun?game.paralyzerHeat:null;}
   if(weaponView?.root&&game){weaponView.root.visible=showWeapon&&offhand<.999;weaponView.update(paused&&!gameOver?.active?0:dt,{ads:aimBlend,moving:game.moving,sprinting:game.sprinting,stance:game.player.stance,time:game.time,reloading:!!game.reloadEnd,offhand});}

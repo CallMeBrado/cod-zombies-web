@@ -29,6 +29,6 @@ body[data-game=black-ops] #menu-mods{border-color:#baac7755}
 #frontend-view{position:fixed;inset:0;width:100%;height:100%;z-index:1;display:block;pointer-events:none;transition:opacity .7s ease}
 /* The previous page's last frame of the room, shown until it is rebuilt. */
 #frontend-still{position:fixed;inset:0;z-index:1;background:#000 center/cover no-repeat;pointer-events:none}
-body:not([data-menu-context=start]) #frontend-still,body.playing #frontend-still,body.playing #frontend-view{display:none}
+body:not([data-menu-context=start]) #frontend-still,body.playing #frontend-still,body.playing #frontend-view,body.game-over #frontend-still,body.game-over #frontend-view{display:none}
 body.frontend-ready[data-game=black-ops][data-menu-context=start] #overlay{background:linear-gradient(90deg,#000000d9,#00000080 34%,transparent 62%);backdrop-filter:none}
 body.frontend-ready[data-game=black-ops][data-menu-context=start] #overlay::before{background:linear-gradient(#000c,#0000)}

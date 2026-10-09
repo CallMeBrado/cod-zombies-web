@@ -4,7 +4,7 @@ import {nativeCollisionTriangle} from './native-triangles.js';
 const preparedWorlds=new WeakMap();
 // 128-unit grid cells keyed by number (no per-lookup string building).
 const cellKey=(x,y)=>(x+32768)*65536+(y+32768);
-export const TINY_PROP={height:12,size:64};
+export const TINY_PROP={height:18,size:64};
 // CONTENTS_SOLID with CONTENTS_PLAYERCLIP (0x10000) or CONTENTS_MONSTERCLIP (0x20000).
 export const PLAYER_CONTENTS=1|0x10000,ACTOR_CONTENTS=1|0x20000;
 const ALL_CONTENTS=PLAYER_CONTENTS|ACTOR_CONTENTS;
@@ -62,10 +62,10 @@ export class CollisionWorld {
     this.disabled = new Set();
     preparedWorlds.set(data,{entities,brushes:this.brushes,cells:this.cells,staticModelCount:this.staticModelCount,staticSurfaces:this.staticSurfaces,staticTriangleCount:this.staticTriangleCount,triangles:this.triangles,triangleCells:this.triangleCells});
   }
-  // Tiny standalone props (plugs, hose ends, rope clips: at most 12 units tall
-  // and 64 across, touching no other prop beside, above or below) never block
-  // the player's own movement; zombies still collide with them. A sandbag in
-  // a wall, row or pile touches others and stays solid.
+  // Floor clutter (plugs, bottles, debris: no taller than a step, 18 units,
+  // and 64 across) never blocks the player's own movement, even lying among
+  // other clutter; zombies still collide with it. A prop with another resting
+  // on it (the lower sandbags of a wall or pile) stays solid.
   markTinyProps(){
     const small=s=>s.maxs[2]-s.mins[2]<=TINY_PROP.height&&s.maxs[0]-s.mins[0]<=TINY_PROP.size&&s.maxs[1]-s.mins[1]<=TINY_PROP.size;
     const cells=new Map(),key=(x,y)=>x*100003+y;
@@ -74,7 +74,7 @@ export class CollisionWorld {
       if(!small(s))return;const near=new Set();
       for(let x=Math.floor(s.mins[0]/64);x<=Math.floor(s.maxs[0]/64);x++)for(let y=Math.floor(s.mins[1]/64);y<=Math.floor(s.maxs[1]/64);y++)for(const j of cells.get(key(x,y))||[])near.add(j);
       for(const j of near){if(j===i)continue;const o=this.staticSurfaces[j];
-        if(o.mins[0]<=s.maxs[0]+2&&o.maxs[0]>=s.mins[0]-2&&o.mins[1]<=s.maxs[1]+2&&o.maxs[1]>=s.mins[1]-2&&o.maxs[2]>=s.mins[2]-2&&o.mins[2]<s.maxs[2]+30)return;}
+        if(o.mins[0]<=s.maxs[0]+2&&o.maxs[0]>=s.mins[0]-2&&o.mins[1]<=s.maxs[1]+2&&o.maxs[1]>=s.mins[1]-2&&o.mins[2]>=s.maxs[2]-2&&o.mins[2]<s.maxs[2]+30)return;}
       s.tiny=true;for(let k=s.triangleStart;k<s.triangleStart+s.triangleCount;k++)this.triangles[k].tiny=true;for(let k=s.brushStart;k<s.brushStart+s.brushCount;k++)this.brushes[k].tiny=true;
     });
   }
@@ -211,8 +211,10 @@ export class CollisionWorld {
   }
   supported(feet,half){
     let count=0;
+    // Probes at the hull's edge: one unit in, a step onto a door sill had
+    // to reach a whole unit over it before counting, and the player stalled.
     for(const [x,y] of [[0,0],[1,1],[1,-1],[-1,1],[-1,-1]]){
-      const at=[feet[0]+x*(half[0]-1),feet[1]+y*(half[1]-1)],t=this.trace([at[0],at[1],feet[2]+2],[at[0],at[1],feet[2]-8],[0,0,0]);
+      const at=[feet[0]+x*(half[0]-.25),feet[1]+y*(half[1]-.25)],t=this.trace([at[0],at[1],feet[2]+2],[at[0],at[1],feet[2]-8],[0,0,0]);
       if(t.fraction<1&&t.normal[2]>.65&&++count>=2)return true;
     }
     return false;

@@ -91,17 +91,22 @@ export class Arthur {
       if(this.mover.path.length>1&&this.walkable(this.position,this.mover.path[1]))this.mover.path.shift();
     }
     if(this.unreachable)return null;
-    this.play(clip);this.mover.position=this.position;this.mover.speed=this.speed(clip);
+    this.play(clip);this.mover.position=this.position;this.mover.speed=this.speed(clip);this.mover.kinematic=true;
     // Roam nodes can sit well above the floor (one is 56 units over the
     // street), so arriving is judged across the ground.
     const done=g.advancePath(this.mover,dt,target)||flat(this.position,target)<12&&Math.abs(this.position[2]-target[2])<80;this.position=this.mover.position;
     if(!done)this.yaw=wrap(this.yaw+Math.max(-6*dt,Math.min(6*dt,wrap(this.mover.angle-this.yaw))));
     return done;
   }
-  // Can he walk there? A coarse physical walk (4-unit steps with gravity and
-  // the hull's step-ups) that fails as soon as he is blocked or drops away.
-  walkable(p,q){
-    const g=this.game,length=flat(p,q);if(length>300)return false;let at=p.slice(),fall=0;
+  // Can he walk there? He follows the floor (as the native AI does along its
+  // authored links): it must continue without a gap or a step over 22 units,
+  // with nothing at chest height. Swept-box walks catch on the burnt planks
+  // and rock clusters littering the tunnels out of the jail.
+  walkable(p,q){return flat(p,q)<=300&&(this.game.kinematicLink(p,q,6)||this.physicalWalk(p,q));}
+  // A coarse physical walk (4-unit steps with gravity and the hull's
+  // step-ups) that fails as soon as he is blocked or drops away.
+  physicalWalk(p,q){
+    const g=this.game,length=flat(p,q);let at=p.slice(),fall=0;
     for(let i=0;i<Math.ceil(length/4)+20;i++){
       const dx=q[0]-at[0],dy=q[1]-at[1],left=Math.hypot(dx,dy);if(left<4)return Math.abs(at[2]-q[2])<48;
       const step=Math.min(4,left);fall-=800/30;const r=g.collision.step(at,[dx/left*step,dy/left*step,fall/30],HULL);
@@ -109,16 +114,34 @@ export class Arthur {
     }
     return false;
   }
-  // A graph route whose first leg he can really walk. The nearest node can
-  // sit below a porch railing he cannot cross; then start from the closest
-  // node he can reach on foot.
+  // Nodes he can reach on foot from a point, nearest first.
+  entries(at){
+    const g=this.game;return g.nodes.map((n,i)=>[i,flat(n.origin,at),Math.abs(n.origin[2]-at[2])]).filter(c=>c[1]<256&&c[2]<120&&g.nodes[c[0]].type!==g.negotiationBegin&&g.nodes[c[0]].type!==g.negotiationEnd)
+      .sort((a,b)=>a[1]-b[1]).slice(0,6).filter(([i])=>this.walkable(at,g.nodes[i].origin)).map(([i])=>i);
+  }
+  // A link is shut while a door, barricade or clip that changes it is still
+  // solid (the gate states prepared for the zombies); one that only passes
+  // beside a closed door stays open.
+  open(a,b){
+    const g=this.game,row=g.gateNavigation?.get(a+','+b);if(!row)return true;
+    const now=row.values[row.targets.reduce((bits,t,i)=>bits|(g.collision.disabled.has(t)?1<<i:0),0)],free=row.values[(1<<row.targets.length)-1];
+    return now===free;
+  }
+  // The authored node graph (sloth uses the zombies' path nodes), gated only
+  // by what is still shut. Traversal links are left to the zombies.
   route(target){
-    const g=this.game,plain=g.path(this.position,target,false);
-    if(!plain.length||this.walkable(this.position,plain[0]))return plain;
-    const near=g.nodes.map((n,i)=>[i,flat(n.origin,this.position),Math.abs(n.origin[2]-this.position[2])]).filter(c=>c[1]<256&&c[2]<120).sort((a,b)=>a[1]-b[1]).slice(0,6);
-    for(const [i]of near){const o=g.nodes[i].origin;if(!this.walkable(this.position,o))continue;
-      const rest=g.walkableLink(o,target)?[target.slice()]:g.path(o,target,false);if(rest.length)return [o.slice(),...rest];}
-    return plain;
+    const g=this.game,starts=this.entries(this.position),ends=new Set(this.entries(target));if(!starts.length||!ends.size)return [];
+    const costs=new Float64Array(g.nodes.length).fill(Infinity),prev=new Int32Array(g.nodes.length).fill(-1),heap=[];
+    const push=(c,i)=>{heap.push([c,i]);let k=heap.length-1;while(k>0){const p=(k-1)>>1;if(heap[p][0]<=c)break;heap[k]=heap[p];k=p;}heap[k]=[c,i];};
+    const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){let k=0;while(k*2+1<heap.length){let c=k*2+1;if(c+1<heap.length&&heap[c+1][0]<heap[c][0])c++;if(heap[c][0]>=last[0])break;heap[k]=heap[c];k=c;}heap[k]=last;}return top;};
+    for(const s of starts){costs[s]=flat(this.position,g.nodes[s].origin);push(costs[s],s);}
+    let found=-1;
+    while(heap.length){const [c,at]=pop();if(c>costs[at])continue;if(ends.has(at)){found=at;break;}
+      for(const l of g.nodes[at].links){const n=l.node;if(n>=g.nodes.length||l.negotiation||g.nodes[n].type===g.negotiationBegin||g.nodes[n].type===g.negotiationEnd||g.nodes[at].type===g.negotiationBegin)continue;
+        if(!this.open(at,n))continue;const v=c+l.distance;if(v<costs[n]){costs[n]=v;prev[n]=at;push(v,n);}}}
+    if(found<0)return [];
+    const path=[];for(let i=found;i>=0;i=prev[i])path.unshift(g.nodes[i].origin.slice());
+    return [...path,target.slice()];
   }
   // Zombies he barges through while running (sloth_check_ragdolls): no points,
   // and the round gets them back (level.zombie_total++).

@@ -250,12 +250,20 @@ export class BlackOps2Engine extends BlackOpsEngine {
     // T6's dense terrain has vertical triangle edges whose swept box axes
     // look like a floor. Resolve the foot to the actual upward face below it.
     if(hit.fraction<1&&hit.normal[2]>.65&&!hit.allSolid&&at[2]-hit.end[2]>1){
+      // A hull that has stepped onto a real ledge with one corner (a door
+      // sill) stands on it; snapping the centre down would undo the step.
+      if(this.cornerSupport(at))return at;
       const center=[hit.end[0],hit.end[1],hit.end[2]+35.1];
       // A point can fit beside a sloped brush while the full actor cannot.
       // Keep the swept support height rather than placing its feet in solid.
       if(!this.collision.trace(center,center,[14,14,34.9]).allSolid)return hit.end;
     }
     return at;
+  }
+  cornerSupport(at){
+    // Probe across the hull's footprint: a sill can be narrower than it.
+    for(let x=-2;x<=2;x++)for(let y=-2;y<=2;y++){if(!x&&!y)continue;const c=[at[0]+x*6.875,at[1]+y*6.875],t=this.collision.trace([c[0],c[1],at[2]+2],[c[0],c[1],at[2]-1],[0,0,0]);if(t.fraction<1&&t.normal[2]>.65&&!t.allSolid)return true;}
+    return false;
   }
   walkableLink(p,q,navigation=false){
     if(this.kinematicPaths)return this.kinematicLink(p,q,navigation?8:16);
@@ -292,7 +300,7 @@ export class BlackOps2Engine extends BlackOpsEngine {
   }
   advancePath(e,dt,target){
     if(this.mapRules.startTraversal?.(e))return false;
-    if(this.kinematicPaths&&!e.velocityZ){
+    if((this.kinematicPaths||e.kinematic)&&!e.velocityZ){
       let destination=e.path[0]||target,dx=destination[0]-e.position[0],dy=destination[1]-e.position[1],length=Math.hypot(dx,dy);
       while(length<1&&Math.abs(destination[2]-e.position[2])<18&&e.path.length){e.path.shift();destination=e.path[0]||target;dx=destination[0]-e.position[0];dy=destination[1]-e.position[1];length=Math.hypot(dx,dy);}
       if(length<1&&Math.abs(destination[2]-e.position[2])<18)return true;
@@ -490,8 +498,10 @@ export class BlackOps2Engine extends BlackOpsEngine {
     this.emit('shot',{origin,dir:[Math.cos(this.pitch)*Math.cos(this.yaw),Math.cos(this.pitch)*Math.sin(this.yaw),Math.sin(this.pitch)],rays:[]});
     // startFireSound, then loopFireSound until the trigger is released.
     if(!this.paralyzerFiring){this.paralyzerFiring=true;this.emit('sound',{alias:definition.startFireSoundPlayer});this.emit('loop',{id:'paralyzer',alias:definition.loopFireSoundPlayer});}
-    // player_slow_for_time(): the beam on the ground at your feet slows you
-    // for 0.25 s. Airborne, that is a hover: it never lifts you off the floor.
+    // player_paralyzed() on yourself: the beam reaching the ground at your
+    // feet (550 units) plays you at anim rate 0.05 for 0.25 s at a time
+    // (player_slow_for_time). Gravity all but stops while a jump's rise
+    // carries on, so firing down after a jump lifts you high.
     if(!this.player.grounded&&Math.sin(this.pitch)<-.85){const f=[...this.player.position];const floor=this.collision.trace(f,[f[0],f[1],f[2]-550],[0,0,0]);if(floor.fraction<1)this.slowedUntil=this.time+.25;}
     return true;
   }
@@ -510,8 +520,9 @@ export class BlackOps2Engine extends BlackOpsEngine {
     super.tick(dt,input);if(this.phase==='ready'||this.phase==='dead')return;
     if(this.player.grounded&&!this.mods?.noclip&&!this.dive&&!this.mapRules.riding){const floor=this.projectGround(this.player.position);if(this.player.position[2]-floor[2]>18)this.player.position=floor;}
     if(this.paralyzerFiring&&this.time-this.paralyzerFiredAt>.15){this.paralyzerFiring=false;this.emit('stopLoop',{id:'paralyzer'});this.emit('sound',{alias:this.data.weapons.slowgun_zm?.loopFireEndSoundPlayer});}
-    // Slowed in the air: a fraction of gravity, and a rise or fall bleeds off.
-    if(this.time<(this.slowedUntil||0)&&!this.player.grounded)this.player.velocityZ*=Math.exp(-8*dt);
+    // Slowed in the air: a fraction of gravity keeps the rise going; a fall
+    // bleeds off, so the beam also floats you down.
+    if(this.time<(this.slowedUntil||0)&&!this.player.grounded&&this.player.velocityZ<0)this.player.velocityZ*=Math.exp(-8*dt);
     const slowgun=this.data.weapons.slowgun_zm;
     if(this.time-this.paralyzerFiredAt>.2){this.paralyzerHeat=Math.max(0,this.paralyzerHeat-dt*(slowgun?.cooldownRate||3)*PARALYZER_DIAL);if(this.paralyzerHeat<=(slowgun?.overheatEndVal||87)*PARALYZER_DIAL+1e-6)this.paralyzerLock=false;}
     // slowgun_dial_sounds(): the counter ticks as its ones digit turns.

@@ -797,6 +797,7 @@ export class SoloGame {
     if(p.grounded)this.groundedAt=this.time;
     }
     }
+    if(!this.noclipping)this.unstick(this.player);
     movementEnd(this,dt);this.collision.playerMovement=false;
     const p=this.player;
     if(p.position[2]<(this.data.map?.fallDeathZ??-600)&&!this.noclipping)this.damagePlayer(100);
@@ -809,8 +810,12 @@ export class SoloGame {
     if(this.pendingFire&&this.time+1e-9>=this.sprintExitUntil){this.pendingFire=false;this.fire();}
     if(input.fire&&this.weapon.definition.fireType==='Full Auto')this.fire();
     // blocker_trigger_think: 0.4 s after use goes down, then one board per second while held.
-    if(input.use&&!this.useHeld)this.rebuildDue=Math.max(this.rebuildDue,this.time+.4);this.useHeld=!!input.use;
-    if(input.use&&!this.pendingGrenade&&!this.gesture&&!this.nearGrenade()&&this.time>=this.rebuildDue){const w=this.nearWindow();if(w)this.rebuild(w);}
+    if(input.use&&!this.useHeld)this.rebuildDue=Math.max(this.rebuildDue,this.time+.4);this.useHeld=!!input.use;if(!input.use)this.rebuildWindow=null;
+    // Once started, a rebuild carries on while Use is held within reach of
+    // that barrier, whichever way the player turns to watch the room.
+    if(input.use&&!this.pendingGrenade&&!this.gesture&&!this.nearGrenade()&&this.time>=this.rebuildDue){
+      const held=this.rebuildWindow,w=held&&held.boards<held.maxBoards&&useDistance(this.player.position,repairPoint(held))<REPAIR_REACH?held:this.nearWindow();
+      this.rebuildWindow=w||null;if(w)this.rebuild(w);}
     if(!this.mirror){
     for(const drop of this.drops)if(!drop.used&&!this.coop?.cannotPickUp()&&distance([drop.position[0],drop.position[1],drop.position[2]+40],p.position)<64)this.pickup(drop);
     for(const d of this.drops)if(!d.used&&this.time>=d.expires)this.emit('stopLoop',{id:'drop'+d.id});
@@ -819,6 +824,15 @@ export class SoloGame {
     for(const key of Object.keys(this.powerup))if(this.powerup[key]<=this.time)delete this.powerup[key];
   }
   aim(yaw,pitch){this.yaw=yaw;this.pitch=pitch;}
+  // A hull left inside geometry (a dive into a sharp corner, a mesh seam)
+  // is blocked in every direction. Move it to the nearest free spot, on
+  // the level first and then raised, rather than leave the player stuck.
+  unstick(p){
+    const half=this.playerHull,c=[p.position[0],p.position[1],p.position[2]+half[2]];if(!this.collision.trace(c,c,half).allSolid)return false;
+    for(const r of [1,2,4,8,12,16,24])for(const lift of [0,r]){for(let a=0;a<8;a++){const q=[c[0]+Math.cos(a*Math.PI/4)*r,c[1]+Math.sin(a*Math.PI/4)*r,c[2]+lift];
+      if(!this.collision.trace(q,q,half).allSolid){p.position=[q[0],q[1],q[2]-half[2]];p.previousPosition=p.position.slice();p.grounded=false;p.velocityZ=Math.min(0,p.velocityZ||0);return true;}}}
+    return false;
+  }
   // Walkable floor within a step (18 units) below the feet, or null when the
   // player walked off an edge and should fall.
   groundBelow(feet){
