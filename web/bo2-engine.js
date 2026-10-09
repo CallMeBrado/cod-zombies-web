@@ -30,11 +30,11 @@ const PARALYZER_DIAL=1.15;
 const M=39.37,FLIGHT={hold:.25,curve:[[53.13,-4*M],[70,0],[90,7*M]],accel:25*M,brake:40*M,air:6*M,airAccel:18*M,airBrake:9*M};
 // Buried's Paralyzer (and Trample Steam) can carry a player onto rooftops,
 // tall props and the tops of invisible clips, where zombies cannot reach
-// them. Ground is standable only where the zombies' navigation reaches (a
-// node within 256 units across and 48 up or down); elsewhere the player
-// slides off: downhill on a slope, toward the nearest node across a flat
-// top, with an outward push reaching 100 units/s at 600 units/s².
-const UNSTANDABLE={reach:256,rise:48,push:100,pushAccel:600,probe:4};
+// them. Ground is standable only where a zombie could walk from a nearby
+// node (within 256 units across and 48 up or down); elsewhere the player
+// slides off: downhill on a slope, toward the nearest edge across a flat
+// top, with an outward push reaching 200 units/s at 1200 units/s².
+const UNSTANDABLE={reach:256,rise:48,push:200,pushAccel:1200,probe:4,flood:48};
 const flightTarget=below=>{const c=FLIGHT.curve,i=below<=c[1][0]?0:1,[a0,v0]=c[i],[a1,v1]=c[i+1],f=Math.max(0,Math.min(1,(below-a0)/(a1-a0)));return v0+(v1-v0)*f;};
 const itemKinds={keys_zm_p6_zm_bu_sloth_key:'key',booze_p6_zm_bu_booze:'booze',candy_p6_zm_bu_sloth_candy_bowl:'candy',chalk_p6_zm_bu_chalk:'chalk'};
 
@@ -378,6 +378,8 @@ export class BlackOps2Engine extends BlackOpsEngine {
   // up, 9 m/s² to slow). When the 0.25 s hold lapses, ordinary gravity
   // resumes and the drift is kept until landing or new input.
   paralyzerFlight(p,input,dt){
+    // Touching down ends the flight; firing on the ground cannot lift again.
+    if(this.flight&&p.grounded){this.flight=null;this.flightDrift=null;}
     const f=this.flight;if(f&&this.time>=f.until){this.flight=null;this.flightDrift=p.grounded?null:f.velocity.slice();}
     if(!this.flight){
       const d=this.flightDrift;if(!d||p.grounded||input.forward||input.side){this.flightDrift=null;return false;}
@@ -407,7 +409,43 @@ export class BlackOps2Engine extends BlackOpsEngine {
     for(let x=cx-r;x<=cx+r;x++)for(let y=cy-r;y<=cy+r;y++)for(const i of cells.get(x+','+y)||[]){const o=this.nodes[i].origin,d=Math.hypot(o[0]-at[0],o[1]-at[1]);if(d<=reach&&Math.abs(o[2]-at[2])<=rise)out.push([d,o]);}
     return out.sort((a,b)=>a[0]-b[0]);
   }
-  standable(at){return this.nearNodes(at,UNSTANDABLE.reach,UNSTANDABLE.rise).length>0;}
+  // Standable only where a zombie could walk to the player: straight from
+  // one of the nearest nodes, or around props by a short walk over floor a
+  // zombie could also climb back along (no gap, no step up over 22 units or
+  // chest-high obstacle) to a node. A low roof or ledge beside a node is not.
+  // Cached per 16-unit cell.
+  standable(at){
+    const cell=q=>q.map(v=>Math.round(v/16)).join(','),key=cell(at),cache=this.standCache??=new Map();if(cache.has(key))return cache.get(key);
+    const linked=q=>this.nearNodes(q,UNSTANDABLE.reach,UNSTANDABLE.rise).slice(0,4).some(([,o])=>this.kinematicLink(o,q,8));
+    let ok=linked(at);
+    if(!ok){
+      const seen=new Set([cell(at)]),queue=[at];let budget=UNSTANDABLE.flood;
+      search:while(queue.length&&budget-->0){
+        const a=queue.shift();
+        for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+          const b=this.kinematicStep(a,[a[0]+dx*24,a[1]+dy*24]);if(!b||seen.has(cell(b)))continue;seen.add(cell(b));
+          const back=this.kinematicStep(b,[a[0],a[1]]);if(!back||Math.abs(back[2]-a[2])>8)continue;
+          if(cache.get(cell(b))===true||this.nearNodes(b,48,24).some(([,o])=>this.kinematicLink(o,b,8))){ok=true;break search;}
+          queue.push(b);
+        }
+      }
+    }
+    if(cache.size>20000)cache.clear();cache.set(key,ok);return ok;
+  }
+  // The nearest way off a flat top: the shortest unobstructed run to where
+  // the floor drops away, or the most open direction when there is none.
+  edgeDirection(feet){
+    const half=this.playerHull,c=[feet[0],feet[1],feet[2]+half[2]+18];let best=Infinity,dir=null,open=-1,wide=null;
+    for(let k=0;k<16;k++){
+      const a=k*Math.PI/8,d=[Math.cos(a),Math.sin(a)],free=512*this.collision.trace(c,[c[0]+d[0]*512,c[1]+d[1]*512,c[2]],half).fraction;
+      if(free>open){open=free;wide=d;}
+      for(let s=16;s<=free&&s<best;s+=16){
+        const q=[feet[0]+d[0]*s,feet[1]+d[1]*s],h=this.collision.trace([q[0],q[1],feet[2]+20],[q[0],q[1],feet[2]-24],[0,0,0]);
+        if(h.fraction>=1&&!h.allSolid){best=s;dir=d;break;}
+      }
+    }
+    return dir||wide;
+  }
   // Resting on (or pinned onto) ground the zombies cannot reach: the slide
   // takes over from walking and from the Paralyzer's hover. Gravity applies
   // once; input may steer sideways or away, never back onto the surface.
@@ -419,15 +457,16 @@ export class BlackOps2Engine extends BlackOpsEngine {
     if(!this.lifted){this.unreachableSlide=null;return false;}
     const half=this.playerHull,c=[p.position[0],p.position[1],p.position[2]+half[2]],down=this.collision.trace(c,[c[0],c[1],c[2]-UNSTANDABLE.probe],half);
     const contact=down.fraction<1&&!down.allSolid&&down.normal[2]>.05,feet=[down.end[0],down.end[1],down.end[2]-half[2]];
-    if(!contact||this.standable(feet)){if(contact)this.lifted=false;this.unreachableSlide=null;return false;}
+    // A slide survives half a second without contact (seams, small drops),
+    // keeping its direction and keeping the Paralyzer from re-lifting.
+    if(!contact){const s=this.unreachableSlide;if(s&&(s.lost=(s.lost||0)+dt)>.5)this.unreachableSlide=null;return false;}
+    if(this.standable(feet)){this.lifted=false;this.unreachableSlide=null;return false;}
     const n=down.normal;let slide=this.unreachableSlide;
-    if(!slide){
-      // Downhill on a slope; toward the nearest node (a clear way back into
-      // the playable area) on a flat top. Kept for the whole contact so
-      // corners and seams cannot turn it back and forth.
-      let dir=n[2]<.95?[n[0],n[1]]:null;
-      if(!dir){const near=this.nearNodes(feet,1024,4096).filter(([,o])=>o[2]<=feet[2]+8)[0];dir=near?[near[1][0]-feet[0],near[1][1]-feet[1]]:[-Math.cos(this.yaw),-Math.sin(this.yaw)];}
-      const l=Math.hypot(dir[0],dir[1])||1;slide=this.unreachableSlide={dir:[dir[0]/l,dir[1]/l],velocity:[0,0],blocked:0};
+    if(slide)slide.lost=0;else{
+      // Downhill on a slope; toward the nearest edge on a flat top. Kept for
+      // the whole slide so corners and seams cannot turn it back and forth.
+      let dir=n[2]<.95?[n[0],n[1]]:this.edgeDirection(feet)||[-Math.cos(this.yaw),-Math.sin(this.yaw)];
+      const l=Math.hypot(dir[0],dir[1])||1;slide=this.unreachableSlide={dir:[dir[0]/l,dir[1]/l],velocity:[0,0],blocked:0,turns:0};
     }
     const d=slide.dir,v=slide.velocity,want=[d[0]*UNSTANDABLE.push,d[1]*UNSTANDABLE.push],dv=[want[0]-v[0],want[1]-v[1]],gap=Math.hypot(dv[0],dv[1]),k=gap?Math.min(1,UNSTANDABLE.pushAccel*dt/gap):0;v[0]+=dv[0]*k;v[1]+=dv[1]*k;
     let fwd=input.forward||0,side=input.side||0;const amount=Math.hypot(fwd,side);if(amount>1){fwd/=amount;side/=amount;}
@@ -436,7 +475,10 @@ export class BlackOps2Engine extends BlackOpsEngine {
     const vz=Math.min(0,p.velocityZ||0)-800*dt,move=[(v[0]+w[0])*dt,(v[1]+w[1])*dt,vz*dt];
     const from=p.position,r=this.collision.step(from,move,half),gone=Math.hypot(r.position[0]-from[0],r.position[1]-from[1]);
     // Wedged against something on the way off: turn a quarter after 0.25 s.
-    slide.blocked=gone<Math.hypot(move[0],move[1])*.2?slide.blocked+dt:0;if(slide.blocked>.25){slide.dir=[-d[1],d[0]];slide.velocity=[0,0];slide.blocked=0;}
+    // Wedged every way round is a pocket, not a perch: let the player stand.
+    slide.blocked=gone<Math.hypot(move[0],move[1])*.2?slide.blocked+dt:0;if(gone>8*dt)slide.turns=0;
+    if(slide.blocked>.25){slide.dir=[-d[1],d[0]];slide.velocity=[0,0];slide.blocked=0;
+      if(++slide.turns>4){this.standCache.set(feet.map(v=>Math.round(v/16)).join(','),true);this.unreachableSlide=null;}}
     p.position=r.position;p.grounded=false;p.velocityZ=r.grounded?0:vz;this.sprinting=false;return true;
   }
   movePlayerOverride(p,input,dt){
@@ -582,9 +624,11 @@ export class BlackOps2Engine extends BlackOpsEngine {
     // startFireSound, then loopFireSound until the trigger is released.
     if(!this.paralyzerFiring){this.paralyzerFiring=true;this.emit('sound',{alias:definition.startFireSoundPlayer});this.emit('loop',{id:'paralyzer',alias:definition.loopFireSoundPlayer});}
     // player_paralyzed() on yourself: firing below the hover band refreshes
-    // the flight effect and its target vertical speed.
+    // the flight effect and its target vertical speed. It only lifts a
+    // player already off the ground (a jump or a fall); standing, walking or
+    // sliding off a forbidden perch while firing has no effect.
     const below=-this.pitch*180/Math.PI;
-    if(below>FLIGHT.curve[0][0])this.flight={until:this.time+FLIGHT.hold,target:flightTarget(below),velocity:this.flight?.velocity||[0,0]};
+    if(below>FLIGHT.curve[0][0]&&!this.player.grounded&&!this.unreachableSlide)this.flight={until:this.time+FLIGHT.hold,target:flightTarget(below),velocity:this.flight?.velocity||[0,0]};
     return true;
   }
   reload(){if(this.weapon.name.startsWith('slowgun'))return false;return super.reload();}

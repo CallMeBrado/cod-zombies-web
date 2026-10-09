@@ -175,7 +175,12 @@ for(const fps of [30,144]){
   g.newGame();g.phase='between';g.roundDue=Infinity;g.setMod('god',true);const at=g.settleFeet([-768,280,52]);Object.assign(g.player,{position:at,previousPosition:at.slice(),grounded:true,velocityZ:0});
   g.giveWeapon('slowgun_zm');for(let i=0;i<240;i++)g.update(1/120,{});g.yaw=0;
   const fly=(deg,secs,input={})=>{g.pitch=-deg*Math.PI/180;for(let i=0;i<Math.round(secs*fps);i++){g.update(1/fps,input);g.paralyzerHeat=0;g.paralyzerLock=false;g.fire();}};
-  const z=g.player.position[2];fly(90,.75);assert(g.player.position[2]-z>150&&Math.abs(g.player.velocityZ-7*39.37)<.5,'Straight down rises at 7 m/s');
+  // Standing or walking while firing straight down does nothing.
+  const z=g.player.position[2];fly(90,.5);assert(g.player.grounded&&Math.abs(g.player.position[2]-z)<1&&!g.flight,'Firing on the ground does not lift');
+  fly(90,.5,{forward:1});assert(g.player.grounded&&!g.flight,'Walking while firing does not lift');
+  Object.assign(g.player,{position:at.slice(),previousPosition:at.slice(),grounded:true,velocityZ:0});
+  // A jump starts the flight.
+  g.update(1/fps,{jump:true});fly(90,.4);assert(g.player.position[2]-z>80&&Math.abs(g.player.velocityZ-7*39.37)<.5,'Straight down rises at 7 m/s');
   fly(70,1);const hover=g.player.position[2];fly(70,1);assert(Math.abs(g.player.position[2]-hover)<.5,'70° hovers');
   const x=g.player.position[0];fly(70,1.5,{forward:1});assert((g.player.position[0]-x)/1.5>150,'Steers at up to 6 m/s');
   g.pitch=0;for(let i=0;i<fps*8&&!g.player.grounded;i++)g.update(1/fps,{});assert(g.player.grounded,'Lands once the flight lapses');
@@ -185,7 +190,7 @@ report.checks.push('Paralyzer flight: rise, hover, steering and landing at 30-14
 // hovering above them in open air is normal flight; touching one slides the
 // player off even while firing to hover and holding back toward it.
 for(const top of [[-1400,-1264,296],[-1400,-1072,144]]){
-  g.newGame();g.phase='between';g.roundDue=Infinity;g.setMod('god',true);g.giveWeapon('slowgun_zm');for(let i=0;i<10;i++)g.update(1/120,{});
+  g.newGame();g.phase='between';g.roundDue=Infinity;g.setMod('god',true);g.giveWeapon('slowgun_zm');for(let i=0;i<240;i++)g.update(1/120,{});
   Object.assign(g.player,{position:[top[0],top[1],top[2]+60],previousPosition:[top[0],top[1],top[2]+60],grounded:false,velocityZ:0});g.yaw=0;
   const shoot=deg=>{g.pitch=-deg*Math.PI/180;g.paralyzerHeat=0;g.paralyzerLock=false;g.fire();};
   for(let i=0;i<60;i++){g.update(1/120,{});shoot(70);}const air=g.player.position[2];for(let i=0;i<120;i++){g.update(1/120,{});shoot(70);assert(!g.unreachableSlide,'Open air above an obstacle is normal flight');}
