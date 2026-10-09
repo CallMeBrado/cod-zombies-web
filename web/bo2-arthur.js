@@ -9,6 +9,12 @@ export const ARTHUR_LOOPS=new Set(['idle_jail','idle_cower','idle_cower_jumpback
 // for the player or roams; never while drinking, charging, eating or helping.
 const GIFT_STATES=new Set(['jail_cower','follow','player_idle','roam']);
 const PROTECT_SECONDS=45,FOLLOW_STOP=90,FOLLOW_RESUME=144,PROTECT_IDLE=180,PROTECT_RANGE=240,MELEE=64,HULL=[15,15,35];
+// The berserk charge (remake tuning): barricades within `search`, their
+// approach point at most `sideways` off his line; up to `correct` units of
+// sideways forgiveness blended over `blend` seconds when a wall or corner
+// edges into his lane; zombies within `body` of his swept path are run down.
+export const CHARGE={search:900,sideways:100,approach:64,correct:32,blend:.25,body:31,lane:10,square:.7};
+const WORLD=1|0x20000;
 
 export class Arthur {
   constructor(rules){
@@ -172,26 +178,49 @@ export class Arthur {
     const g=this.game;this.holding=false;
     if(kind==='booze'){
       // start_berserk(): drink, turn to the barricade he faces, then charge.
-      this.gotBooze=true;this.state='drink';this.play('drinkbooze');this.prop='booze';this.aim=this.facingBarricade();this.charge=null;
+      this.gotBooze=true;this.state='drink';this.play('drinkbooze');this.prop='booze';this.charge=null;
+      const b=this.facingBarricade();this.aim=b&&{barricade:b,impact:this.impactPoint(b)};
     }else{this.state='eat';this.play('eatcandy');this.prop='candy';}
   }
   // get_facing_barricade(): within 900, its back toward him, along his
-  // backward line (he faces the player) within 100 units; failing that, along
-  // the player's view with no sideways limit.
+  // backward line (he faces the player) with its approach point within 100
+  // units of that line, nearest the line first; failing that, along the
+  // player's view with no sideways limit.
   facingBarricade(){
     const g=this.game,search=(origin,forward,sideways)=>{let best=null,bestDistance=Infinity;
       for(const b of this.barricades){if(g.opened.has(b.target)||b.noteworthy==='courtyard_fountain')continue;
-        const d=[b.position[0]-origin[0],b.position[1]-origin[1]],length=Math.hypot(...d);if(length>900||length<1)continue;
-        const yaw=b.angles[1]*Math.PI/180,back=[-Math.cos(yaw),-Math.sin(yaw)];
+        const back=this.barricadeBack(b),at=[b.position[0]-back[0]*CHARGE.approach,b.position[1]-back[1]*CHARGE.approach];
+        const d=[at[0]-origin[0],at[1]-origin[1]],length=Math.hypot(...d);if(length>CHARGE.search||length<1)continue;
         if(forward[0]*back[0]+forward[1]*back[1]<.707||(d[0]*back[0]+d[1]*back[1])/length<.707)continue;
         const along=Math.max(0,Math.min(length*2,d[0]*forward[0]+d[1]*forward[1])),off=Math.hypot(d[0]-forward[0]*along,d[1]-forward[1]*along);
-        if(sideways&&off>100)continue;if(off<bestDistance){bestDistance=off;best=b;}}
+        if(sideways&&off>CHARGE.sideways)continue;if(off<bestDistance){bestDistance=off;best=b;}}
       return best;};
     return search(this.position,[-Math.cos(this.yaw),-Math.sin(this.yaw)],true)||search(g.player.position,[Math.cos(g.yaw),Math.sin(g.yaw)],false);
   }
+  // The way he runs through a barricade.
+  barricadeBack(b){const yaw=b.angles[1]*Math.PI/180;return [-Math.cos(yaw),-Math.sin(yaw)];}
+  // Where he aims: the barricade's centre at his floor height, shifted across
+  // its face (up to the correction allowance) to where his hull has a clear
+  // run up through the opening.
+  impactPoint(b){
+    const back=this.barricadeBack(b),across=[-back[1],back[0]],z=this.position[2];
+    return this.withBarricadesOpen(()=>{
+      for(const o of [0,8,-8,16,-16,24,-24,32,-32]){
+        const at=[b.position[0]+across[0]*o,b.position[1]+across[1]*o,z],c=[at[0],at[1],z+HULL[2]+4];
+        const from=[c[0]-back[0]*128,c[1]-back[1]*128,c[2]],run=this.game.collision.trace(from,[c[0]+back[0]*16,c[1]+back[1]*16,c[2]],HULL,WORLD);
+        if(run.fraction===1&&!run.allSolid)return at;
+      }
+      return [b.position[0],b.position[1],z];
+    });
+  }
+  // His traces ignore the barricades still standing (is_barricade_ent).
+  withBarricadesOpen(fn){
+    const g=this.game,disabled=g.collision.disabled,added=this.barricades.map(b=>b.target).filter(t=>!g.opened.has(t)&&!disabled.has(t));
+    for(const t of added)disabled.add(t);try{return fn();}finally{for(const t of added)disabled.delete(t);}
+  }
   // ----- the charge ----------------------------------------------------------
-  touching(b){
-    const points=[[0,0,35],[24,0,35],[24,0,70]].map(v=>{const r=rotate(v,this.yaw);return this.position.map((x,k)=>x+r[k]);});
+  touching(b,reach=24){
+    const points=[[0,0,35],[reach,0,35],[reach,0,70]].map(v=>{const r=rotate(v,this.yaw);return this.position.map((x,k)=>x+r[k]);});
     return points.some(p=>b.hulls.some(h=>h.mins.every((v,k)=>p[k]>=v-15)&&h.maxs.every((v,k)=>p[k]<=v+15)&&h.planes.every(pl=>pl[0]*p[0]+pl[1]*p[1]+pl[2]*p[2]<=pl[3]+15)));
   }
   // watch_barricade(): touched by the charging Arthur, the barricade and its
@@ -206,25 +235,74 @@ export class Arthur {
   crash(barricade){
     this.state='crash';this.play(barricade?'hit_barrier':'hit_wall');this.charge=null;this.crashFrom=this.position.slice();this.crashAge=0;
   }
+  // The charge runs on a fixed line to the chosen impact point. A wall or
+  // corner edging into his lane ahead is forgiven by a sideways shift (one
+  // side for the whole charge, checked with his hull), and a glancing wall
+  // is scraped along; a wall square ahead (within 45 degrees) stops him. Zombies are not solid to him: any his body sweeps through
+  // dies and he keeps running.
   tickCharge(dt){
-    const g=this.game,c=this.charge,forward=[Math.cos(this.yaw),Math.sin(this.yaw)];
+    const g=this.game,c=this.charge;
+    if(!c.dir)c.dir=[Math.cos(this.yaw),Math.sin(this.yaw)];
+    // His roam walk does not use the hull, so he can start a charge pressed
+    // into a wall: run with the widest hull that is free to move.
+    if(!c.hull)c.hull=[15,14,13,12,10].map(w=>[w,w,HULL[2]]).find(h=>flat(g.collision.step(this.position,[c.dir[0]*2,c.dir[1]*2,0],h).position,this.position)>1.5)||HULL;
+    const hull=c.hull,forward=c.dir,side=[-forward[1],forward[0]];this.yaw=Math.atan2(forward[1],forward[0]);
+    const target=c.target&&this.barricades.find(b=>b.target===c.target&&!g.opened.has(b.target));
     for(const b of this.barricades)if(!g.opened.has(b.target)&&this.touching(b)){this.breakBarricade(b);this.crash(true);return;}
-    // The forward trace ignores the barricades themselves (is_barricade_ent).
-    const shut=this.barricades.filter(b=>!g.opened.has(b.target)).map(b=>b.target),disabled=g.collision.disabled;
-    const added=shut.filter(t=>!disabled.has(t));for(const t of added)disabled.add(t);
-    let blocked=false;
-    try{
-      const start=[this.position[0],this.position[1],this.position[2]+39],end=[start[0]+forward[0]*48,start[1]+forward[1]*48,start[2]];
-      blocked=g.collision.trace(start,end,[15,15,1],1|0x20000).fraction<1;
-      if(!blocked){c.velocityZ-=800*dt;const step=this.speed('run_berserk')*dt,r=g.collision.step(this.position,[forward[0]*step,forward[1]*step,c.velocityZ*dt],HULL);this.position=r.position;if(r.grounded)c.velocityZ=0;}
-    }finally{for(const t of added)disabled.delete(t);}
+    const speed=this.speed('run_berserk'),step=speed*dt,from=this.position.slice();
+    const probe=(at,reach,width)=>{const start=[at[0],at[1],at[2]+39];return g.collision.trace(start,[start[0]+forward[0]*reach,start[1]+forward[1]*reach,start[2]],[width,width,1],WORLD);};
+    let blocked=false,wall=Infinity;
+    this.withBarricadesOpen(()=>{
+      // The run still to go: up to the impact point, or just ahead of him.
+      const look=Math.max(48,speed*CHARGE.blend*1.2),impact=target&&c.impact,run=impact?Math.max(look,(impact[0]-this.position[0])*forward[0]+(impact[1]-this.position[1])*forward[1]-16):look;
+      const ahead=probe(this.position,look,hull[0]),clear=ahead.fraction===1&&(run===look||probe(this.position,run,hull[0]).fraction===1);
+      // Something edging into his lane: the smallest sideways shift (within
+      // what is left of the allowance) that clears the whole run, failing
+      // that the stretch just ahead.
+      if(!clear&&!c.pending&&!(ahead.fraction<1&&target&&this.touching(target,look*ahead.fraction+HULL[0]+8))){
+        const left=CHARGE.correct-(c.offset||0),centre=[this.position[0],this.position[1],this.position[2]+HULL[2]+2];let near=null,whole=null;
+        search:for(let o=4;o<=left;o+=4)for(const s of c.side?[c.side]:[1,-1]){
+          const to=this.position.map((v,k)=>k<2?v+side[k]*s*o:v),shift=g.collision.trace(centre,[to[0],to[1],centre[2]],hull,WORLD);
+          if(shift.fraction<1||shift.allSolid||probe(to,look,hull[0]).fraction<1)continue;
+          near??=[s,o];if(run===look||probe(to,run,hull[0]).fraction===1){whole=[s,o];break search;}
+        }
+        const pick=whole||(ahead.fraction<1?near:null);if(pick){c.side=pick[0];c.pending=pick[1];c.rate=pick[1]/CHARGE.blend;}
+      }
+      const front=probe(this.position,48,CHARGE.lane);
+      if(front.fraction<1){
+        // The barricade he is aimed at (and its frame) is the goal, not a wall.
+        if(target&&this.touching(target,48*front.fraction+HULL[0]+8))return;
+        const n=front.normal,square=-(n[0]*forward[0]+n[1]*forward[1])/(Math.hypot(n[0],n[1])||1);
+        if(square>=CHARGE.square){wall=48*front.fraction;blocked=!c.pending;}}
+      if(!blocked){
+        const lateral=c.pending?Math.min(c.pending,c.rate*dt):0;if(lateral){c.pending-=lateral;c.offset=(c.offset||0)+lateral;if(c.pending<1e-6)c.pending=0;}
+        c.velocityZ-=800*dt;const r=g.collision.step(this.position,[forward[0]*step+side[0]*(c.side||0)*lateral,forward[1]*step+side[1]*(c.side||0)*lateral,c.velocityZ*dt],hull);
+        this.position=r.position;if(r.grounded)c.velocityZ=0;
+      }
+    });
+    if(target&&this.touching(target,wall<Infinity?wall+HULL[0]+8:24)){this.runDown(from,this.position,HULL[0]);this.breakBarricade(target);this.crash(true);return;}
+    // Zombies his body sweeps through this tick, and on a crash the ones
+    // pinned between him and the wall; never through solid world.
+    this.runDown(from,this.position,blocked?Math.max(HULL[0],wall):HULL[0]);
     // A player in his path goes down.
     const p=g.player.position,rel=[p[0]-this.position[0],p[1]-this.position[1]],ahead=rel[0]*forward[0]+rel[1]*forward[1];
     if(ahead>0&&ahead<48&&Math.abs(rel[0]*forward[1]-rel[1]*forward[0])<30&&Math.abs(p[2]-this.position[2])<60&&!g.coop?.down)g.damagePlayer(g.player.health);
-    this.barge();
     // The failsafe: under 30 units in half a second is a crash.
     if(g.time>=c.checkAt){if(flat(this.position,c.checkFrom)<30)blocked=true;c.checkAt=g.time+.5;c.checkFrom=this.position.slice();}
     if(blocked||this.position[2]<c.start[2]-400)this.crash(false);
+  }
+  // Swept contact: every zombie within body reach of the segment he covered
+  // (plus `front` units ahead of it) with nothing solid between them.
+  runDown(from,to,front){
+    const g=this.game,dir=this.charge?.dir||[Math.cos(this.yaw),Math.sin(this.yaw)];
+    const end=[to[0]+dir[0]*front,to[1]+dir[1]*front],seg=[end[0]-from[0],end[1]-from[1]],length2=seg[0]*seg[0]+seg[1]*seg[1];
+    for(const e of g.enemies){
+      if(e.dead||e.kind==='ghost'||Math.abs(e.position[2]-to[2])>60)continue;
+      const t=length2?Math.max(0,Math.min(1,((e.position[0]-from[0])*seg[0]+(e.position[1]-from[1])*seg[1])/length2)):0;
+      const near=[from[0]+seg[0]*t,from[1]+seg[1]*t];if(Math.hypot(e.position[0]-near[0],e.position[1]-near[1])>CHARGE.body)continue;
+      if(g.collision.trace([near[0],near[1],to[2]+39],[e.position[0],e.position[1],e.position[2]+39],[0,0,0],WORLD).fraction<1)continue;
+      this.killZombie(e);
+    }
   }
   // ----- per tick ------------------------------------------------------------
   tick(dt){
@@ -242,11 +320,18 @@ export class Arthur {
         if(this.prop==='booze'&&this.passed('hitground'))this.prop=null;
         if(this.passed('blend')){this.state='aim';this.play('drinkbooze_aim');this.prop=null;}
         break;
-      case 'aim':
-        if(this.aim)this.turn(this.aim.position,dt,4);
+      case 'aim':{
+        // Turned onto the impact point by the time the run begins.
+        const impact=this.aim?.impact,left=(this.clips[this.clip]?.notes?.blend??this.duration(this.clip))-this.age();
+        if(impact){const want=Math.atan2(impact[1]-this.position[1],impact[0]-this.position[0]);this.turn(impact,dt,Math.max(4,Math.abs(wrap(want-this.yaw))/Math.max(dt,left)));}
         for(const e of this.hunters())if(flat(e.position,this.position)<MELEE)this.killZombie(e);
-        if(this.passed('blend')){this.state='berserk';this.play('run_berserk');this.charge={start:this.position.slice(),checkAt:g.time+.5,checkFrom:this.position.slice(),velocityZ:0};}
-        break;
+        if(this.passed('blend')){
+          let dir=[Math.cos(this.yaw),Math.sin(this.yaw)];
+          if(impact){const d=[impact[0]-this.position[0],impact[1]-this.position[1]],l=Math.hypot(...d);if(l>1){dir=[d[0]/l,d[1]/l];this.yaw=Math.atan2(dir[1],dir[0]);}}
+          this.state='berserk';this.play('run_berserk');
+          this.charge={start:this.position.slice(),checkAt:g.time+.5,checkFrom:this.position.slice(),velocityZ:0,dir,target:this.aim?.barricade.target||null,impact:impact?.slice()||null,side:0,offset:0,pending:0,rate:0};
+        }
+        break;}
       case 'berserk':this.tickCharge(dt);break;
       case 'crash':{
         // Played in place from where he hit, with its stumble.
@@ -310,7 +395,7 @@ export class Arthur {
     if(v.clip!==this.clip){this.clip=v.clip;this.noteAge=v.age;}this.clipStarted=g.time-v.age;this.clipYaw=v.clipYaw??v.yaw;
     this.door=v.door?{clip:v.door.clip,started:g.time-v.door.age}:null;
   }
-  saveState(){return {...this.view(),gotBooze:this.gotBooze,protectLeft:Math.max(0,this.protectUntil-this.game.time),charge:this.charge&&{start:this.charge.start,velocityZ:this.charge.velocityZ},crashFrom:this.crashFrom,crashAge:this.crashAge};}
+  saveState(){return {...this.view(),gotBooze:this.gotBooze,protectLeft:Math.max(0,this.protectUntil-this.game.time),charge:this.charge&&{start:this.charge.start,velocityZ:this.charge.velocityZ,dir:this.charge.dir,hull:this.charge.hull,target:this.charge.target,impact:this.charge.impact,side:this.charge.side,offset:this.charge.offset,pending:this.charge.pending,rate:this.charge.rate},crashFrom:this.crashFrom,crashAge:this.crashAge};}
   loadState(s){
     if(!s)return;this.applyView(s);this.gotBooze=!!s.gotBooze;this.protectUntil=this.game.time+(s.protectLeft||0);this.crashFrom=s.crashFrom;this.crashAge=s.crashAge||0;
     this.charge=s.charge?{...s.charge,checkAt:this.game.time+.5,checkFrom:this.position.slice()}:null;

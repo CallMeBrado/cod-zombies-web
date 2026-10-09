@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile,writeFile,access} from 'node:fs/promises';
 import {BlackOps2Engine} from '../web/bo2-engine.js';
+import {CHARGE} from '../web/bo2-arthur.js';
 import {CollisionWorld} from '../web/collision.js';
 import {BO2_MAPS,selectedMap} from '../web/maps.js';
 import {pageRoute} from '../web/routes.js';
@@ -92,6 +93,43 @@ const resume=g.player.position.slice();
   g.enemies=[];g.time+=46;step(2);assert.equal(arthur.state,'roam');
   const saved=g.saveState();g.loadState(saved);assert(g.mapRules.arthur.cellOpen);assert(g.mapRules.arthur.gotBooze);
   report.checks.push('Arthur: held cell unlock, cower, facing gift, drink, berserk barricade break, candy spawn, protect, save');
+}
+// Arthur's charge: a slightly off line or a wall at his shoulder is forgiven
+// on the way to the barricade he was aimed at; zombies in his path die
+// without slowing him; a wall square ahead still stops him, and a major
+// miss still fails.
+{
+  const ar=g.mapRules,arthur=ar.arthur,step=n=>{for(let i=0;i<n;i++){g.time+=1/120;arthur.tick(1/120);}},barricade=t=>m.map.slothBarricades.find(b=>b.target===t);
+  const zombie=(id,at)=>({id,position:at,health:500,dead:false,stage:'hunt',window:g.windows[0],path:[]});
+  const charge=(target,dist,lateral,degrees=0,zombies=[])=>{
+    g.newGame();g.phase='between';g.roundDue=Infinity;g.enemies=[];const b=barricade(target),back=arthur.barricadeBack(b),across=[-back[1],back[0]];
+    const at=g.settleFeet([b.position[0]-back[0]*dist+across[0]*lateral,b.position[1]-back[1]*dist+across[1]*lateral,b.position[2]+20]),a=Math.atan2(back[1],back[0])+degrees*Math.PI/180;
+    Object.assign(arthur,{state:'roam',position:at,yaw:a+Math.PI});arthur.mover.position=at;g.player.position=[at[0]-Math.cos(a)*70,at[1]-Math.sin(a)*70,at[2]];g.yaw=a;
+    g.enemies=zombies.map((d,i)=>zombie(9000+i,[at[0]+back[0]*d,at[1]+back[1]*d,at[2]]));
+    arthur.give('booze');const chosen=arthur.aim?.barricade.target;let speed=Infinity,last=null,shifted=0;
+    for(let i=0;i<120*12&&arthur.state!=='crash';i++){step(1);if(arthur.state==='berserk'){shifted=arthur.charge.offset||0;if(last)speed=Math.min(speed,Math.hypot(arthur.position[0]-last[0],arthur.position[1]-last[1])*120);last=arthur.position.slice();}}
+    return {chosen,opened:g.opened.has(target),clip:arthur.clip,shifted,speed};
+  };
+  for(const [t,lateral,degrees] of [['pf749_auto20',60,0],['pf749_auto20',-60,0],['pf749_auto18',60,8],['pf749_auto18',-60,-8],['pf749_auto21',-60,0],['pf749_auto17',90,0]]){
+    const r=charge(t,250,lateral,degrees);assert(r.chosen===t&&r.opened&&r.clip==='hit_barrier','Off-line charge breaks '+t+' from '+lateral+' units, '+degrees+' degrees');
+  }
+  // A shoulder against the frame: forgiven by the sideways shift, and only by it.
+  {const r=charge('pf749_auto18',250,90);assert(r.opened&&r.shifted>0,'Corrected sideways into the clear lane');
+   const keep=CHARGE.correct;CHARGE.correct=0;try{assert(!charge('pf749_auto18',250,90).opened,'Without the correction the same charge clips the frame');}finally{CHARGE.correct=keep;}}
+  // Starting pressed into a wall (his roam walk ignores his hull).
+  assert(charge('pf749_auto20',250,-90).opened,'A charge that starts against a wall still runs');
+  // Three zombies on his line: all die once, he keeps his speed and breaks it.
+  {const left=g.remaining,r=charge('pf749_auto18',250,0,0,[60,110,160]);assert(g.enemies.every(e=>e.dead),'Zombies in the charge die');assert.equal(g.remaining-left,3,'Each death counts once');
+   assert(r.opened&&r.clip==='hit_barrier','Zombies never stop the charge');assert(r.speed>arthur.speed('run_berserk')*.9,'Full speed through the zombies ('+r.speed.toFixed(0)+')');}
+  // Major misalignment still fails.
+  assert(!charge('pf749_auto18',250,180).opened,'A major miss does not break the barricade');
+  // A zombie against a wall square ahead dies; one behind the wall lives.
+  {g.newGame();g.phase='between';g.roundDue=Infinity;const at=g.settleFeet([-1200,122,-4]);Object.assign(arthur,{position:at,yaw:Math.PI/2,state:'berserk'});arthur.play('run_berserk');
+   arthur.charge={start:at.slice(),checkAt:g.time+.5,checkFrom:at.slice(),velocityZ:0,dir:[0,1]};
+   const front=zombie(9100,[-1200,210,at[2]]),behind=zombie(9101,[-1200,268,at[2]]);g.enemies=[front,behind];
+   for(let i=0;i<240&&arthur.state==='berserk';i++)step(1);
+   assert(front.dead,'The zombie against the wall dies');assert(!behind.dead,'Nothing dies through the wall');assert.equal(arthur.clip,'hit_wall','He stops at the wall');assert(arthur.position[1]<239-14,'He does not pass the wall');}
+  g.enemies=[];report.checks.push('Arthur charge: off-line and wall-side forgiveness, zombies run down at full speed, walls still stop him');
 }
 // The box: no repeats of held weapons or the other Ray Gun; the teddy bear
 // after enough uses moves it to another location.
